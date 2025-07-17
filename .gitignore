@@ -1,0 +1,32 @@
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+.venv/
+.venv311/
+venv/
+
+# Database files
+*.db
+*.db-journal
+
+# Backups
+*_STARO/
+
+# Data files
+*.xlsx
+
+# Model files
+*.keras
+
+# Image files
+*.jpg
+*.png
+*.jpeg
+
+# Local files
+chat.txt
+gemini.md
