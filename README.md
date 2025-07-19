@@ -103,4 +103,4 @@ Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionaln
     ```bash
     python analiza.py
     ```
-    Prilikom prvog pokretanja, ako postoji `loto_podaci.xlsx` fajl u direktorijumu, baza podataka `loto_baza.db` će biti automatski popunjena istorijskim podacima.
+    Prilikom prvog pokretanja, ako je baza podataka `loto_baza.db` prazna i ako postoji `loto_podaci.csv` fajl u direktorijumu, baza će biti automatski popunjena istorijskim podacima.

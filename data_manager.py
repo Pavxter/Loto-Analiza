@@ -2,6 +2,7 @@
 
 import sqlite3
 import pandas as pd
+import os
 from datetime import datetime
 
 class DatabaseManager:
@@ -31,6 +32,35 @@ class DatabaseManager:
             print(f"Greška prilikom migracije baze (dodavanje kolone 'bazen_brojeva'): {e}")
 
         self.db_conn.commit()
+        self.import_from_csv_if_needed('loto_podaci.csv')
+
+    def import_from_csv_if_needed(self, csv_path='loto_podaci.csv'):
+        """Proverava da li je baza prazna i ako jeste, uvozi podatke iz CSV fajla."""
+        try:
+            cursor = self.db_conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM istorijski_rezultati")
+            if cursor.fetchone()[0] > 0:
+                # Baza već ima podatke, ne radimo ništa.
+                return
+
+            if not os.path.exists(csv_path):
+                print(f"Info: Baza je prazna, ali fajl '{csv_path}' nije pronađen. Preskačem automatski uvoz.")
+                return
+
+            print(f"--- Info: Baza je prazna. Pokušavam da uvezem podatke iz '{csv_path}'... ---")
+            df = pd.read_csv(csv_path)
+            # Očekivane kolone: 'kolo', 'datum', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7'
+            
+            uspesno_uvezeno = 0
+            for index, row in df.iterrows():
+                brojevi = [row['b1'], row['b2'], row['b3'], row['b4'], row['b5'], row['b6'], row['b7']]
+                if self.add_historical_result(row['kolo'], row['datum'], brojevi):
+                    uspesno_uvezeno += 1
+            
+            print(f"--- Automatski uvoz završen. Uvezeno {uspesno_uvezeno} kola. ---")
+
+        except Exception as e:
+            print(f"GREŠKA prilikom automatskog uvoza iz CSV fajla: {e}")
 
     def get_all_historical_results_as_df(self):
         """Vraća sve istorijske rezultate kao pandas DataFrame."""
