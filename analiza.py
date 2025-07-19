@@ -252,6 +252,19 @@ class LotoAnalizator(QMainWindow):
         cursor.execute('''CREATE TABLE IF NOT EXISTS odigrani_tiketi (id INTEGER PRIMARY KEY AUTOINCREMENT, kombinacija TEXT UNIQUE, status TEXT DEFAULT 'aktivan', poslednji_rezultat INTEGER, datum_provere TEXT)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS ai_log (id INTEGER PRIMARY KEY AUTOINCREMENT, datum_vreme TEXT, tip_zahteva TEXT, prompt TEXT, odgovor TEXT)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS virtualne_igre (id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER, datum_kreiranja TEXT, filter_podesavanja TEXT, lista_kombinacija TEXT, broj_kombinacija INTEGER, rezultat TEXT, bazen_brojeva TEXT, UNIQUE(kolo, filter_podesavanja))''')
+        
+        # --- MIGRACIJA: Dodavanje kolone 'bazen_brojeva' ako ne postoji ---
+        try:
+            cursor.execute("PRAGMA table_info(virtualne_igre)")
+            kolone = [info[1] for info in cursor.fetchall()]
+            if 'bazen_brojeva' not in kolone:
+                print("--- MIGRACIJA BAZE: Dodajem kolonu 'bazen_brojeva' u tabelu 'virtualne_igre'... ---")
+                cursor.execute("ALTER TABLE virtualne_igre ADD COLUMN bazen_brojeva TEXT")
+                self.db_conn.commit()
+                print("--- Migracija uspešna! ---")
+        except Exception as e:
+            print(f"Greška prilikom migracije baze (dodavanje kolone 'bazen_brojeva'): {e}")
+
         self.db_conn.commit()
         cursor.execute("SELECT COUNT(id) FROM istorijski_rezultati"); broj_redova = cursor.fetchone()[0]
         if broj_redova == 0 and os.path.exists('loto_podaci.xlsx'):
@@ -743,10 +756,11 @@ class LotoAnalizator(QMainWindow):
         filter_podesavanja = (f"Period: {period_text}, Unikat: {unikat_text}, Svežina: {svezina_text}, "
                               f"SrV: {self.min_sv_input.value()}-{self.max_sv_input.value()}, "
                               f"P/N: {self.parni_input.value()}/{self.neparni_input.value()}, V/H/N: {self.vruci_input.value()}/{self.hladni_input.value()}/{self.neutralni_input.value()}")
+        bazen_brojeva_str = self.bazen_brojeva_input.text() if self.koristi_bazen_checkbox.isChecked() else ""
         try:
             cursor = self.db_conn.cursor()
-            cursor.execute("INSERT INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija) VALUES (?, ?, ?, ?, ?)",
-                           (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, len(sve_kombinacije)))
+            cursor.execute("INSERT INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) VALUES (?, ?, ?, ?, ?, ?)",
+                           (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, len(sve_kombinacije), bazen_brojeva_str))
             self.db_conn.commit(); self.osvezi_tabelu_bektesta()
             QMessageBox.information(self, "Uspeh", f"Set od {len(sve_kombinacije)} kombinacija je sačuvan za bektest kola {kolo_za_igru}.")
         except sqlite3.IntegrityError: QMessageBox.warning(self, "Greška", f"Set za kolo {kolo_za_igru} sa istim filter podešavanjima je već sačuvan.")
@@ -763,8 +777,8 @@ class LotoAnalizator(QMainWindow):
         lista_kombinacija_str = ";".join(sve_kombinacije)
         filter_podesavanja = f"ML Model v1 (VAE, LatentDim={ml_generator.LATENT_DIM})"
         try:
-            cursor.execute("INSERT OR IGNORE INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija) VALUES (?, ?, ?, ?, ?)",
-                           (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, len(sve_kombinacije)))
+            cursor.execute("INSERT OR IGNORE INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) VALUES (?, ?, ?, ?, ?, ?)",
+                           (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, len(sve_kombinacije), ""))
             self.db_conn.commit()
             self.osvezi_tabelu_bektesta()
             QMessageBox.information(self, "Uspeh", f"ML set od {len(sve_kombinacije)} kombinacija je sačuvan za bektest kola {kolo_za_igru}.")
