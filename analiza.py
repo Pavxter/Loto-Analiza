@@ -22,11 +22,20 @@ import time
 
 import google.generativeai as genai
 import ml_generator
+from data_manager import DatabaseManager
+
+# --- Konstante za Loto igru ---
+MAX_BROJ = 39
+BROJEVA_U_KOMBINACIJI = 7
+BROJ_KATEGORIJA_FREKV = 13 # Broj brojeva u "vrućim" i "hladnim"
+PERIOD_SVEZIH_KOLA = 10
+
+# -----------------------------
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QTabWidget, 
                                QVBoxLayout, QHBoxLayout, QFormLayout, QLabel, 
-                               QSpinBox, QPushButton, QTextEdit, QListWidget, 
-                               QTableWidget, QTableWidgetItem, QHeaderView,
+                               QSpinBox, QPushButton, QTextEdit, QListWidget, QGridLayout,
+                               QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
                                QAbstractItemView, QLineEdit, QMessageBox, QMenu, QDateEdit,
                                QDialog, QDialogButtonBox, QDoubleSpinBox, QCheckBox, QComboBox)
 from PySide6.QtCore import Qt, QDate, QThread, Signal
@@ -45,13 +54,13 @@ class EditTicketDialog(QDialog):
         kombinacija_tekst = self.unos_linija.text()
         try:
             brojevi_str = kombinacija_tekst.split(',');
-            if len(brojevi_str) != 7: raise ValueError("Potrebno je tačno 7 brojeva.")
+            if len(brojevi_str) != BROJEVA_U_KOMBINACIJI: raise ValueError(f"Potrebno je tačno {BROJEVA_U_KOMBINACIJI} brojeva.")
             brojevi = set()
             for b_str in brojevi_str:
                 broj = int(b_str.strip());
-                if not (1 <= broj <= 39): raise ValueError("Svi brojevi moraju biti između 1 i 39.")
+                if not (1 <= broj <= MAX_BROJ): raise ValueError(f"Svi brojevi moraju biti između 1 i {MAX_BROJ}.")
                 brojevi.add(broj)
-            if len(brojevi) != 7: raise ValueError("Svi brojevi moraju biti jedinstveni.")
+            if len(brojevi) != BROJEVA_U_KOMBINACIJI: raise ValueError("Svi brojevi moraju biti jedinstveni.")
             return str(tuple(sorted(list(brojevi))))
         except Exception as e: QMessageBox.critical(self, "Greška u Unosu", str(e)); return None
 
@@ -80,11 +89,11 @@ class EditHistoryDialog(QDialog):
         try:
             kolo = self.kolo_input.value(); datum = self.datum_input.date().toString("yyyy-MM-dd")
             brojevi_str = self.kombinacija_input.text().split(',');
-            if len(brojevi_str) != 7: raise ValueError("Potrebno je tačno 7 brojeva.")
+            if len(brojevi_str) != BROJEVA_U_KOMBINACIJI: raise ValueError(f"Potrebno je tačno {BROJEVA_U_KOMBINACIJI} brojeva.")
             brojevi = [int(b.strip()) for b in brojevi_str]
-            if len(set(brojevi)) != 7: raise ValueError("Svi brojevi moraju biti jedinstveni.")
+            if len(set(brojevi)) != BROJEVA_U_KOMBINACIJI: raise ValueError("Svi brojevi moraju biti jedinstveni.")
             for b in brojevi:
-                if not (1 <= b <= 39): raise ValueError("Svi brojevi moraju biti između 1 i 39.")
+                if not (1 <= b <= MAX_BROJ): raise ValueError(f"Svi brojevi moraju biti između 1 i {MAX_BROJ}.")
             return [kolo, datum, *brojevi]
         except Exception as e: QMessageBox.critical(self, "Greška u Unosu", str(e)); return None
 
@@ -99,84 +108,100 @@ class MLWorker(QThread):
 
 class MplCanvas(FigureCanvas):
     def __init__(self, parent=None, width=5, height=4, dpi=100, subplot_spec=(1, 1)):
-        self.fig = Figure(figsize=(width, height), dpi=dpi)
+        self.fig = Figure(figsize=(width, height), dpi=dpi, facecolor='#2E2E2E')
         if subplot_spec == (2, 1):
             self.axes1 = self.fig.add_subplot(2, 1, 1)
             self.axes2 = self.fig.add_subplot(2, 1, 2)
             self.axes = self.axes1 
+            self.axes_list = [self.axes1, self.axes2]
         else:
             self.axes = self.fig.add_subplot(1, 1, 1)
+            self.axes_list = [self.axes]
+
+        for ax in self.axes_list:
+            ax.set_facecolor('#3C3C3C') # Nešto svetlija pozadina za sam grafik
+            ax.tick_params(axis='x', colors='white')
+            ax.tick_params(axis='y', colors='white')
+            ax.spines['bottom'].set_color('white')
+            ax.spines['top'].set_color('white') 
+            ax.spines['right'].set_color('white')
+            ax.spines['left'].set_color('white')
+
         super(MplCanvas, self).__init__(self.fig)
 
     def nacrtaj_grafikon_frekvencije(self, frekvencija_podaci, vruci, hladni, svezi, naslov_sufiks=""):
         self.axes.clear()
         boje = []
         frekvencije_za_prikaz = []
-        for i in range(1, 40):
+        for i in range(1, MAX_BROJ + 1):
             if i in vruci:
-                boje.append('crimson')
+                boje.append('#FF6347') # Tomato red
             elif i in hladni:
-                boje.append('cornflowerblue')
+                boje.append('#66B2FF') # Svetlo plava
             else:
-                boje.append('grey')
+                boje.append('#888888') # Svetlo siva
             frekvencije_za_prikaz.append(frekvencija_podaci.get(i, 0))
         
-        bars = self.axes.bar(range(1, 40), frekvencije_za_prikaz, color=boje)
+        bars = self.axes.bar(range(1, MAX_BROJ + 1), frekvencije_za_prikaz, color=boje)
         
         for i, bar in enumerate(bars):
             broj = i + 1
             if broj in svezi:
                 height = bar.get_height()
-                self.axes.text(bar.get_x() + bar.get_width() / 2.0, height, '*', ha='center', va='bottom', color='black', fontsize=14)
+                self.axes.text(bar.get_x() + bar.get_width() / 2.0, height, '*', ha='center', va='bottom', color='yellow', fontsize=14, weight='bold')
 
-        self.axes.set_title(f'Frekvencija Izvučenih Brojeva {naslov_sufiks}')
-        self.axes.set_xlabel('Loto Broj')
-        self.axes.set_ylabel('Broj Ponavljanja')
-        self.axes.set_xticks(range(1, 40))
-        self.axes.grid(axis='y', linestyle='--', alpha=0.7)
+        self.axes.set_title(f'Frekvencija Izvučenih Brojeva {naslov_sufiks}', color='white')
+        self.axes.set_xlabel('Loto Broj', color='white')
+        self.axes.set_ylabel('Broj Ponavljanja', color='white')
+        self.axes.set_xticks(range(1, MAX_BROJ + 1))
+        self.axes.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
         self.fig.tight_layout()
 
     def nacrtaj_grafikon_sr_vrednosti(self, sr_vrednosti_podaci, prosek, std_dev, naslov_sufiks=""):
         self.axes.clear()
-        self.axes.hist(sr_vrednosti_podaci, bins=25, color='darkcyan', edgecolor='black', alpha=0.7)
-        self.axes.axvline(prosek, color='red', linestyle='dashed', linewidth=2, label=f'Prosek: {prosek:.2f}')
+        self.axes.hist(sr_vrednosti_podaci, bins=25, color='#00FFFF', edgecolor='black', alpha=0.7)
+        self.axes.axvline(prosek, color='#FF4747', linestyle='dashed', linewidth=2, label=f'Prosek: {prosek:.2f}')
         self.axes.axvline(prosek - std_dev, color='orange', linestyle='dotted', linewidth=2, label=f'Opseg 1 Std Dev ({prosek-std_dev:.2f} - {prosek+std_dev:.2f})')
         self.axes.axvline(prosek + std_dev, color='orange', linestyle='dotted', linewidth=2)
-        self.axes.set_title(f'Distribucija Srednjih Vrednosti {naslov_sufiks}')
-        self.axes.set_xlabel('Srednja Vrednost 7 Brojeva u Kombinaciji')
-        self.axes.set_ylabel('Broj Kola (Učestalost)')
-        self.axes.legend()
-        self.axes.grid(axis='y', linestyle='--', alpha=0.7)
+        self.axes.set_title(f'Distribucija Srednjih Vrednosti {naslov_sufiks}', color='white')
+        self.axes.set_xlabel('Srednja Vrednost 7 Brojeva u Kombinaciji', color='white')
+        self.axes.set_ylabel('Broj Kola (Učestalost)', color='white')
+        legend = self.axes.legend()
+        legend.get_frame().set_facecolor('#4D4D4D')
+        legend.get_frame().set_edgecolor('gray')
+        for text in legend.get_texts():
+            text.set_color("white")
+        self.axes.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
         self.fig.tight_layout()
 
     def nacrtaj_grafikon_ponavljanja(self, ponavljanja_podaci, naslov_sufiks=""):
         self.axes.clear()
         podaci_za_prikaz = ponavljanja_podaci[ponavljanja_podaci > 0]
         if not podaci_za_prikaz.empty:
-            self.axes.bar(podaci_za_prikaz.index, podaci_za_prikaz.values, color='mediumpurple')
-        self.axes.set_title(f'Prosečan Razmak Ponavljanja {naslov_sufiks}')
-        self.axes.set_xlabel('Loto Broj')
-        self.axes.set_ylabel('Prosečan Broj Kola (Razmak)')
-        self.axes.set_xticks(range(1, 40))
-        self.axes.grid(axis='y', linestyle='--', alpha=0.7)
+            self.axes.bar(podaci_za_prikaz.index, podaci_za_prikaz.values, color='#9370DB') # MediumPurple
+        self.axes.set_title(f'Prosečan Razmak Ponavljanja {naslov_sufiks}', color='white')
+        self.axes.set_xlabel('Loto Broj', color='white')
+        self.axes.set_ylabel('Prosečan Broj Kola (Razmak)', color='white')
+        self.axes.set_xticks(range(1, MAX_BROJ + 1))
+        self.axes.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
         self.fig.tight_layout()
 
     def nacrtaj_grafikon_uzastopnih(self, uzastopni_podaci, naslov_sufiks=""):
         self.axes.clear()
-        self.axes.bar(uzastopni_podaci.index, uzastopni_podaci.values, color='gold', edgecolor='black')
-        self.axes.set_title(f'Učestalost Uzastopnih Parova {naslov_sufiks}')
-        self.axes.set_xlabel('Broj Uzastopnih Parova')
-        self.axes.set_ylabel('Broj Kola')
-        self.axes.grid(axis='y', linestyle='--', alpha=0.7)
+        self.axes.bar(uzastopni_podaci.index, uzastopni_podaci.values, color='#FFD700', edgecolor='black') # Gold
+        self.axes.set_title(f'Učestalost Uzastopnih Parova {naslov_sufiks}', color='white')
+        self.axes.set_xlabel('Broj Uzastopnih Parova', color='white')
+        self.axes.set_ylabel('Broj Kola', color='white')
+        self.axes.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
         self.fig.tight_layout()
 
     def nacrtaj_grafikon_dekada(self, dekada_podaci, naslov_sufiks=""):
         self.axes.clear()
-        self.axes.bar(dekada_podaci.index, dekada_podaci.values, color='tomato', edgecolor='black')
-        self.axes.set_title(f'Prosečan Broj Brojeva po Dekadi {naslov_sufiks}')
-        self.axes.set_xlabel('Dekada')
-        self.axes.set_ylabel('Prosečan Broj Brojeva po Kolu')
-        self.axes.grid(axis='y', linestyle='--', alpha=0.7)
+        self.axes.bar(dekada_podaci.index, dekada_podaci.values, color='#FF6347', edgecolor='black') # Tomato
+        self.axes.set_title(f'Prosečan Broj Brojeva po Dekadi {naslov_sufiks}', color='white')
+        self.axes.set_xlabel('Dekada', color='white')
+        self.axes.set_ylabel('Prosečan Broj Brojeva po Kolu', color='white')
+        self.axes.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
         self.fig.tight_layout()
 
     def nacrtaj_vremensku_seriju(self, sr_vrednosti_podaci):
@@ -184,8 +209,8 @@ class MplCanvas(FigureCanvas):
             self.axes1.clear()
             self.axes2.clear()
             
-            self.axes1.set_title('Kretanje Srednje Vrednosti Kombinacija Kroz Vreme')
-            self.axes2.set_title('Test Autokorelacije (Da li postoji "memorija"?)')
+            self.axes1.set_title('Kretanje Srednje Vrednosti Kombinacija Kroz Vreme', color='white')
+            self.axes2.set_title('Test Autokorelacije (Da li postoji "memorija"?)', color='white')
 
             if sr_vrednosti_podaci.empty:
                 self.axes1.text(0.5, 0.5, 'Nema podataka za prikaz', horizontalalignment='center', verticalalignment='center')
@@ -196,13 +221,18 @@ class MplCanvas(FigureCanvas):
             x_osa = range(len(sr_vrednosti_podaci))
             self.axes1.plot(x_osa, sr_vrednosti_podaci.values, label='Sr. vrednost po kolu', alpha=0.6, marker='.', linestyle='-')
             pokretni_prosek = sr_vrednosti_podaci.rolling(window=10).mean()
-            self.axes1.plot(x_osa, pokretni_prosek.values, color='red', linewidth=2, label='Pokretni prosek (10 kola)')
-            self.axes1.set_xlabel('Broj Izvlačenja (Vreme)')
-            self.axes1.set_ylabel('Srednja Vrednost')
-            self.axes1.legend()
-            self.axes1.grid(True)
+            self.axes1.plot(x_osa, pokretni_prosek.values, color='#FF4747', linewidth=2, label='Pokretni prosek (10 kola)')
+            self.axes1.set_xlabel('Broj Izvlačenja (Vreme)', color='white')
+            self.axes1.set_ylabel('Srednja Vrednost', color='white')
+            legend1 = self.axes1.legend()
+            legend1.get_frame().set_facecolor('#4D4D4D')
+            legend1.get_frame().set_edgecolor('gray')
+            for text in legend1.get_texts(): text.set_color("white")
+            self.axes1.grid(True, linestyle='--', alpha=0.4, color='gray')
             
-            autocorrelation_plot(sr_vrednosti_podaci.dropna(), ax=self.axes2)
+            autocorrelation_plot(sr_vrednosti_podaci.dropna(), ax=self.axes2, color='white', markerfacecolor='white')
+            self.axes2.lines[0].set_color('white') # Glavna linija
+            for line in self.axes2.lines[1:]: line.set_color('gray') # Linije poverenja
             
             self.fig.tight_layout()
 
@@ -212,17 +242,20 @@ class MplCanvas(FigureCanvas):
             self.axes2.clear()
             
             sns.heatmap(poziciona_frekvencija, ax=self.axes1, cmap="viridis", annot=True, fmt="d", linewidths=.5)
-            self.axes1.set_title(f'Mapa Frekvencije Brojeva po Poziciji Izvlačenja {naslov_sufiks}')
-            self.axes1.set_xlabel('Pozicija Izvlačenja (1. do 7.)')
-            self.axes1.set_ylabel('Loto Broj')
+            self.axes1.set_title(f'Mapa Frekvencije Brojeva po Poziciji Izvlačenja {naslov_sufiks}', color='white')
+            self.axes1.set_xlabel('Pozicija Izvlačenja (1. do 7.)', color='white')
+            self.axes1.set_ylabel('Loto Broj', color='white')
             
-            self.axes2.bar(pozicioni_prosek.index, pozicioni_prosek.values, color='teal')
-            self.axes2.axhline(y=20, color='red', linestyle='--', label='Globalni prosek (20.0)')
-            self.axes2.set_title(f'Prosečna Vrednost Izvučenog Broja po Poziciji {naslov_sufiks}')
-            self.axes2.set_xlabel('Pozicija Izvlačenja')
-            self.axes2.set_ylabel('Prosečna Vrednost')
-            self.axes2.legend()
-            self.axes2.grid(axis='y', linestyle='--', alpha=0.7)
+            self.axes2.bar(pozicioni_prosek.index, pozicioni_prosek.values, color='#20B2AA') # LightSeaGreen
+            self.axes2.axhline(y=20, color='#FF4747', linestyle='--', label='Globalni prosek (20.0)')
+            self.axes2.set_title(f'Prosečna Vrednost Izvučenog Broja po Poziciji {naslov_sufiks}', color='white')
+            self.axes2.set_xlabel('Pozicija Izvlačenja', color='white')
+            self.axes2.set_ylabel('Prosečna Vrednost', color='white')
+            legend2 = self.axes2.legend()
+            legend2.get_frame().set_facecolor('#4D4D4D')
+            legend2.get_frame().set_edgecolor('gray')
+            for text in legend2.get_texts(): text.set_color("white")
+            self.axes2.grid(axis='y', linestyle='--', alpha=0.4, color='gray')
             
             self.fig.tight_layout()
 
@@ -237,48 +270,21 @@ class LotoAnalizator(QMainWindow):
         except Exception as e:
             print(f"GREŠKA pri konfigurisanju AI: {e}"); self.ai_model = None
             QMessageBox.critical(self, "Greška AI Konfiguracije", f"Nije moguće konfigurisati Google AI.\n\nGreška: {e}")
-        self.inicijalizuj_bazu_podataka()
+        
+        self.db_manager = DatabaseManager() # Inicijalizacija menadžera baze
         self.ocisti_format_datuma_u_bazi()
         self.ucitaj_i_analiziraj_podatke() # Prvo učitavanje podataka
+        
         self.initUI()
+        
         self.osvezi_sve_analize() # Zatim osvežavanje prikaza
         self.osvezi_tabelu_tiketa()
         self.osvezi_tabelu_istorije()
         self.osvezi_tabelu_bektesta()
+        self.osvezi_dashboard_prikaz() # Zadatak 2.4: Inicijalno popunjavanje dashboard-a
         
-    def inicijalizuj_bazu_podataka(self):
-        self.db_conn = sqlite3.connect('loto_baza.db'); cursor = self.db_conn.cursor()
-        cursor.execute('''CREATE TABLE IF NOT EXISTS istorijski_rezultati (id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER, datum TEXT, b1 INTEGER, b2 INTEGER, b3 INTEGER, b4 INTEGER, b5 INTEGER, b6 INTEGER, b7 INTEGER, UNIQUE(kolo, datum))''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS odigrani_tiketi (id INTEGER PRIMARY KEY AUTOINCREMENT, kombinacija TEXT UNIQUE, status TEXT DEFAULT 'aktivan', poslednji_rezultat INTEGER, datum_provere TEXT)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS ai_log (id INTEGER PRIMARY KEY AUTOINCREMENT, datum_vreme TEXT, tip_zahteva TEXT, prompt TEXT, odgovor TEXT)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS virtualne_igre (id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER, datum_kreiranja TEXT, filter_podesavanja TEXT, lista_kombinacija TEXT, broj_kombinacija INTEGER, rezultat TEXT, bazen_brojeva TEXT, UNIQUE(kolo, filter_podesavanja))''')
-        
-        # --- MIGRACIJA: Dodavanje kolone 'bazen_brojeva' ako ne postoji ---
-        try:
-            cursor.execute("PRAGMA table_info(virtualne_igre)")
-            kolone = [info[1] for info in cursor.fetchall()]
-            if 'bazen_brojeva' not in kolone:
-                print("--- MIGRACIJA BAZE: Dodajem kolonu 'bazen_brojeva' u tabelu 'virtualne_igre'... ---")
-                cursor.execute("ALTER TABLE virtualne_igre ADD COLUMN bazen_brojeva TEXT")
-                self.db_conn.commit()
-                print("--- Migracija uspešna! ---")
-        except Exception as e:
-            print(f"Greška prilikom migracije baze (dodavanje kolone 'bazen_brojeva'): {e}")
-
-        self.db_conn.commit()
-        cursor.execute("SELECT COUNT(id) FROM istorijski_rezultati"); broj_redova = cursor.fetchone()[0]
-        if broj_redova == 0 and os.path.exists('loto_podaci.xlsx'):
-            print("--- Prazna baza, pokrećem migraciju podataka iz Excela... ---")
-            try:
-                excel_df = pd.read_excel('loto_podaci.xlsx', header=None, skiprows=1); excel_df.columns = ['kolo', 'datum', 'b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7']
-                for index, red in excel_df.iterrows():
-                    datum_obj = pd.to_datetime(red['datum'], dayfirst=True).strftime('%Y-%m-%d')
-                    cursor.execute("INSERT OR IGNORE INTO istorijski_rezultati (kolo, datum, b1, b2, b3, b4, b5, b6, b7) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (red['kolo'], datum_obj, red['b1'], red['b2'], red['b3'], red['b4'], red['b5'], red['b6'], red['b7']))
-                self.db_conn.commit(); print("--- Migracija uspešno završena! ---")
-            except Exception as e: print(f"Greška pri migraciji: {e}")
-
     def ocisti_format_datuma_u_bazi(self):
-        print("--- Proveravam format datuma u bazi... ---"); cursor = self.db_conn.cursor(); cursor_update = self.db_conn.cursor()
+        print("--- Proveravam format datuma u bazi... ---"); cursor = self.db_manager.db_conn.cursor(); cursor_update = self.db_manager.db_conn.cursor()
         cursor.execute("SELECT id, datum FROM istorijski_rezultati"); svi_datumi = cursor.fetchall(); ispravljeno_redova = 0
         for red_id, datum_str in svi_datumi:
             if datum_str and '.' in datum_str:
@@ -287,11 +293,11 @@ class LotoAnalizator(QMainWindow):
                     if ispravan_datum != datum_str:
                         cursor_update.execute("UPDATE istorijski_rezultati SET datum = ? WHERE id = ?", (ispravan_datum, red_id)); ispravljeno_redova += 1
                 except Exception as e: print(f"Nije moguće konvertovati datum '{datum_str}' za ID {red_id}: {e}")
-        if ispravljeno_redova > 0: self.db_conn.commit(); print(f"Završeno čišćenje. Ispravljeno {ispravljeno_redova} datuma.")
+        if ispravljeno_redova > 0: self.db_manager.db_conn.commit(); print(f"Završeno čišćenje. Ispravljeno {ispravljeno_redova} datuma.")
         else: print("Svi datumi su već u ispravnom formatu.")
 
     def ucitaj_i_analiziraj_podatke(self, period_analize=0):
-        self.loto_df = pd.read_sql_query("SELECT * FROM istorijski_rezultati ORDER BY id ASC", self.db_conn)
+        self.loto_df = self.db_manager.get_all_historical_results_as_df() # Koristi se nova metoda
         sve_kombinacije_df = self.loto_df[['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7']].dropna().astype(int)
         self.set_istorijskih_kombinacija = {tuple(sorted(row)) for row in sve_kombinacije_df.values}
         if period_analize > 0 and period_analize <= len(self.loto_df):
@@ -301,13 +307,13 @@ class LotoAnalizator(QMainWindow):
         print(f"--- Analiza se vrši na: {self.naslov_sufiks} ---")
         self.kolone_za_brojeve = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7']; self.brojevi_po_kolima = analizirani_df[self.kolone_za_brojeve].dropna().astype(int); self.srednje_vrednosti = self.brojevi_po_kolima.mean(axis=1); self.globalni_prosek = self.srednje_vrednosti.mean(); self.globalna_std_dev = self.srednje_vrednosti.std()
         svi_izvuceni_brojevi = pd.concat([self.brojevi_po_kolima[col] for col in self.brojevi_po_kolima]); self.frekvencija = svi_izvuceni_brojevi.value_counts(); sortirani_po_frekvenciji = self.frekvencija.sort_values(ascending=False); broj_u_kategoriji = 13
-        self.vruci_brojevi = set(sortirani_po_frekvenciji.head(broj_u_kategoriji).index); self.hladni_brojevi = set(sortirani_po_frekvenciji.tail(broj_u_kategoriji).index); self.neutralni_brojevi = set(range(1, 40)) - self.vruci_brojevi - self.hladni_brojevi
-        poslednjih_10_kola = analizirani_df.tail(10); self.svezi_brojevi = set(pd.concat([poslednjih_10_kola[col] for col in self.kolone_za_brojeve]).unique())
-        self.analiza_ponavljanja = {broj: kola_sa_brojem.diff().dropna().mean() if len(kola_sa_brojem := analizirani_df[analizirani_df[self.kolone_za_brojeve].eq(broj).any(axis=1)]['id']) > 1 else 0 for broj in range(1, 40)}
+        self.vruci_brojevi = set(sortirani_po_frekvenciji.head(BROJ_KATEGORIJA_FREKV).index); self.hladni_brojevi = set(sortirani_po_frekvenciji.tail(BROJ_KATEGORIJA_FREKV).index); self.neutralni_brojevi = set(range(1, MAX_BROJ + 1)) - self.vruci_brojevi - self.hladni_brojevi
+        poslednjih_10_kola = analizirani_df.tail(PERIOD_SVEZIH_KOLA); self.svezi_brojevi = set(pd.concat([poslednjih_10_kola[col] for col in self.kolone_za_brojeve]).unique())
+        self.analiza_ponavljanja = {broj: kola_sa_brojem.diff().dropna().mean() if len(kola_sa_brojem := analizirani_df[analizirani_df[self.kolone_za_brojeve].eq(broj).any(axis=1)]['id']) > 1 else 0 for broj in range(1, MAX_BROJ + 1)}
         self.analiza_ponavljanja = pd.Series(self.analiza_ponavljanja)
         self.analiza_uzastopnih = pd.Series([sum(1 for i in range(len(k)-1) if k[i+1] == k[i] + 1) for k in [sorted(list(red)) for i, red in self.brojevi_po_kolima.iterrows()]]).value_counts().sort_index()
         self.analiza_dekada = pd.DataFrame([{'1-9': sum(1 for b in red if 1<=b<=9), '10-19': sum(1 for b in red if 10<=b<=19), '20-29': sum(1 for b in red if 20<=b<=29), '30-39': sum(1 for b in red if 30<=b<=39)} for i, red in self.brojevi_po_kolima.iterrows()]).mean()
-        self.poziciona_frekvencija = pd.DataFrame(0, index=range(1, 40), columns=[f'poz_{i}' for i in range(1, 8)])
+        self.poziciona_frekvencija = pd.DataFrame(0, index=range(1, MAX_BROJ + 1), columns=[f'poz_{i}' for i in range(1, BROJEVA_U_KOMBINACIJI + 1)])
         for i, col_name in enumerate(self.kolone_za_brojeve, 1):
             counts = analizirani_df[col_name].value_counts()
             if not counts.empty: self.poziciona_frekvencija.loc[counts.index, f'poz_{i}'] = counts
@@ -332,6 +338,76 @@ class LotoAnalizator(QMainWindow):
         print("Svi analitički prikazi su osveženi i ponovo iscrtani.")
         if hasattr(self, 'unos_kola') and not self.loto_df.empty:
             self.unos_kola.setValue(int(self.loto_df['kolo'].max()) + 1)
+
+    def osvezi_dashboard_prikaz(self):
+        """
+        Glavna funkcija za osvežavanje prikaza na dashboard-u.
+        Prikuplja podatke, vrši analizu i popunjava UI elemente.
+        (Zadatak 2.1)
+        """
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            period = self.dashboard_period_input.value()
+            
+            # 1. Učitavanje i analiza podataka (koristi postojeću, moćnu funkciju)
+            # Ovo će popuniti self.vruci_brojevi, self.hladni_brojevi, self.svezi_brojevi, itd.
+            self.ucitaj_i_analiziraj_podatke(period_analize=period)
+
+            # 2. Popunjavanje numeričkih labela
+            self.db_prosek_label.setText(f"{self.globalni_prosek:.2f}")
+            self.db_stddev_label.setText(f"{self.globalna_std_dev:.2f}")
+            
+            # Analiza par/nepar odnosa za dashboard
+            par_nepar_counts = self.brojevi_po_kolima.apply(lambda row: tuple(sorted([sum(1 for x in row if x % 2 == 0), sum(1 for x in row if x % 2 != 0)])), axis=1).value_counts()
+            najcesci_par_nepar = par_nepar_counts.index[0] if not par_nepar_counts.empty else "N/A"
+            if najcesci_par_nepar != "N/A":
+                self.db_par_nepar_label.setText(f"{najcesci_par_nepar[0]} parna / {najcesci_par_nepar[1]} neparna")
+            else:
+                self.db_par_nepar_label.setText("N/A")
+
+            vruci_str = ", ".join(map(str, sorted(list(self.vruci_brojevi))))
+            hladni_str = ", ".join(map(str, sorted(list(self.hladni_brojevi))))
+            self.db_vruci_lista_label.setText(vruci_str)
+            self.db_hladni_lista_label.setText(hladni_str)
+
+            # 3. Iscrtavanje mini-grafikona
+            self.db_grafikon_frekvencije.nacrtaj_grafikon_frekvencije(self.frekvencija, self.vruci_brojevi, self.hladni_brojevi, self.svezi_brojevi, self.naslov_sufiks)
+            self.db_grafikon_sr_vrednosti.nacrtaj_grafikon_sr_vrednosti(self.srednje_vrednosti, self.globalni_prosek, self.globalna_std_dev, self.naslov_sufiks)
+            self.db_grafikon_frekvencije.draw()
+            self.db_grafikon_sr_vrednosti.draw()
+
+            # 4. Kreiranje i prikaz predloga bazena (fuzija vrućih i svežih)
+            # Stara logika: predlog_bazena = sorted(list(self.vruci_brojevi.union(self.svezi_brojevi)))
+            
+            # NOVA LOGIKA za kontrolisanu veličinu bazena
+            # Uzimamo prvih 12 najčešćih ("vrućih") brojeva iz analiziranog perioda
+            sortirani_vruci = self.frekvencija.sort_values(ascending=False).index.tolist()
+            top_vruci = sortirani_vruci[:12]
+
+            # Uzimamo prvih 12 "najsvežijih" brojeva (najčešći u poslednjih 10 kola unutar analiziranog perioda)
+            poslednjih_10_kola_df = self.brojevi_po_kolima.tail(PERIOD_SVEZIH_KOLA)
+            svezi_series = poslednjih_10_kola_df.melt(value_name='broj')['broj'].dropna().astype(int)
+            frekvencija_svezih = svezi_series.value_counts()
+            top_svezi = frekvencija_svezih.index.tolist()[:12]
+
+            # Fuzija i kreiranje jedinstvenog, sortiranog bazena
+            predlog_bazena = sorted(list(set(top_vruci + top_svezi)))
+            self.db_bazen_output.setText(", ".join(map(str, predlog_bazena)))
+            print(f"Dashboard osvežen. Predlog bazena sadrži {len(predlog_bazena)} brojeva.")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def dashboard_prebaci_u_generator(self):
+        """
+        Preuzima predloženi bazen sa dashboard-a, popunjava polja
+        na Generator tabu i prebacuje fokus na taj tab.
+        (Zadatak 2.2)
+        """
+        predlozeni_bazen = self.db_bazen_output.text()
+        if not predlozeni_bazen: return
+        self.bazen_brojeva_input.setText(predlozeni_bazen)
+        self.koristi_bazen_checkbox.setChecked(True)
+        self.tabs.setCurrentWidget(self.tab_generator)
 
     def analiziraj_period_za_bazen(self):
         """Izvršava analizu na klik dugmeta i popunjava liste brojeva."""
@@ -429,7 +505,70 @@ class LotoAnalizator(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
         
         self.tabs = QTabWidget()
+
+        # --- Kreiranje novog Dashboard Taba (Zadatak 1.1) ---
+        self.tab_dashboard = QWidget()
+        glavni_layout_db = QVBoxLayout(self.tab_dashboard)
+
+        # Panel sa globalnim kontrolama (Zadatak 1.2)
+        kontrole_panel = QWidget()
+        kontrole_layout = QHBoxLayout(kontrole_panel)
+        kontrole_layout.addWidget(QLabel("<b>Period Analize:</b>"))
+        self.dashboard_period_input = QSpinBox()
+        self.dashboard_period_input.setRange(10, 10000)
+        self.dashboard_period_input.setValue(300)
+        self.dashboard_period_input.setSuffix(" kola")
+        self.dashboard_period_input.setToolTip("Broj poslednjih kola za stratešku analizu na ovom dashboard-u.")
+        kontrole_layout.addWidget(self.dashboard_period_input)
+        self.dashboard_osvezi_dugme = QPushButton("Osveži Prikaz")
+        kontrole_layout.addWidget(self.dashboard_osvezi_dugme)
+        kontrole_layout.addStretch(1)
+        glavni_layout_db.addWidget(kontrole_panel)
+
+        # Mreža za prikaz podataka (Zadatak 1.3)
+        grid_layout = QGridLayout()
+
+        # Panel: Ključni Numerički Podaci
+        kljucni_pokazatelji_box = QGroupBox("Ključni Pokazatelji")
+        form_layout_kp = QFormLayout(kljucni_pokazatelji_box)
+        self.db_prosek_label = QLabel("N/A"); self.db_prosek_label.setStyleSheet("font-size: 11pt; font-weight: bold; color: #66FFCC;")
+        self.db_stddev_label = QLabel("N/A"); self.db_stddev_label.setStyleSheet("font-size: 11pt; font-weight: bold; color: #E0E0E0;")
+        self.db_par_nepar_label = QLabel("N/A"); self.db_par_nepar_label.setStyleSheet("font-size: 11pt; font-weight: bold; color: #E0E0E0;")
+        form_layout_kp.addRow("Prosek srednjih vrednosti:", self.db_prosek_label)
+        form_layout_kp.addRow("Standardna devijacija:", self.db_stddev_label)
+        form_layout_kp.addRow("Najčešći Par/Nepar odnos:", self.db_par_nepar_label)
+        grid_layout.addWidget(kljucni_pokazatelji_box, 0, 0)
+
+        # Panel: Vrući & Hladni Brojevi
+        vruci_hladni_box = QGroupBox("Vrući i Hladni Brojevi")
+        form_layout_vh = QFormLayout(vruci_hladni_box)
+        self.db_vruci_lista_label = QLabel("N/A"); self.db_vruci_lista_label.setWordWrap(True); self.db_vruci_lista_label.setStyleSheet("font-size: 10pt; color: #FF6347; font-weight: bold;")
+        self.db_hladni_lista_label = QLabel("N/A"); self.db_hladni_lista_label.setWordWrap(True); self.db_hladni_lista_label.setStyleSheet("font-size: 10pt; color: #66B2FF; font-weight: bold;")
+        form_layout_vh.addRow("Vrući brojevi:", self.db_vruci_lista_label)
+        form_layout_vh.addRow("Hladni brojevi:", self.db_hladni_lista_label)
+        grid_layout.addWidget(vruci_hladni_box, 0, 1)
+
+        # Panel: Mini-Grafikon Frekvencija
+        self.db_grafikon_frekvencije = MplCanvas(self, width=5, height=3.5)
+        grid_layout.addWidget(self.db_grafikon_frekvencije, 1, 0)
+
+        # Panel: Mini-Grafikon Srednjih Vrednosti
+        self.db_grafikon_sr_vrednosti = MplCanvas(self, width=5, height=3.5)
+        grid_layout.addWidget(self.db_grafikon_sr_vrednosti, 1, 1)
+
+        glavni_layout_db.addLayout(grid_layout)
+
+        # Panel za Akciju (Zadatak 1.4)
+        akcija_box = QGroupBox("Predlog Bazena i Akcija")
+        akcija_layout = QHBoxLayout(akcija_box)
+        self.db_bazen_output = QLineEdit(); self.db_bazen_output.setReadOnly(True); self.db_bazen_output.setPlaceholderText("Ovde će biti prikazan predlog bazena brojeva...")
+        self.db_bazen_output.setStyleSheet("font-size: 12pt; font-weight: bold; color: #FFFF99; background-color: #2E2E2E;")
+        self.db_prebaci_u_generator_dugme = QPushButton("🚀 Iskoristi Ovu Strategiju u Generatoru")
+        akcija_layout.addWidget(QLabel("<b>Predlog Bazena (Vrući + Sveži):</b>")); akcija_layout.addWidget(self.db_bazen_output); akcija_layout.addWidget(self.db_prebaci_u_generator_dugme)
+        glavni_layout_db.addWidget(akcija_box)
         
+        # --- Kraj Dashboard Taba ---
+
         self.grafikon_frekvencije = MplCanvas(self); self.grafikon_sr_vrednosti = MplCanvas(self); self.grafikon_ponavljanja = MplCanvas(self); self.grafikon_uzastopni = MplCanvas(self); self.grafikon_dekade = MplCanvas(self); self.grafikon_vremenske_serije = MplCanvas(self, subplot_spec=(2, 1)); self.grafikon_redosleda = MplCanvas(self, subplot_spec=(2, 1))
         
         tab_frekvencija = QWidget(); layout_frekvencija = QVBoxLayout(tab_frekvencija); layout_frekvencija.addWidget(self.grafikon_frekvencije)
@@ -568,9 +707,12 @@ class LotoAnalizator(QMainWindow):
         self.kreiraj_bazen_dugme.clicked.connect(self.kreiraj_bazen_fuzijom)
         self.prebaci_bazen_dugme.clicked.connect(self.prebaci_bazen_u_generator)
         
-        self.tabs.addTab(self.tab_generator, "Generator"); self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena"); self.tabs.addTab(self.tab_ml_generator, "ML Generator"); self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi"); self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja"); self.tabs.addTab(self.tab_bektest, "Bektest Strategija"); self.tabs.addTab(tab_frekvencija, "Frekvencija"); self.tabs.addTab(tab_sr_vrednosti, "Sr. Vrednosti"); self.tabs.addTab(tab_ponavljanja, "Ponavljanja"); self.tabs.addTab(tab_uzastopni, "Uzastopni"); self.tabs.addTab(tab_dekade, "Dekade"); self.tabs.addTab(tab_vremenska_serija, "Vremenska Serija"); self.tabs.addTab(tab_redosled, "Analiza Redosleda")
+        # Povezivanje signala za Dashboard (Zadatak 2.3)
+        self.dashboard_osvezi_dugme.clicked.connect(self.osvezi_dashboard_prikaz)
+        self.db_prebaci_u_generator_dugme.clicked.connect(self.dashboard_prebaci_u_generator)
+
+        self.tabs.insertTab(0, self.tab_dashboard, "📈 Strateški Dashboard"); self.tabs.addTab(self.tab_generator, "Generator"); self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena"); self.tabs.addTab(self.tab_ml_generator, "ML Generator"); self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi"); self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja"); self.tabs.addTab(self.tab_bektest, "Bektest Strategija"); self.tabs.addTab(tab_frekvencija, "Frekvencija"); self.tabs.addTab(tab_sr_vrednosti, "Sr. Vrednosti"); self.tabs.addTab(tab_ponavljanja, "Ponavljanja"); self.tabs.addTab(tab_uzastopni, "Uzastopni"); self.tabs.addTab(tab_dekade, "Dekade"); self.tabs.addTab(tab_vremenska_serija, "Vremenska Serija"); self.tabs.addTab(tab_redosled, "Analiza Redosleda")
         self.setCentralWidget(self.tabs); self.show()
-        # self.azuriraj_analiticki_prikaz_bazena() # Inicijalno popunjavanje je uklonjeno
 
     def kreiraj_meni(self):
         """Kreira glavni meni aplikacije."""
@@ -590,7 +732,7 @@ class LotoAnalizator(QMainWindow):
     def osvezi_tabelu_tiketa(self):
         print("Osvežavam prikaz tiketa...")
         try:
-            cursor = self.db_conn.cursor()
+            cursor = self.db_manager.db_conn.cursor()
             cursor.execute("SELECT id, kombinacija, status, poslednji_rezultat, datum_provere FROM odigrani_tiketi ORDER BY id")
             svi_tiketi = cursor.fetchall()
             self.tabela_tiketa.setRowCount(len(svi_tiketi))
@@ -613,7 +755,7 @@ class LotoAnalizator(QMainWindow):
     def osvezi_tabelu_istorije(self):
         print("Osvežavam prikaz istorije izvlačenja...")
         try:
-            cursor = self.db_conn.cursor()
+            cursor = self.db_manager.db_conn.cursor()
             cursor.execute("SELECT id, kolo, datum, b1, b2, b3, b4, b5, b6, b7 FROM istorijski_rezultati ORDER BY id DESC")
             svi_rezultati = cursor.fetchall()
             self.tabela_istorije.setRowCount(len(svi_rezultati))
@@ -628,7 +770,7 @@ class LotoAnalizator(QMainWindow):
     def osvezi_tabelu_bektesta(self):
         print("Osvežavam prikaz bektestova...")
         try:
-            cursor = self.db_conn.cursor()
+            cursor = self.db_manager.db_conn.cursor()
             cursor.execute("SELECT id, kolo, datum_kreiranja, filter_podesavanja, broj_kombinacija, rezultat FROM virtualne_igre ORDER BY id DESC")
             svi_bektestovi = cursor.fetchall()
             self.tabela_bektesta.setRowCount(len(svi_bektestovi))
@@ -644,7 +786,7 @@ class LotoAnalizator(QMainWindow):
     def izvezi_istoriju_u_csv(self):
         try:
             putanja_fajla = "istorija_izvlacenja.csv"
-            df = pd.read_sql_query("SELECT * FROM istorijski_rezultati ORDER BY id ASC", self.db_conn)
+            df = self.db_manager.get_all_historical_results_as_df()
             df.to_csv(putanja_fajla, index=False, encoding='utf-8-sig')
             QMessageBox.information(self, "Uspeh", f"Istorija je uspešno izvezena u fajl '{putanja_fajla}' unutar Vašeg projektnog foldera.")
         except Exception as e:
@@ -695,20 +837,20 @@ class LotoAnalizator(QMainWindow):
         if izabrana_akcija == obrisi_akcija: self.obrisi_bektest(id_unosa)
 
     def izmeni_unos_istorije(self, unos_id):
-        cursor = self.db_conn.cursor(); cursor.execute("SELECT kolo, datum, b1, b2, b3, b4, b5, b6, b7 FROM istorijski_rezultati WHERE id=?", (unos_id,)); podaci = cursor.fetchone()
+        cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT kolo, datum, b1, b2, b3, b4, b5, b6, b7 FROM istorijski_rezultati WHERE id=?", (unos_id,)); podaci = cursor.fetchone()
         if not podaci: return
         dialog = EditHistoryDialog(red_podataka=podaci, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             novi_podaci = dialog.get_podaci()
             if novi_podaci:
                 cursor.execute("UPDATE istorijski_rezultati SET kolo=?, datum=?, b1=?, b2=?, b3=?, b4=?, b5=?, b6=?, b7=? WHERE id=?", (*novi_podaci, unos_id))
-                self.db_conn.commit(); self.osvezi_tabelu_istorije(); self.osvezi_sve_analize()
+                self.db_manager.db_conn.commit(); self.osvezi_tabelu_istorije(); self.osvezi_sve_analize()
                 QMessageBox.information(self, "Uspeh", f"Unos ID {unos_id} je uspešno izmenjen.")
 
     def obrisi_unos_istorije(self, unos_id):
         potvrda = QMessageBox.question(self, "Potvrda Brisanja", f"Da li ste SIGURNI da želite trajno da obrišete unos ID {unos_id} iz istorije? Ovo će uticati na sve analize.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if potvrda == QMessageBox.StandardButton.Yes:
-            cursor = self.db_conn.cursor(); cursor.execute("DELETE FROM istorijski_rezultati WHERE id = ?", (unos_id,)); self.db_conn.commit()
+            cursor = self.db_manager.db_conn.cursor(); cursor.execute("DELETE FROM istorijski_rezultati WHERE id = ?", (unos_id,)); self.db_manager.db_conn.commit()
             self.osvezi_tabelu_istorije(); self.osvezi_sve_analize()
             print(f"Unos ID {unos_id} je obrisan iz istorije.")
 
@@ -717,36 +859,36 @@ class LotoAnalizator(QMainWindow):
                                        f"Da li ste sigurni da želite da obrišete sačuvani bektest ID {unos_id}?",
                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
         if potvrda == QMessageBox.StandardButton.Yes:
-            cursor = self.db_conn.cursor(); cursor.execute("DELETE FROM virtualne_igre WHERE id = ?", (unos_id,)); self.db_conn.commit(); self.osvezi_tabelu_bektesta(); print(f"Bektest ID {unos_id} je obrisan.")
+            cursor = self.db_manager.db_conn.cursor(); cursor.execute("DELETE FROM virtualne_igre WHERE id = ?", (unos_id,)); self.db_manager.db_conn.commit(); self.osvezi_tabelu_bektesta(); print(f"Bektest ID {unos_id} je obrisan.")
 
     def promeni_status_tiketa(self, tiket_id):
-        cursor = self.db_conn.cursor(); cursor.execute("SELECT status FROM odigrani_tiketi WHERE id = ?", (tiket_id,)); trenutni_status = cursor.fetchone()[0]
+        cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT status FROM odigrani_tiketi WHERE id = ?", (tiket_id,)); trenutni_status = cursor.fetchone()[0]
         novi_status = "neaktivan" if trenutni_status == "aktivan" else "aktivan"
-        cursor.execute("UPDATE odigrani_tiketi SET status = ? WHERE id = ?", (novi_status, tiket_id)); self.db_conn.commit(); self.osvezi_tabelu_tiketa(); print(f"Status tiketa ID {tiket_id} promenjen u '{novi_status}'.")
+        cursor.execute("UPDATE odigrani_tiketi SET status = ? WHERE id = ?", (novi_status, tiket_id)); self.db_manager.db_conn.commit(); self.osvezi_tabelu_tiketa(); print(f"Status tiketa ID {tiket_id} promenjen u '{novi_status}'.")
     
     def obrisi_tiket(self, tiket_id):
         potvrda = QMessageBox.question(self, "Potvrda Brisanja", f"Da li ste sigurni da želite trajno da obrišete tiket ID {tiket_id}?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
-        if potvrda == QMessageBox.StandardButton.Yes: cursor = self.db_conn.cursor(); cursor.execute("DELETE FROM odigrani_tiketi WHERE id = ?", (tiket_id,)); self.db_conn.commit(); self.osvezi_tabelu_tiketa(); print(f"Tiket ID {tiket_id} je obrisan.")
+        if potvrda == QMessageBox.StandardButton.Yes: cursor = self.db_manager.db_conn.cursor(); cursor.execute("DELETE FROM odigrani_tiketi WHERE id = ?", (tiket_id,)); self.db_manager.db_conn.commit(); self.osvezi_tabelu_tiketa(); print(f"Tiket ID {tiket_id} je obrisan.")
             
     def izmeni_tiket(self, tiket_id):
-        cursor = self.db_conn.cursor(); cursor.execute("SELECT kombinacija FROM odigrani_tiketi WHERE id = ?", (tiket_id,)); trenutna_kombinacija = cursor.fetchone()[0]
+        cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT kombinacija FROM odigrani_tiketi WHERE id = ?", (tiket_id,)); trenutna_kombinacija = cursor.fetchone()[0]
         dialog = EditTicketDialog(trenutna_kombinacija=trenutna_kombinacija, parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             nova_kombinacija = dialog.get_kombinacija()
-            if nova_kombinacija: cursor.execute("UPDATE odigrani_tiketi SET kombinacija = ? WHERE id = ?", (nova_kombinacija, tiket_id)); self.db_conn.commit(); self.osvezi_tabelu_tiketa()
+            if nova_kombinacija: cursor.execute("UPDATE odigrani_tiketi SET kombinacija = ? WHERE id = ?", (nova_kombinacija, tiket_id)); self.db_manager.db_conn.commit(); self.osvezi_tabelu_tiketa()
     
     def manuelno_dodaj_tiket(self):
         dialog = EditTicketDialog(parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             nova_kombinacija = dialog.get_kombinacija()
-            if nova_kombinacija: cursor = self.db_conn.cursor(); cursor.execute("INSERT OR IGNORE INTO odigrani_tiketi (kombinacija) VALUES (?)", (nova_kombinacija,)); self.db_conn.commit(); self.osvezi_tabelu_tiketa()
+            if nova_kombinacija: cursor = self.db_manager.db_conn.cursor(); cursor.execute("INSERT OR IGNORE INTO odigrani_tiketi (kombinacija) VALUES (?)", (nova_kombinacija,)); self.db_manager.db_conn.commit(); self.osvezi_tabelu_tiketa()
 
     def sacuvaj_set_za_bektest(self):
         broj_stavki = self.rezultati_output.count()
         if broj_stavki == 0 or "---" in self.rezultati_output.item(0).text():
             QMessageBox.warning(self, "Greška", "Nema generisanih kombinacija za čuvanje.")
             return
-        cursor = self.db_conn.cursor(); cursor.execute("SELECT max(kolo) FROM istorijski_rezultati"); poslednje_poznato_kolo = cursor.fetchone()[0]
+        cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT max(kolo) FROM istorijski_rezultati"); poslednje_poznato_kolo = cursor.fetchone()[0]
         kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
         sve_kombinacije = [self.rezultati_output.item(i).text().split("| Kombinacija: ")[-1] for i in range(broj_stavki)]
         lista_kombinacija_str = ";".join(sve_kombinacije)
@@ -758,10 +900,10 @@ class LotoAnalizator(QMainWindow):
                               f"P/N: {self.parni_input.value()}/{self.neparni_input.value()}, V/H/N: {self.vruci_input.value()}/{self.hladni_input.value()}/{self.neutralni_input.value()}")
         bazen_brojeva_str = self.bazen_brojeva_input.text() if self.koristi_bazen_checkbox.isChecked() else ""
         try:
-            cursor = self.db_conn.cursor()
+            cursor = self.db_manager.db_conn.cursor()
             cursor.execute("INSERT INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) VALUES (?, ?, ?, ?, ?, ?)",
                            (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, len(sve_kombinacije), bazen_brojeva_str))
-            self.db_conn.commit(); self.osvezi_tabelu_bektesta()
+            self.db_manager.db_conn.commit(); self.osvezi_tabelu_bektesta()
             QMessageBox.information(self, "Uspeh", f"Set od {len(sve_kombinacije)} kombinacija je sačuvan za bektest kola {kolo_za_igru}.")
         except sqlite3.IntegrityError: QMessageBox.warning(self, "Greška", f"Set za kolo {kolo_za_igru} sa istim filter podešavanjima je već sačuvan.")
         except Exception as e: QMessageBox.critical(self, "Greška Baze", f"Došlo je do greške pri čuvanju seta: {e}")
@@ -771,7 +913,7 @@ class LotoAnalizator(QMainWindow):
         if broj_stavki == 0 or "---" in self.ml_rezultati_output.item(0).text():
             QMessageBox.warning(self, "Greška", "Nema generisanih ML predloga za čuvanje.")
             return
-        cursor = self.db_conn.cursor(); cursor.execute("SELECT max(kolo) FROM istorijski_rezultati"); poslednje_poznato_kolo = cursor.fetchone()[0]
+        cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT max(kolo) FROM istorijski_rezultati"); poslednje_poznato_kolo = cursor.fetchone()[0]
         kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
         sve_kombinacije = [self.ml_rezultati_output.item(i).text() for i in range(broj_stavki)]
         lista_kombinacija_str = ";".join(sve_kombinacije)
@@ -779,7 +921,7 @@ class LotoAnalizator(QMainWindow):
         try:
             cursor.execute("INSERT OR IGNORE INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) VALUES (?, ?, ?, ?, ?, ?)",
                            (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, len(sve_kombinacije), ""))
-            self.db_conn.commit()
+            self.db_manager.db_conn.commit()
             self.osvezi_tabelu_bektesta()
             QMessageBox.information(self, "Uspeh", f"ML set od {len(sve_kombinacije)} kombinacija je sačuvan za bektest kola {kolo_za_igru}.")
         except sqlite3.IntegrityError: QMessageBox.warning(self, "Greška", f"Set za kolo {kolo_za_igru} sa istim ML podešavanjima je već sačuvan.")
@@ -803,9 +945,9 @@ class LotoAnalizator(QMainWindow):
             
         print(f"Dodajem tiket u praćenje: {kombinacija_za_upis}")
         try:
-            cursor = self.db_conn.cursor()
+            cursor = self.db_manager.db_conn.cursor()
             cursor.execute("INSERT OR IGNORE INTO odigrani_tiketi (kombinacija) VALUES (?)", (kombinacija_za_upis,))
-            self.db_conn.commit()
+            self.db_manager.db_conn.commit()
             self.osvezi_tabelu_tiketa()
             QMessageBox.information(self, "Uspeh", f"Kombinacija {kombinacija_za_upis} je uspešno dodata u praćenje.")
         except Exception as e:
@@ -1013,14 +1155,11 @@ class LotoAnalizator(QMainWindow):
             QMessageBox.critical(self, "Greška u Unosu", f"Unos nije ispravan: {e}")
             return
 
-        cursor = self.db_conn.cursor()
-        cursor.execute("INSERT OR IGNORE INTO istorijski_rezultati (kolo, datum, b1, b2, b3, b4, b5, b6, b7) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", (kolo, datum, *dobitni_brojevi_lista))
-        uspeh_dodavanja = cursor.rowcount > 0
-        self.db_conn.commit()
+        uspeh_dodavanja = self.db_manager.add_historical_result(kolo, datum, dobitni_brojevi_lista)
         
+        cursor = self.db_manager.db_conn.cursor()
         cursor.execute("SELECT id, kombinacija FROM odigrani_tiketi WHERE status = 'aktivan'")
         tiketi_za_proveru = cursor.fetchall()
-        
         for tiket_id, tiket_kombinacija_str in tiketi_za_proveru:
             try:
                 # ISPRAVKA: Rukovanje sa (ML) prefiksom
@@ -1036,7 +1175,7 @@ class LotoAnalizator(QMainWindow):
                 print(f"Greška: Nije moguće parsirati tiket ID: {tiket_id} sa kombinacijom: '{tiket_kombinacija_str}'. Preskačem proveru za ovaj tiket.")
                 continue
         
-        self.db_conn.commit()
+        self.db_manager.db_conn.commit()
 
         # Provera bektestova za uneto kolo
         cursor.execute("SELECT id, lista_kombinacija, bazen_brojeva FROM virtualne_igre WHERE kolo = ?", (kolo,))
@@ -1068,7 +1207,7 @@ class LotoAnalizator(QMainWindow):
                 komb_rezultat_str = f"Komb: 7:{pogoci[7]}, 6:{pogoci[6]}, 5:{pogoci[5]}, 4:{pogoci[4]}"
                 finalni_rezultat = bazen_rezultat_str + komb_rezultat_str
                 cursor.execute("UPDATE virtualne_igre SET rezultat = ? WHERE id = ?", (finalni_rezultat, bektest_id))
-            self.db_conn.commit()
+            self.db_manager.db_conn.commit()
 
         self.osvezi_tabelu_tiketa()
         self.osvezi_tabelu_istorije()
@@ -1090,17 +1229,16 @@ class LotoAnalizator(QMainWindow):
             
         print(f"Dodajem ML tiket u praćenje: {kombinacija_za_upis}")
         try:
-            cursor = self.db_conn.cursor()
+            cursor = self.db_manager.db_conn.cursor()
             cursor.execute("INSERT OR IGNORE INTO odigrani_tiketi (kombinacija) VALUES (?)", (kombinacija_za_upis,))
-            self.db_conn.commit()
+            self.db_manager.db_conn.commit()
             self.osvezi_tabelu_tiketa()
             QMessageBox.information(self, "Uspeh", f"ML Kombinacija {kombinacija_za_upis} je uspešno dodata u praćenje.")
         except Exception as e:
             QMessageBox.critical(self, "Greška Baze", f"Došlo je do greške pri upisu ML tiketa u bazu: {e}")
 
     def closeEvent(self, event):
-        self.db_conn.close()
-        print("Konekcija sa bazom podataka je zatvorena.")
+        self.db_manager.close()
         event.accept()
         
     def pokreni_ai_preporuku(self):
@@ -1133,7 +1271,7 @@ class LotoAnalizator(QMainWindow):
                     cista_linija = line.strip().replace("*", "").replace("-", "").strip()
                     if cista_linija:
                         self.rezultati_output.addItem(cista_linija)
-                self.sacuvaj_ai_log("Preporuka iz Generatora", prompt_tekst, ai_odgovor)
+                self.db_manager.save_ai_log("Preporuka iz Generatora", prompt_tekst, ai_odgovor)
             except Exception as e:
                 self.rezultati_output.clear()
                 self.rezultati_output.addItem(f"Došlo je do greške pri komunikaciji sa AI: {e}")
@@ -1150,7 +1288,7 @@ class LotoAnalizator(QMainWindow):
             sql_upit += " WHERE status = 'aktivan'"
             
         lista_tiketa_za_analizu = []
-        cursor = self.db_conn.cursor()
+        cursor = self.db_manager.db_conn.cursor()
         cursor.execute(sql_upit)
         for red in cursor.fetchall():
             komb, stat, rez = red
@@ -1173,7 +1311,7 @@ class LotoAnalizator(QMainWindow):
                 response = self.ai_model.generate_content(prompt_tekst)
                 ai_odgovor = response.text
                 QMessageBox.information(self, "AI Analiza Vaše Strategije", ai_odgovor)
-                self.sacuvaj_ai_log("Analiza Stila Igranja", prompt_tekst, ai_odgovor)
+                self.db_manager.save_ai_log("Analiza Stila Igranja", prompt_tekst, ai_odgovor)
             except Exception as e:
                 QMessageBox.critical(self, "Greška", f"Došlo je do greške pri komunikaciji sa AI: {e}")
             QApplication.restoreOverrideCursor()
@@ -1184,7 +1322,7 @@ class LotoAnalizator(QMainWindow):
             return
 
         try:
-            cursor = self.db_conn.cursor()
+            cursor = self.db_manager.db_conn.cursor()
             cursor.execute("SELECT kolo, filter_podesavanja, rezultat FROM virtualne_igre WHERE rezultat IS NOT NULL AND rezultat != '' ORDER BY kolo ASC")
             svi_bektestovi = cursor.fetchall()
 
@@ -1222,7 +1360,7 @@ Analiziraj ove podatke i odgovori mi na sledeća pitanja:
                 try:
                     response = self.ai_model.generate_content(prompt_tekst)
                     ai_odgovor = response.text
-                    self.sacuvaj_ai_log("Analiza Bektestova", prompt_tekst, ai_odgovor)
+                    self.db_manager.save_ai_log("Analiza Bektestova", prompt_tekst, ai_odgovor)
                     
                     msg_box = QMessageBox(self)
                     msg_box.setWindowTitle("AI Analiza Vaših Bektest Strategija")
@@ -1240,16 +1378,6 @@ Analiziraj ove podatke i odgovori mi na sledeća pitanja:
         except Exception as e:
             QMessageBox.critical(self, "Greška Baze Podataka", f"Došlo je do greške prilikom čitanja bektestova: {e}")
             print(f"Greška kod AI analize bektesta: {e}")
-
-    def sacuvaj_ai_log(self, tip_zahteva, prompt, odgovor):
-        print(f"Čuvam AI log za: {tip_zahteva}")
-        try:
-            cursor = self.db_conn.cursor()
-            cursor.execute("INSERT INTO ai_log (datum_vreme, tip_zahteva, prompt, odgovor) VALUES (?, ?, ?, ?)", 
-                           (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), tip_zahteva, prompt, odgovor))
-            self.db_conn.commit()
-        except Exception as e:
-            print(f"Greška pri čuvanju AI loga: {e}")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

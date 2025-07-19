@@ -12,6 +12,14 @@ Ceo projekat, uključujući kod i korisnički interfejs, je napisan na **srpskom
 
 Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionalnost:
 
+*   **Strateški Dashboard:**
+    *   Početni ekran aplikacije koji pruža brz strateški pregled.
+    *   Prikazuje ključne pokazatelje (prosek, standardna devijacija, par/nepar odnos) za izabrani period.
+    *   Lista "vrućih" i "hladnih" brojeva.
+    *   Mini-grafikoni za vizuelni uvid u frekvenciju i distribuciju srednjih vrednosti.
+    *   Automatski generiše **predlog bazena brojeva** kombinovanjem vrućih i svežih trendova.
+    *   Omogućava direktno prebacivanje predložene strategije u **Generator Kombinacija** jednim klikom.
+
 *   **Generator Kombinacija:**
     *   Generisanje kombinacija na osnovu niza detaljnih filtera:
         *   Opseg srednje vrednosti kombinacije.
@@ -96,4 +104,3 @@ Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionaln
     python analiza.py
     ```
     Prilikom prvog pokretanja, ako postoji `loto_podaci.xlsx` fajl u direktorijumu, baza podataka `loto_baza.db` će biti automatski popunjena istorijskim podacima.
-
