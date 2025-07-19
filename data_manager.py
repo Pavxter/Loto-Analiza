@@ -17,7 +17,19 @@ class DatabaseManager:
         cursor.execute('''CREATE TABLE IF NOT EXISTS istorijski_rezultati (id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER, datum TEXT, b1 INTEGER, b2 INTEGER, b3 INTEGER, b4 INTEGER, b5 INTEGER, b6 INTEGER, b7 INTEGER, UNIQUE(kolo, datum))''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS odigrani_tiketi (id INTEGER PRIMARY KEY AUTOINCREMENT, kombinacija TEXT UNIQUE, status TEXT DEFAULT 'aktivan', poslednji_rezultat INTEGER, datum_provere TEXT)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS ai_log (id INTEGER PRIMARY KEY AUTOINCREMENT, datum_vreme TEXT, tip_zahteva TEXT, prompt TEXT, odgovor TEXT)''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS virtualne_igre (id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER, datum_kreiranja TEXT, filter_podesavanja TEXT, lista_kombinacija TEXT, broj_kombinacija INTEGER, rezultat TEXT, bazen_brojeva TEXT, UNIQUE(kolo, filter_podesavanja))''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS virtualne_igre (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            kolo INTEGER, 
+            datum_kreiranja TEXT, 
+            filter_podesavanja TEXT, 
+            lista_kombinacija TEXT, 
+            broj_kombinacija INTEGER, 
+            rezultat TEXT, 
+            bazen_brojeva TEXT, 
+            indeks_promasaja INTEGER,
+            indeks_iznenadjenja REAL,
+            UNIQUE(kolo, filter_podesavanja)
+        )''')
         
         # Migracija: Dodavanje kolone 'bazen_brojeva' ako ne postoji
         try:
@@ -30,6 +42,30 @@ class DatabaseManager:
                 print("--- Migracija uspešna! ---")
         except Exception as e:
             print(f"Greška prilikom migracije baze (dodavanje kolone 'bazen_brojeva'): {e}")
+
+        # Migracija: Dodavanje kolone 'indeks_promasaja' ako ne postoji
+        try:
+            cursor.execute("PRAGMA table_info(virtualne_igre)")
+            kolone = [info[1] for info in cursor.fetchall()]
+            if 'indeks_promasaja' not in kolone:
+                print("--- MIGRACIJA BAZE: Dodajem kolonu 'indeks_promasaja' u tabelu 'virtualne_igre'... ---")
+                cursor.execute("ALTER TABLE virtualne_igre ADD COLUMN indeks_promasaja INTEGER")
+                self.db_conn.commit()
+                print("--- Migracija uspešna! ---")
+        except Exception as e:
+            print(f"Greška prilikom migracije baze (dodavanje kolone 'indeks_promasaja'): {e}")
+
+        # Migracija: Dodavanje kolone 'indeks_iznenadjenja' ako ne postoji
+        try:
+            cursor.execute("PRAGMA table_info(virtualne_igre)")
+            kolone = [info[1] for info in cursor.fetchall()]
+            if 'indeks_iznenadjenja' not in kolone:
+                print("--- MIGRACIJA BAZE: Dodajem kolonu 'indeks_iznenadjenja' u tabelu 'virtualne_igre'... ---")
+                cursor.execute("ALTER TABLE virtualne_igre ADD COLUMN indeks_iznenadjenja REAL")
+                self.db_conn.commit()
+                print("--- Migracija uspešna! ---")
+        except Exception as e:
+            print(f"Greška prilikom migracije baze (dodavanje kolone 'indeks_iznenadjenja'): {e}")
 
         self.db_conn.commit()
         self.import_from_csv_if_needed('loto_podaci.csv')

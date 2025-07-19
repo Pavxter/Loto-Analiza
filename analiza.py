@@ -1,4 +1,4 @@
-# analiza.py (v9.8)
+# analiza.py (v9.9)
 
 import sys
 import io
@@ -19,6 +19,8 @@ from dotenv import load_dotenv
 import seaborn as sns 
 import json
 import time
+import math
+import re
 
 import google.generativeai as genai
 import ml_generator
@@ -771,14 +773,22 @@ class LotoAnalizator(QMainWindow):
         print("Osvežavam prikaz bektestova...")
         try:
             cursor = self.db_manager.db_conn.cursor()
-            cursor.execute("SELECT id, kolo, datum_kreiranja, filter_podesavanja, broj_kombinacija, rezultat FROM virtualne_igre ORDER BY id DESC")
+            cursor.execute("SELECT id, kolo, datum_kreiranja, filter_podesavanja, broj_kombinacija, rezultat, indeks_promasaja, indeks_iznenadjenja FROM virtualne_igre ORDER BY id DESC")
             svi_bektestovi = cursor.fetchall()
             self.tabela_bektesta.setRowCount(len(svi_bektestovi))
-            kolone = ["ID", "Kolo za Igru", "Datum Kreiranja", "Podešavanja Filtera", "Br. Komb.", "Rezultat"]
+            kolone = ["ID", "Kolo za Igru", "Datum Kreiranja", "Podešavanja Filtera", "Br. Komb.", "Rezultat", "Min. Promašaj", "Min. Iznenađenje"]
             self.tabela_bektesta.setColumnCount(len(kolone)); self.tabela_bektesta.setHorizontalHeaderLabels(kolone)
             for i, red_podataka in enumerate(svi_bektestovi):
                 for j, podatak in enumerate(red_podataka):
-                    self.tabela_bektesta.setItem(i, j, QTableWidgetItem(str(podatak)))
+                    item_text = ""
+                    if podatak is not None:
+                        # j == 7 odgovara koloni "Min. Iznenađenje"
+                        if j == 7 and isinstance(podatak, float):
+                            item_text = f"{podatak:.2f}"
+                        else:
+                            item_text = str(podatak)
+                    
+                    self.tabela_bektesta.setItem(i, j, QTableWidgetItem(item_text))
             self.tabela_bektesta.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers); self.tabela_bektesta.resizeColumnsToContents()
             self.tabela_bektesta.setColumnHidden(0, True)
         except Exception as e: print(f"Greška prilikom osvežavanja tabele bektesta: {e}")
@@ -1131,6 +1141,75 @@ class LotoAnalizator(QMainWindow):
                 skorovi_finalnih.append((skor, kandidat_tuple))
         return skorovi_finalnih
 
+    def izracunaj_indeks_promasaja(self, set_kombinacija, dobitna_kombinacija_set):
+        """
+        Izračunava "indeks promašaja" za dati set kombinacija.
+        Indeks je najmanja ukupna "udaljenost" jedne od kombinacija u setu od dobitne kombinacije.
+        """
+        minimalni_ukupni_promasaj = float('inf')
+
+        for komb_str in set_kombinacija:
+            try:
+                # Kombinacije su sačuvane kao stringovi "(1, 2, 3, 4, 5, 6, 7)"
+                kombinacija_lista = list(eval(komb_str))
+                
+                trenutni_promasaj = 0
+                for dobitni_broj in dobitna_kombinacija_set:
+                    # Za svaki dobitni broj, nalazimo njemu najbliži broj u našoj kombinaciji
+                    najmanja_razlika = min(abs(dobitni_broj - broj_u_komb) for broj_u_komb in kombinacija_lista)
+                    trenutni_promasaj += najmanja_razlika
+                
+                minimalni_ukupni_promasaj = min(minimalni_ukupni_promasaj, trenutni_promasaj)
+            except Exception:
+                continue # Ako parsiranje kombinacije ne uspe, preskačemo je
+        
+        return minimalni_ukupni_promasaj if minimalni_ukupni_promasaj != float('inf') else None
+
+    def izracunaj_model_verovatnoce(self, df_istorija, period_analize):
+        """
+        Kreira model verovatnoće na osnovu frekvencije brojeva u datom periodu.
+        Koristi Laplace (Add-one) smoothing da izbegne verovatnoće jednake nuli.
+        """
+        if period_analize > 0 and period_analize <= len(df_istorija):
+            analizirani_df = df_istorija.tail(period_analize)
+        else:
+            analizirani_df = df_istorija
+
+        if analizirani_df.empty:
+            # Ako nema podataka, vraćamo uniformnu distribuciju
+            verovatnoca = 1 / MAX_BROJ
+            return {broj: verovatnoca for broj in range(1, MAX_BROJ + 1)}
+
+        kolone_za_brojeve = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7']
+        svi_izvuceni_brojevi = pd.concat([analizirani_df[col] for col in kolone_za_brojeve]).dropna().astype(int)
+        
+        # Laplace (Add-one) Smoothing
+        frekvencije = {broj: 1 for broj in range(1, MAX_BROJ + 1)} # Počinjemo sa 1 za svaki broj
+        for broj in svi_izvuceni_brojevi:
+            if broj in frekvencije:
+                frekvencije[broj] += 1
+        
+        ukupan_broj_pojavljivanja = sum(frekvencije.values())
+        
+        model_verovatnoce = {broj: freq / ukupan_broj_pojavljivanja for broj, freq in frekvencije.items()}
+        
+        return model_verovatnoce
+
+    def izracunaj_indeks_iznenadjenja(self, kombinacija, model_verovatnoce):
+        """
+        Računa "indeks iznenađenja" za jednu kombinaciju na osnovu datog modela verovatnoće.
+        Veći indeks znači statistički "ređu" ili "iznenađujuću" kombinaciju.
+        """
+        try:
+            # Sabiranje logaritama je ekvivalent množenju verovatnoća
+            # Koristimo model_verovatnoce.get() da izbegnemo KeyError ako broj ne postoji, mada ne bi trebalo sa smoothingom
+            log_verovatnoca = sum(math.log(model_verovatnoce.get(broj, 1e-9)) for broj in kombinacija) # 1e-9 za svaki slučaj
+            # Množimo sa -1 da veće iznenađenje (manja verovatnoća) bude veći pozitivan broj
+            indeks = -1 * log_verovatnoca
+            return indeks
+        except (ValueError, TypeError):
+            return None # U slučaju matematičke greške
+
     def proveri_i_dodaj_kolo(self):
         try:
             kolo = self.unos_kola.value()
@@ -1178,12 +1257,12 @@ class LotoAnalizator(QMainWindow):
         self.db_manager.db_conn.commit()
 
         # Provera bektestova za uneto kolo
-        cursor.execute("SELECT id, lista_kombinacija, bazen_brojeva FROM virtualne_igre WHERE kolo = ?", (kolo,))
+        cursor.execute("SELECT id, lista_kombinacija, bazen_brojeva, filter_podesavanja FROM virtualne_igre WHERE kolo = ?", (kolo,))
         svi_bektestovi_za_kolo = cursor.fetchall()
 
         if svi_bektestovi_za_kolo:
             print(f"Pronađeno {len(svi_bektestovi_za_kolo)} bektestova za kolo {kolo}. Ažuriram rezultate...")
-            for bektest_id, lista_kombinacija_str, bazen_brojeva_str in svi_bektestovi_za_kolo:
+            for bektest_id, lista_kombinacija_str, bazen_brojeva_str, filter_podesavanja in svi_bektestovi_za_kolo:
                 # 1. Provera uspešnosti bazena
                 bazen_rezultat_str = ""
                 if bazen_brojeva_str:
@@ -1206,7 +1285,39 @@ class LotoAnalizator(QMainWindow):
                 
                 komb_rezultat_str = f"Komb: 7:{pogoci[7]}, 6:{pogoci[6]}, 5:{pogoci[5]}, 4:{pogoci[4]}"
                 finalni_rezultat = bazen_rezultat_str + komb_rezultat_str
-                cursor.execute("UPDATE virtualne_igre SET rezultat = ? WHERE id = ?", (finalni_rezultat, bektest_id))
+
+                # 3. Izračunavanje Indeksa Promašaja (NOVO)
+                indeks_promasaja = self.izracunaj_indeks_promasaja(sve_kombinacije_u_setu, dobitni_brojevi_set)
+
+                # 4. Izračunavanje Indeksa Iznenađenja (NOVO)
+                indeks_iznenadjenja = None
+                try:
+                    # A. Odredi period analize iz podešavanja
+                    period_match = re.search(r"Period: Posl\. (\d+)", filter_podesavanja)
+                    period_analize = int(period_match.group(1)) if period_match else 0
+                    
+                    # B. Uzmi istoriju PRE ovog kola
+                    istorija_pre_kola = self.loto_df[self.loto_df['kolo'] < kolo]
+                    
+                    # C. Kreiraj model verovatnoće
+                    model_verovatnoce = self.izracunaj_model_verovatnoce(istorija_pre_kola, period_analize)
+                    
+                    # D. Nađi najmanji indeks iznenađenja u setu
+                    minimalni_indeks_iznenadjenja = float('inf')
+                    for komb_str in sve_kombinacije_u_setu:
+                        try:
+                            kombinacija_lista = list(eval(komb_str))
+                            trenutni_indeks = self.izracunaj_indeks_iznenadjenja(kombinacija_lista, model_verovatnoce)
+                            if trenutni_indeks is not None:
+                                minimalni_indeks_iznenadjenja = min(minimalni_indeks_iznenadjenja, trenutni_indeks)
+                        except: continue
+                    
+                    if minimalni_indeks_iznenadjenja != float('inf'):
+                        indeks_iznenadjenja = minimalni_indeks_iznenadjenja
+                except Exception as e: print(f"Greška pri računanju indeksa iznenađenja za bektest ID {bektest_id}: {e}")
+
+                # 5. Ažuriranje baze sa svim rezultatima (IZMENJENO)
+                cursor.execute("UPDATE virtualne_igre SET rezultat = ?, indeks_promasaja = ?, indeks_iznenadjenja = ? WHERE id = ?", (finalni_rezultat, indeks_promasaja, indeks_iznenadjenja, bektest_id))
             self.db_manager.db_conn.commit()
 
         self.osvezi_tabelu_tiketa()
