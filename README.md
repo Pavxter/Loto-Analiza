@@ -61,6 +61,8 @@ Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionaln
 *   **Bektest Strategija:**
     *   Sačuvajte setove generisanih kombinacija (iz glavnog ili ML generatora) kao "virtualnu igru".
     *   Aplikacija automatski proverava uspešnost sačuvanih setova kada se unese rezultat za to kolo, pružajući uvid u efikasnost različitih strategija.
+    *   **Indeks Promašaja:** Pored direktnih pogodaka, sistem meri i "blizinu" promašaja. Za svaki bektest, izračunava se najmanja ukupna numerička udaljenost od dobitne kombinacije, dajući uvid u to koliko je strategija bila "blizu".
+    *   **Indeks Iznenađenja:** Kvantifikuje koliko je neka strategija statistički "neočekivana" ili "retka" u odnosu na istorijske podatke. Veći indeks znači da je strategija generisala kombinacije koje su ređe viđene u prošlosti.
 
 ## Tehnologije
 

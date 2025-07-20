@@ -503,7 +503,7 @@ class LotoAnalizator(QMainWindow):
         print(f"Bazen '{bazen_text}' je prebačen u generator.")
 
     def initUI(self):
-        self.setWindowTitle('Loto Analizator v9.8 - Finalni Proizvod')
+        self.setWindowTitle('Loto Analizator v9.9 - Napredne Metrike')
         self.setGeometry(100, 100, 1200, 800)
         
         self.tabs = QTabWidget()
@@ -725,8 +725,8 @@ class LotoAnalizator(QMainWindow):
 
     def prikazi_about_prozor(self):
         """Prikazuje 'About' prozor sa informacijama."""
-        tekst = """<b>Loto Analizator v9.8</b><br><br>
-                   Aplikacija za statističku analizu i generisanje Loto 7/39 kombinacija.<br>
+        tekst = """<b>Loto Analizator v9.9</b><br><br>
+                   Aplikacija za statističku analizu, generisanje i bektestiranje Loto 7/39 strategija.<br>
                    Razvijena u saradnji sa Google AI.<br><br>
                    Sva prava zadržana."""
         QMessageBox.about(self, "O Programu", tekst)
