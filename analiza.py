@@ -1,4 +1,4 @@
-# analiza.py (v10.1)
+# analiza.py (v10.3)
 
 import sys
 import io
@@ -743,11 +743,44 @@ class LotoAnalizator(QMainWindow):
         self.kreiraj_bazen_dugme.clicked.connect(self.kreiraj_bazen_fuzijom)
         self.prebaci_bazen_dugme.clicked.connect(self.prebaci_bazen_u_generator)
         
+        # Bajesovska Analiza Tab (Faza 1.1, 1.2)
+        self.tab_bajes = QWidget()
+        bajes_layout = QVBoxLayout(self.tab_bajes)
+        bajes_info_label = QLabel("Ovaj alat rangira brojeve po 'stepenu verovanja' zasnovanom na iterativnom učenju iz celokupne istorije izvlačenja. Veći skor znači veće 'verovanje' da će broj biti izvučen.")
+        bajes_info_label.setWordWrap(True)
+        bajes_layout.addWidget(bajes_info_label)
+        self.bajes_pokreni_dugme = QPushButton("Pokreni Bajesovsku Analizu")
+        bajes_layout.addWidget(self.bajes_pokreni_dugme)
+        self.bajes_rezultati_tabela = QTableWidget()
+        self.bajes_rezultati_tabela.setColumnCount(2)
+        self.bajes_rezultati_tabela.setHorizontalHeaderLabels(["Broj", "Finalni Skor Verovanja"])
+        self.bajes_rezultati_tabela.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.bajes_rezultati_tabela.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.bajes_rezultati_tabela.setSortingEnabled(True)
+        bajes_layout.addWidget(self.bajes_rezultati_tabela)
+        bajes_akcije_layout = QHBoxLayout()
+        bajes_akcije_layout.addWidget(QLabel("Uzmi Top:"))
+        self.bajes_broj_za_bazen = QSpinBox()
+        self.bajes_broj_za_bazen.setRange(10, 25)
+        self.bajes_broj_za_bazen.setValue(18)
+        bajes_akcije_layout.addWidget(self.bajes_broj_za_bazen)
+        self.bajes_sacuvaj_bektest_dugme = QPushButton("Sačuvaj Bazen za Bektest")
+        bajes_akcije_layout.addWidget(self.bajes_sacuvaj_bektest_dugme)
+        self.bajes_prebaci_u_generator_dugme = QPushButton("Koristi kao Bazen u Generatoru")
+        bajes_akcije_layout.addWidget(self.bajes_prebaci_u_generator_dugme)
+        bajes_akcije_layout.addStretch()
+        bajes_layout.addLayout(bajes_akcije_layout)
+
         # Povezivanje signala za Dashboard (Zadatak 2.3)
         self.dashboard_osvezi_dugme.clicked.connect(self.osvezi_dashboard_prikaz)
         self.db_prebaci_u_generator_dugme.clicked.connect(self.dashboard_prebaci_u_generator)
 
-        self.tabs.insertTab(0, self.tab_dashboard, "📈 Strateški Dashboard"); self.tabs.addTab(self.tab_generator, "Generator"); self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena"); self.tabs.addTab(self.tab_ml_generator, "ML Generator"); self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi"); self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja"); self.tabs.addTab(self.tab_bektest, "Bektest Strategija")
+        # Povezivanje signala za Bajesovsku analizu (Faza 2.1)
+        self.bajes_pokreni_dugme.clicked.connect(self.pokreni_bajesovsku_analizu)
+        self.bajes_sacuvaj_bektest_dugme.clicked.connect(self.bajes_sacuvaj_za_bektest)
+        self.bajes_prebaci_u_generator_dugme.clicked.connect(self.bajes_prebaci_u_generator)
+
+        self.tabs.insertTab(0, self.tab_dashboard, "📈 Strateški Dashboard"); self.tabs.addTab(self.tab_generator, "Generator"); self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena"); self.tabs.addTab(self.tab_bajes, "Bajesovska Analiza"); self.tabs.addTab(self.tab_ml_generator, "ML Generator"); self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi"); self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja"); self.tabs.addTab(self.tab_bektest, "Bektest Strategija")
         
         # --- Faza 1: Kreiranje UI za Napredne Analize ---
         self.tab_napredne_analize = QWidget()
@@ -1728,6 +1761,177 @@ Analiziraj ove podatke i odgovori mi na sledeća pitanja:
             print(f"Greška u Hi-Kvadrat testu: {e}")
         finally:
             QApplication.restoreOverrideCursor()
+
+    # --- Faza 2: Implementacija Bajesovskog Analizatora ---
+
+    def pokreni_bajesovsku_analizu(self):
+        """
+        (Zadatak 2.2)
+        Vrši iterativnu analizu cele istorije kako bi se izgradio model "verovanja".
+        Svako kolo blago prilagođava verovatnoću za svaki broj.
+        """
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            self.bajes_rezultati_tabela.setSortingEnabled(False)
+            self.bajes_rezultati_tabela.clearContents()
+            self.bajes_rezultati_tabela.setRowCount(0)
+
+            # 1. Inicijalizacija ("Početno Verovanje")
+            verovanja = {broj: 1.0 / MAX_BROJ for broj in range(1, MAX_BROJ + 1)}
+            
+            # Definišemo "learning rate" - koliko jako svako kolo utiče na verovanja
+            learning_rate = 0.005 # Manji rate za stabilnije učenje
+
+            # 2. Iteracija kroz Dokaze (sva kola od najstarijeg do najnovijeg)
+            if self.loto_df.empty:
+                QMessageBox.warning(self, "Nema Podataka", "Nema istorijskih podataka za analizu.")
+                return
+
+            for index, kolo in self.loto_df.iterrows():
+                izvuceni_brojevi = set(kolo[self.kolone_za_brojeve].dropna().astype(int))
+                
+                if len(izvuceni_brojevi) != BROJEVA_U_KOMBINACIJI:
+                    continue
+
+                # 3. Ažuriranje Verovanja
+                for broj in range(1, MAX_BROJ + 1):
+                    if broj in izvuceni_brojevi:
+                        verovanja[broj] *= (1 + learning_rate)
+                    else:
+                        verovanja[broj] *= (1 - learning_rate)
+
+                # 4. Normalizacija (osigurava da suma ostane 1.0)
+                suma_verovanja = sum(verovanja.values())
+                if suma_verovanja > 0:
+                    verovanja = {broj: v / suma_verovanja for broj, v in verovanja.items()}
+
+            # 5. Prikaz Rezultata
+            sortirani_rezultati = sorted(verovanja.items(), key=lambda item: item[1], reverse=True)
+            
+            self.bajes_rezultati_tabela.setRowCount(len(sortirani_rezultati))
+            for i, (broj, skor) in enumerate(sortirani_rezultati):
+                item_broj = QTableWidgetItem(str(broj))
+                
+                item_skor = QTableWidgetItem()
+                item_skor.setData(Qt.ItemDataRole.DisplayRole, f"{skor:.8f}")
+                item_skor.setData(Qt.ItemDataRole.EditRole, skor) # Koristi se za sortiranje
+                
+                self.bajes_rezultati_tabela.setItem(i, 0, item_broj)
+                self.bajes_rezultati_tabela.setItem(i, 1, item_skor)
+
+            self.bajes_rezultati_tabela.setSortingEnabled(True)
+            self.bajes_rezultati_tabela.sortByColumn(1, Qt.SortOrder.DescendingOrder)
+            QMessageBox.information(self, "Analiza Završena", "Bajesovska analiza je uspešno završena.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške tokom Bajesovske analize: {e}")
+            print(f"Greška u pokreni_bajesovsku_analizu: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def bajes_sacuvaj_za_bektest(self):
+        """
+        (Zadatak 2.3)
+        Uzima N najboljih brojeva iz Bajesovske analize, generiše sve
+        kombinacije i čuva ih kao set za budući bektest.
+        """
+        if self.bajes_rezultati_tabela.rowCount() == 0:
+            QMessageBox.warning(self, "Greška", "Prvo morate pokrenuti Bajesovsku analizu.")
+            return
+
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            
+            N = self.bajes_broj_za_bazen.value()
+            
+            if self.bajes_rezultati_tabela.rowCount() < N:
+                QMessageBox.warning(self, "Greška", f"Nema dovoljno brojeva ({self.bajes_rezultati_tabela.rowCount()}) u rezultatima za odabir Top {N}.")
+                return
+
+            # Uzimanje Top N brojeva iz tabele
+            bazen_brojeva = []
+            for i in range(N):
+                bazen_brojeva.append(int(self.bajes_rezultati_tabela.item(i, 0).text()))
+            
+            bazen_brojeva.sort()
+            bazen_brojeva_str = ",".join(map(str, bazen_brojeva))
+
+            # Generisanje Svih Kombinacija
+            sve_kombinacije = list(itertools.combinations(bazen_brojeva, BROJEVA_U_KOMBINACIJI))
+            broj_kombinacija = len(sve_kombinacije)
+
+            if broj_kombinacija > 300000:
+                 potvrda = QMessageBox.question(self, "Veliki Broj Kombinacija", 
+                                       f"Ova akcija će generisati {broj_kombinacija} kombinacija. To može potrajati i zauzeti dosta prostora u bazi. Da li ste sigurni da želite da nastavite?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                 if potvrda == QMessageBox.StandardButton.No:
+                     return
+
+            lista_kombinacija_str = ";".join([str(tuple(k)) for k in sve_kombinacije])
+            
+            filter_podesavanja = f"Bajesovska Analiza (Top {N} brojeva)"
+
+            cursor = self.db_manager.db_conn.cursor()
+            cursor.execute("SELECT max(kolo) FROM istorijski_rezultati")
+            poslednje_poznato_kolo = cursor.fetchone()[0]
+            kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
+
+            # Upis u Bazu
+            cursor.execute("""
+                INSERT INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, broj_kombinacija, bazen_brojeva_str))
+            
+            self.db_manager.db_conn.commit()
+            self.osvezi_tabelu_bektesta()
+            QMessageBox.information(self, "Uspeh", f"Set od {broj_kombinacija} kombinacija iz Bajesovske analize je sačuvan za bektest kola {kolo_za_igru}.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške pri čuvanju bazena za bektest: {e}")
+            print(f"Greška u bajes_sacuvaj_za_bektest: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def bajes_prebaci_u_generator(self):
+        """
+        (Tačka 3)
+        Preuzima Top N brojeva iz Bajesovske analize i prebacuje ih
+        u polje za bazen na "Generator" tabu.
+        """
+        # Provera
+        if self.bajes_rezultati_tabela.rowCount() == 0:
+            QMessageBox.warning(self, "Greška", "Prvo morate pokrenuti Bajesovsku analizu.")
+            return
+
+        try:
+            # Čitanje N
+            N = self.bajes_broj_za_bazen.value()
+            
+            if self.bajes_rezultati_tabela.rowCount() < N:
+                QMessageBox.warning(self, "Greška", f"Nema dovoljno brojeva ({self.bajes_rezultati_tabela.rowCount()}) u rezultatima za odabir Top {N}.")
+                return
+
+            # Prikupljanje Brojeva
+            bazen_brojeva = []
+            for i in range(N):
+                bazen_brojeva.append(self.bajes_rezultati_tabela.item(i, 0).text())
+            
+            # Formatiranje
+            bazen_string = ", ".join(bazen_brojeva)
+
+            # Popunjavanje Generatora
+            self.bazen_brojeva_input.setText(bazen_string)
+            self.koristi_bazen_checkbox.setChecked(True)
+
+            # Prebacivanje FOKUSA
+            self.tabs.setCurrentWidget(self.tab_generator)
+
+            # Obaveštenje
+            QMessageBox.information(self, "Uspeh", f"Bazen od Top {N} brojeva iz Bajesovske analize je uspešno prebačen u Generator.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške pri prebacivanju bazena: {e}")
+            print(f"Greška u bajes_prebaci_u_generator: {e}")
 
 
 if __name__ == '__main__':

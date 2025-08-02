@@ -37,6 +37,12 @@ Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionaln
     *   Analizira željeni period (npr. poslednjih 100 kola) i izdvaja vruće, hladne i "sveže" brojeve.
     *   Omogućava fuziju ovih grupa kako bi se kreirao optimizovan bazen za generator.
 
+*   **Bajesovska Analiza:**
+    *   Novi modul koji rangira brojeve po "stepenu verovanja" zasnovanom na iterativnom učenju iz celokupne istorije.
+    *   Analiza prolazi kroz svako kolo i postepeno prilagođava skor za svaki broj.
+    *   Omogućava korisniku da na osnovu ove analize kreira i sačuva kompletan set kombinacija za budući bektesting.
+    *   **Integracija sa Generatorom:** Jednim klikom prebacite "Top N" najverovatnijih brojeva direktno u bazen za generisanje na "Generator" tabu.
+
 *   **ML Generator (Veštačka Inteligencija):**
     *   Koristi **Varijacioni Autoenkoder (VAE)**, neuronsku mrežu koja uči "suštinu" dobitnih kombinacija.
     *   Mogućnost treniranja modela na postojećim istorijskim podacima.
