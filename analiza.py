@@ -826,7 +826,7 @@ class LotoAnalizator(QMainWindow):
 
     def prikazi_about_prozor(self):
         """Prikazuje 'About' prozor sa informacijama."""
-        tekst = """<b>Loto Analizator v10.1</b><br><br>
+        tekst = """<b>Loto Analizator v10.4</b><br><br>
                    Aplikacija za statističku analizu, generisanje i bektestiranje Loto 7/39 strategija.<br>
                    Razvijena u saradnji sa Google AI.<br><br>
                    Sva prava zadržana."""
@@ -890,10 +890,10 @@ class LotoAnalizator(QMainWindow):
         print("Osvežavam prikaz bektestova...")
         try:
             cursor = self.db_manager.db_conn.cursor()
-            cursor.execute("SELECT id, kolo, datum_kreiranja, filter_podesavanja, broj_kombinacija, rezultat, indeks_promasaja, indeks_iznenadjenja FROM virtualne_igre ORDER BY id DESC")
+            cursor.execute("SELECT id, kolo, datum_kreiranja, filter_podesavanja, broj_kombinacija, rezultat, indeks_promasaja, indeks_iznenadjenja, bazen_brojeva FROM virtualne_igre ORDER BY id DESC")
             svi_bektestovi = cursor.fetchall()
             self.tabela_bektesta.setRowCount(len(svi_bektestovi))
-            kolone = ["ID", "Kolo za Igru", "Datum Kreiranja", "Podešavanja Filtera", "Br. Komb.", "Rezultat", "Min. Promašaj", "Min. Iznenađenje"]
+            kolone = ["ID", "Kolo za Igru", "Datum Kreiranja", "Podešavanja Filtera", "Br. Komb.", "Rezultat", "Min. Promašaj", "Min. Iznenađenje", "Testirani Bazen"]
             self.tabela_bektesta.setColumnCount(len(kolone)); self.tabela_bektesta.setHorizontalHeaderLabels(kolone)
             for i, red_podataka in enumerate(svi_bektestovi):
                 for j, podatak in enumerate(red_podataka):
