@@ -64,10 +64,15 @@ Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionaln
     *   **Indeks Promašaja:** Pored direktnih pogodaka, sistem meri i "blizinu" promašaja. Za svaki bektest, izračunava se najmanja ukupna numerička udaljenost od dobitne kombinacije, dajući uvid u to koliko je strategija bila "blizu".
     *   **Indeks Iznenađenja:** Kvantifikuje koliko je neka strategija statistički "neočekivana" ili "retka" u odnosu na istorijske podatke. Veći indeks znači da je strategija generisala kombinacije koje su ređe viđene u prošlosti.
 
+*   **Napredne Analize:**
+    *   Sprovodi rigorozne statističke testove za proveru hipoteza.
+    *   **Hi-Kvadrat Test:** Analizira da li postoji statistički značajna pristrasnost u pozicijama na kojima se brojevi izvlače.
+
 ## Tehnologije
 
 *   **GUI:** PySide6
 *   **Analiza Podataka:** pandas
+*   **Statistički Testovi:** scipy
 *   **Baza Podataka:** sqlite3
 *   **Grafikoni:** matplotlib, seaborn
 *   **AI Model:** Google Gemini (preko `google-generativeai`)
