@@ -1,4 +1,4 @@
-# analiza.py (v9.9)
+# analiza.py (v10.0)
 
 import sys
 import io
@@ -25,6 +25,7 @@ import re
 import google.generativeai as genai
 import ml_generator
 from data_manager import DatabaseManager
+from scipy.stats import chisquare
 
 # --- Konstante za Loto igru ---
 MAX_BROJ = 39
@@ -509,7 +510,7 @@ class LotoAnalizator(QMainWindow):
         print(f"Bazen '{bazen_text}' je prebačen u generator.")
 
     def initUI(self):
-        self.setWindowTitle('Loto Analizator v9.9 - Napredne Metrike')
+        self.setWindowTitle('Loto Analizator v10.0 - Napredne Analize')
         self.setGeometry(100, 100, 1200, 800)
         
         self.tabs = QTabWidget()
@@ -723,7 +724,41 @@ class LotoAnalizator(QMainWindow):
         self.dashboard_osvezi_dugme.clicked.connect(self.osvezi_dashboard_prikaz)
         self.db_prebaci_u_generator_dugme.clicked.connect(self.dashboard_prebaci_u_generator)
 
-        self.tabs.insertTab(0, self.tab_dashboard, "📈 Strateški Dashboard"); self.tabs.addTab(self.tab_generator, "Generator"); self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena"); self.tabs.addTab(self.tab_ml_generator, "ML Generator"); self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi"); self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja"); self.tabs.addTab(self.tab_bektest, "Bektest Strategija"); self.tabs.addTab(tab_frekvencija, "Frekvencija"); self.tabs.addTab(tab_sr_vrednosti, "Sr. Vrednosti"); self.tabs.addTab(tab_ponavljanja, "Ponavljanja"); self.tabs.addTab(tab_uzastopni, "Uzastopni"); self.tabs.addTab(tab_dekade, "Dekade"); self.tabs.addTab(tab_vremenska_serija, "Vremenska Serija"); self.tabs.addTab(tab_redosled, "Analiza Redosleda")
+        self.tabs.insertTab(0, self.tab_dashboard, "📈 Strateški Dashboard"); self.tabs.addTab(self.tab_generator, "Generator"); self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena"); self.tabs.addTab(self.tab_ml_generator, "ML Generator"); self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi"); self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja"); self.tabs.addTab(self.tab_bektest, "Bektest Strategija")
+        
+        # --- Faza 1: Kreiranje UI za Napredne Analize ---
+        self.tab_napredne_analize = QWidget()
+        layout_napredne_analize = QVBoxLayout(self.tab_napredne_analize)
+
+        # Zadatak 1.2: Dizajniranje Kontrola
+        gornji_panel_na = QWidget()
+        gornji_layout_na = QHBoxLayout(gornji_panel_na)
+        gornji_layout_na.addWidget(QLabel("Izaberite test koji želite da sprovedete:"))
+        
+        self.test_selector_combo = QComboBox()
+        self.test_selector_combo.addItems([
+            "Hi-Kvadrat Test: Pristrasnost Pozicija Izvlačenja"
+        ])
+        gornji_layout_na.addWidget(self.test_selector_combo)
+        
+        self.pokreni_test_dugme = QPushButton("Pokreni Analizu")
+        gornji_layout_na.addWidget(self.pokreni_test_dugme)
+        gornji_layout_na.addStretch(1)
+        
+        layout_napredne_analize.addWidget(gornji_panel_na)
+        
+        self.rezultat_testa_output = QTextEdit()
+        self.rezultat_testa_output.setReadOnly(True)
+        self.rezultat_testa_output.setStyleSheet("font-family: 'Courier New', monospace; background-color: #2E2E2E; color: #E0E0E0;")
+        layout_napredne_analize.addWidget(self.rezultat_testa_output)
+        
+        # Povezivanje signala (Zadatak 2.2)
+        self.pokreni_test_dugme.clicked.connect(self.pokreni_naprednu_analizu)
+        
+        self.tabs.addTab(self.tab_napredne_analize, "Napredne Analize")
+        # --- Kraj Faze 1 ---
+
+        self.tabs.addTab(tab_frekvencija, "Frekvencija"); self.tabs.addTab(tab_sr_vrednosti, "Sr. Vrednosti"); self.tabs.addTab(tab_ponavljanja, "Ponavljanja"); self.tabs.addTab(tab_uzastopni, "Uzastopni"); self.tabs.addTab(tab_dekade, "Dekade"); self.tabs.addTab(tab_vremenska_serija, "Vremenska Serija"); self.tabs.addTab(tab_redosled, "Analiza Redosleda")
         self.setCentralWidget(self.tabs); self.show()
 
     def kreiraj_meni(self):
@@ -735,7 +770,7 @@ class LotoAnalizator(QMainWindow):
 
     def prikazi_about_prozor(self):
         """Prikazuje 'About' prozor sa informacijama."""
-        tekst = """<b>Loto Analizator v9.9</b><br><br>
+        tekst = """<b>Loto Analizator v10.0</b><br><br>
                    Aplikacija za statističku analizu, generisanje i bektestiranje Loto 7/39 strategija.<br>
                    Razvijena u saradnji sa Google AI.<br><br>
                    Sva prava zadržana."""
@@ -1567,6 +1602,97 @@ Analiziraj ove podatke i odgovori mi na sledeća pitanja:
         except Exception as e:
             QMessageBox.critical(self, "Greška Baze Podataka", f"Došlo je do greške prilikom čitanja bektestova: {e}")
             print(f"Greška kod AI analize bektesta: {e}")
+
+    # --- Faza 2: Implementacija Logike Hi-Kvadrat Testa ---
+
+    def pokreni_naprednu_analizu(self):
+        """
+        Glavna funkcija koja se poziva na klik dugmeta "Pokreni Analizu".
+        Proverava koji je test izabran i poziva odgovarajuću funkciju.
+        (Zadatak 2.3)
+        """
+        izabrani_test = self.test_selector_combo.currentText()
+        
+        if "Hi-Kvadrat Test" in izabrani_test:
+            self.sprovedi_hi_kvadrat_test_pozicija()
+        else:
+            self.rezultat_testa_output.setText("Izaberite validan test.")
+
+    def sprovedi_hi_kvadrat_test_pozicija(self):
+        """
+        Sprovodi Hi-Kvadrat test za analizu pristrasnosti pozicija izvlačenja.
+        (Zadatak 2.4)
+        """
+        self.rezultat_testa_output.clear()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        
+        try:
+            # 1. Prikupljanje Posmatranih Vrednosti (Observed)
+            # Koristimo podatke iz cele istorije za najtačniji test
+            self.ucitaj_i_analiziraj_podatke(period_analize=0) 
+            observed_freq = self.poziciona_frekvencija.values.flatten()
+
+            # Ako nema podataka, prekini
+            if self.loto_df.empty or observed_freq.sum() == 0:
+                self.rezultat_testa_output.setText("Nema dovoljno podataka za sprovođenje testa.")
+                return
+
+            # 2. Računanje Očekivanih Vrednosti (Expected)
+            ukupan_broj_kola = len(self.loto_df)
+            ukupan_broj_izvlacenja = ukupan_broj_kola * BROJEVA_U_KOMBINACIJI
+            
+            # Očekivana frekvencija za svako od 39*7 polja
+            expected_value = ukupan_broj_izvlacenja / (MAX_BROJ * BROJEVA_U_KOMBINACIJI)
+            
+            # Kreiramo listu očekivanih vrednosti koja odgovara obliku posmatranih
+            expected_freq = [expected_value] * len(observed_freq)
+
+            # 3. Sprovođenje Testa
+            # Uklanjamo polja gde je i posmatrana i očekivana vrednost 0 da ne utiču na test
+            valid_indices = [i for i, obs in enumerate(observed_freq) if obs > 0]
+            observed_valid = [observed_freq[i] for i in valid_indices]
+            expected_valid = [expected_freq[i] for i in valid_indices]
+
+            if not observed_valid:
+                 self.rezultat_testa_output.setText("Nema validnih podataka za testiranje (sve frekvencije su 0).")
+                 return
+
+            chi2_stat, p_value = chisquare(f_obs=observed_valid, f_exp=expected_valid)
+
+            # 4. Formatiranje Izlaza i Tumačenje
+            prag_znacajnosti = 0.05
+            
+            izvestaj = []
+            izvestaj.append("--- Hi-Kvadrat Test: Pristrasnost Pozicija Izvlačenja ---")
+            izvestaj.append("")
+            izvestaj.append(f"Analizirani period: Sva Kola ({ukupan_broj_kola})")
+            izvestaj.append("-" * 55)
+            izvestaj.append("Rezultati testa:")
+            izvestaj.append(f"- Hi-kvadrat statistika: {chi2_stat:.2f}")
+            izvestaj.append(f"- P-vrednost (p-value):   {p_value:.4f}")
+            izvestaj.append(f"- Prag značajnosti (α): {prag_znacajnosti}")
+            izvestaj.append("-" * 55)
+            izvestaj.append("Zaključak:")
+
+            if p_value < prag_znacajnosti:
+                izvestaj.append(f"P-vrednost ({p_value:.4f}) je MANJA od praga značajnosti ({prag_znacajnosti}).")
+                izvestaj.append("Na osnovu dostupnih podataka, POSTOJI statistički značajan dokaz")
+                izvestaj.append("koji ukazuje na to da proces izvlačenja brojeva po pozicijama NIJE")
+                izvestaj.append("potpuno nasumičan, tj. da postoji određena pristrasnost.")
+            else:
+                izvestaj.append(f"P-vrednost ({p_value:.4f}) je VEĆA od praga značajnosti ({prag_znacajnosti}).")
+                izvestaj.append("Na osnovu dostupnih podataka, NE POSTOJI statistički značajan dokaz")
+                izvestaj.append("koji bi ukazao na to da je proces izvlačenja brojeva po pozicijama pristrasan.")
+                izvestaj.append("Uočena odstupanja su u granicama očekivanog za nasumičan proces.")
+
+            self.rezultat_testa_output.setText("\n".join(izvestaj))
+
+        except Exception as e:
+            self.rezultat_testa_output.setText(f"Došlo je do greške prilikom sprovođenja testa:\n{e}")
+            print(f"Greška u Hi-Kvadrat testu: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

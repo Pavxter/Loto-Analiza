@@ -1,3 +1,4 @@
+
 # Glavne zavisnosti aplikacije
 pyside6
 pandas
@@ -5,6 +6,10 @@ matplotlib
 seaborn
 python-dotenv
 google-generativeai
+scipy
 
 # Zavisnosti za ML model
 tensorflow
+
+# Zavisnost za rad sa Excel fajlovima (opciono, za inicijalni unos)
+openpyxl
