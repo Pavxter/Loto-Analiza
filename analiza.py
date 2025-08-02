@@ -308,7 +308,15 @@ class LotoAnalizator(QMainWindow):
             analizirani_df = self.loto_df; self.naslov_sufiks = f"(Sva Kola - {len(self.loto_df)})"
         print(f"--- Analiza se vrši na: {self.naslov_sufiks} ---")
         self.kolone_za_brojeve = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6', 'b7']; self.brojevi_po_kolima = analizirani_df[self.kolone_za_brojeve].dropna().astype(int); self.srednje_vrednosti = self.brojevi_po_kolima.mean(axis=1); self.globalni_prosek = self.srednje_vrednosti.mean(); self.globalna_std_dev = self.srednje_vrednosti.std()
-        svi_izvuceni_brojevi = pd.concat([self.brojevi_po_kolima[col] for col in self.brojevi_po_kolima]); self.frekvencija = svi_izvuceni_brojevi.value_counts(); sortirani_po_frekvenciji = self.frekvencija.sort_values(ascending=False); broj_u_kategoriji = 13
+        
+        # Centralizovana analiza par/nepar odnosa
+        if self.brojevi_po_kolima.empty:
+            self.najcesci_par_nepar = "N/A"
+        else:
+            par_nepar_counts = self.brojevi_po_kolima.apply(lambda row: tuple(sorted([sum(1 for x in row if x % 2 == 0), sum(1 for x in row if x % 2 != 0)])), axis=1).value_counts()
+            self.najcesci_par_nepar = par_nepar_counts.index[0] if not par_nepar_counts.empty else "N/A"
+
+        svi_izvuceni_brojevi = pd.concat([self.brojevi_po_kolima[col] for col in self.brojevi_po_kolima]); self.frekvencija = svi_izvuceni_brojevi.value_counts(); sortirani_po_frekvenciji = self.frekvencija.sort_values(ascending=False)
         self.vruci_brojevi = set(sortirani_po_frekvenciji.head(BROJ_KATEGORIJA_FREKV).index); self.hladni_brojevi = set(sortirani_po_frekvenciji.tail(BROJ_KATEGORIJA_FREKV).index); self.neutralni_brojevi = set(range(1, MAX_BROJ + 1)) - self.vruci_brojevi - self.hladni_brojevi
         poslednjih_10_kola = analizirani_df.tail(PERIOD_SVEZIH_KOLA); self.svezi_brojevi = set(pd.concat([poslednjih_10_kola[col] for col in self.kolone_za_brojeve]).unique())
         self.analiza_ponavljanja = {broj: kola_sa_brojem.diff().dropna().mean() if len(kola_sa_brojem := analizirani_df[analizirani_df[self.kolone_za_brojeve].eq(broj).any(axis=1)]['id']) > 1 else 0 for broj in range(1, MAX_BROJ + 1)}
@@ -359,11 +367,9 @@ class LotoAnalizator(QMainWindow):
             self.db_prosek_label.setText(f"{self.globalni_prosek:.2f}")
             self.db_stddev_label.setText(f"{self.globalna_std_dev:.2f}")
             
-            # Analiza par/nepar odnosa za dashboard
-            par_nepar_counts = self.brojevi_po_kolima.apply(lambda row: tuple(sorted([sum(1 for x in row if x % 2 == 0), sum(1 for x in row if x % 2 != 0)])), axis=1).value_counts()
-            najcesci_par_nepar = par_nepar_counts.index[0] if not par_nepar_counts.empty else "N/A"
-            if najcesci_par_nepar != "N/A":
-                self.db_par_nepar_label.setText(f"{najcesci_par_nepar[0]} parna / {najcesci_par_nepar[1]} neparna")
+            # Prikaz centralizovanog rezultata za par/nepar odnos
+            if self.najcesci_par_nepar != "N/A":
+                self.db_par_nepar_label.setText(f"{self.najcesci_par_nepar[0]} parna / {self.najcesci_par_nepar[1]} neparna")
             else:
                 self.db_par_nepar_label.setText("N/A")
 
@@ -590,7 +596,11 @@ class LotoAnalizator(QMainWindow):
         generisi_layout = QHBoxLayout(); self.ml_broj_predloga = QSpinBox(); self.ml_broj_predloga.setRange(1, 50); self.ml_broj_predloga.setValue(10)
         self.generisi_ml_dugme = QPushButton("Generiši ML Predloge"); self.generisi_ml_dugme.clicked.connect(self.generisi_ml_predloge)
         generisi_layout.addWidget(QLabel("Broj predloga:")); generisi_layout.addWidget(self.ml_broj_predloga); generisi_layout.addWidget(self.generisi_ml_dugme)
-        self.ml_rezultati_output = QListWidget(); ml_layout.addLayout(generisi_layout); ml_layout.addWidget(self.ml_rezultati_output)
+        ml_layout.addLayout(generisi_layout)
+        self.ml_rezultati_output = QListWidget()
+        self.ml_rezultati_output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.ml_rezultati_output.customContextMenuRequested.connect(self.prikazi_kontekstni_meni_ml)
+        ml_layout.addWidget(self.ml_rezultati_output)
         self.sacuvaj_ml_set_dugme = QPushButton("Sačuvaj Ovaj ML Set za Bektest"); self.sacuvaj_ml_set_dugme.clicked.connect(self.sacuvaj_ml_set_za_bektest)
         ml_layout.addWidget(self.sacuvaj_ml_set_dugme)
         self.ml_status_label = QLabel("Status: Model nije istreniran."); self.ml_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter); ml_layout.addWidget(self.ml_status_label)
@@ -735,22 +745,38 @@ class LotoAnalizator(QMainWindow):
         print("Osvežavam prikaz tiketa...")
         try:
             cursor = self.db_manager.db_conn.cursor()
-            cursor.execute("SELECT id, kombinacija, status, poslednji_rezultat, datum_provere FROM odigrani_tiketi ORDER BY id")
+            cursor.execute("SELECT id, kombinacija, status, poslednji_rezultat, datum_provere, dodatne_metrike FROM odigrani_tiketi ORDER BY id")
             svi_tiketi = cursor.fetchall()
             self.tabela_tiketa.setRowCount(len(svi_tiketi))
             kolone = ["ID", "Kombinacija", "Status", "Poslednji Pogodak", "Datum Provere", "Sr. Vrednost"]
             self.tabela_tiketa.setColumnCount(len(kolone)); self.tabela_tiketa.setHorizontalHeaderLabels(kolone)
             for i, red_podataka in enumerate(svi_tiketi):
-                self.tabela_tiketa.setItem(i, 0, QTableWidgetItem(str(red_podataka[0]))); self.tabela_tiketa.setItem(i, 1, QTableWidgetItem(red_podataka[1])); self.tabela_tiketa.setItem(i, 2, QTableWidgetItem(red_podataka[2]))
+                id_tiketa, kombinacija, status, pogodak, datum_provere, dodatne_metrike_json = red_podataka
+                self.tabela_tiketa.setItem(i, 0, QTableWidgetItem(str(id_tiketa)))
+                self.tabela_tiketa.setItem(i, 1, QTableWidgetItem(kombinacija))
+                self.tabela_tiketa.setItem(i, 2, QTableWidgetItem(status))
+
                 pogodak_str = str(red_podataka[3]) if red_podataka[3] is not None else ""; self.tabela_tiketa.setItem(i, 3, QTableWidgetItem(pogodak_str))
                 datum_str = str(red_podataka[4]) if red_podataka[4] is not None else ""; self.tabela_tiketa.setItem(i, 4, QTableWidgetItem(datum_str))
                 
-                komb_str = red_podataka[1]
-                if komb_str.startswith("(ML)"):
-                    komb_str = komb_str[4:]
+                # Korišćenje regularnog izraza za uklanjanje bilo kog prefiksa u zagradama (npr. (ML), (GEN), (POOL))
+                komb_str_sa_prefiskom = red_podataka[1]
+                komb_str_bez_prefiksa = re.sub(r'^\(\w+\)', '', komb_str_sa_prefiskom)
 
-                brojevi_int = [int(b) for b in komb_str.strip("()").split(",")]; srednja_vrednost = mean(brojevi_int)
+                brojevi_int = [int(b) for b in komb_str_bez_prefiksa.strip("()").split(",")]; srednja_vrednost = mean(brojevi_int)
                 item_sr_vrednost = QTableWidgetItem(f"{srednja_vrednost:.2f}"); self.tabela_tiketa.setItem(i, 5, item_sr_vrednost)
+
+                # NOVO: Postavljanje tooltip-a sa dodatnim metrikama
+                if dodatne_metrike_json:
+                    try:
+                        metrike = json.loads(dodatne_metrike_json)
+                        tooltip_text = f"<b>Detalji Provere:</b><br>"
+                        tooltip_text += f"Indeks Promašaja: <b>{metrike.get('promasaj', 'N/A')}</b><br>"
+                        tooltip_text += f"Indeks Iznenađenja: <b>{metrike.get('iznenadjenje', 'N/A'):.2f}</b>"
+                        self.tabela_tiketa.item(i, 3).setToolTip(tooltip_text)
+                    except (json.JSONDecodeError, TypeError): pass # Ignorišemo greške ako JSON nije validan
+                elif pogodak is None:
+                    self.tabela_tiketa.item(i, 3).setToolTip("Metrike će biti dostupne nakon unosa rezultata kola.")
             self.tabela_tiketa.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers); self.tabela_tiketa.resizeColumnsToContents()
         except Exception as e: print(f"Greška prilikom osvežavanja tabele tiketa: {e}")
     
@@ -846,6 +872,20 @@ class LotoAnalizator(QMainWindow):
         izabrana_akcija = kontekstni_meni.exec(self.tabela_bektesta.viewport().mapToGlobal(position))
         if izabrana_akcija == obrisi_akcija: self.obrisi_bektest(id_unosa)
 
+    def prikazi_kontekstni_meni_ml(self, position):
+        izabrani_item = self.ml_rezultati_output.itemAt(position)
+        if not izabrani_item or not izabrani_item.text() or "---" in izabrani_item.text() or "Generišem" in izabrani_item.text():
+            return
+
+        kontekstni_meni = QMenu(self)
+        dodaj_u_pracenje_akcija = kontekstni_meni.addAction("Dodaj u Praćenje Tiketa")
+        
+        izabrana_akcija = kontekstni_meni.exec(self.ml_rezultati_output.viewport().mapToGlobal(position))
+        
+        if izabrana_akcija == dodaj_u_pracenje_akcija:
+            self.ml_rezultati_output.setCurrentItem(izabrani_item)
+            self.dodaj_ml_tiket_u_pracenje()
+
     def izmeni_unos_istorije(self, unos_id):
         cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT kolo, datum, b1, b2, b3, b4, b5, b6, b7 FROM istorijski_rezultati WHERE id=?", (unos_id,)); podaci = cursor.fetchone()
         if not podaci: return
@@ -905,7 +945,14 @@ class LotoAnalizator(QMainWindow):
         period_text = f"Posl. {self.analiza_period_input.value()}" if self.analiza_period_input.value() > 0 else "Sva kola"
         unikat_text = "Da" if self.unikat_filter_checkbox.isChecked() else "Ne"
         svezina_text = self.strategija_svezine_input.currentText().split(" ")[0]
-        filter_podesavanja = (f"Period: {period_text}, Unikat: {unikat_text}, Svežina: {svezina_text}, "
+
+        # Dodavanje prefiksa za tip strategije radi lakšeg prepoznavanja
+        if self.koristi_bazen_checkbox.isChecked() and self.bazen_brojeva_input.text():
+            tip_strategije = "Tip: Bazen"
+        else:
+            tip_strategije = "Tip: Generator"
+
+        filter_podesavanja = (f"{tip_strategije} | Period: {period_text}, Unikat: {unikat_text}, Svežina: {svezina_text}, "
                               f"SrV: {self.min_sv_input.value()}-{self.max_sv_input.value()}, "
                               f"P/N: {self.parni_input.value()}/{self.neparni_input.value()}, V/H/N: {self.vruci_input.value()}/{self.hladni_input.value()}/{self.neutralni_input.value()}")
         bazen_brojeva_str = self.bazen_brojeva_input.text() if self.koristi_bazen_checkbox.isChecked() else ""
@@ -952,7 +999,14 @@ class LotoAnalizator(QMainWindow):
         else:
             QMessageBox.warning(self, "Greška", "Nije izabrana validna kombinacija.")
             return
-            
+
+        # Dodavanje prefiksa za lakšu identifikaciju porekla tiketa
+        if self.koristi_bazen_checkbox.isChecked() and self.bazen_brojeva_input.text():
+            prefiks = "(POOL)"
+        else:
+            prefiks = "(GEN)"
+        kombinacija_za_upis = prefiks + kombinacija_za_upis
+
         print(f"Dodajem tiket u praćenje: {kombinacija_za_upis}")
         try:
             cursor = self.db_manager.db_conn.cursor()
@@ -1141,6 +1195,20 @@ class LotoAnalizator(QMainWindow):
                 skorovi_finalnih.append((skor, kandidat_tuple))
         return skorovi_finalnih
 
+    def izracunaj_promasaj_za_kombinaciju(self, kombinacija_lista, dobitna_kombinacija_set):
+        """
+        Izračunava "indeks promašaja" za JEDNU kombinaciju.
+        """
+        if not kombinacija_lista or not dobitna_kombinacija_set:
+            return None
+        try:
+            trenutni_promasaj = 0
+            for dobitni_broj in dobitna_kombinacija_set:
+                najmanja_razlika = min(abs(dobitni_broj - broj_u_komb) for broj_u_komb in kombinacija_lista)
+                trenutni_promasaj += najmanja_razlika
+            return trenutni_promasaj
+        except Exception: return None
+
     def izracunaj_indeks_promasaja(self, set_kombinacija, dobitna_kombinacija_set):
         """
         Izračunava "indeks promašaja" za dati set kombinacija.
@@ -1237,19 +1305,29 @@ class LotoAnalizator(QMainWindow):
         uspeh_dodavanja = self.db_manager.add_historical_result(kolo, datum, dobitni_brojevi_lista)
         
         cursor = self.db_manager.db_conn.cursor()
-        cursor.execute("SELECT id, kombinacija FROM odigrani_tiketi WHERE status = 'aktivan'")
+        cursor.execute("SELECT id, kombinacija FROM odigrani_tiketi") # Proveravamo sve, ne samo aktivne
         tiketi_za_proveru = cursor.fetchall()
+
+        # Priprema modela verovatnoće za Indeks Iznenađenja (radimo jednom za sve tikete)
+        istorija_pre_kola = self.loto_df[self.loto_df['kolo'] < kolo]
+        model_verovatnoce = self.izracunaj_model_verovatnoce(istorija_pre_kola, 0) # Analiza cele istorije pre ovog kola
+
         for tiket_id, tiket_kombinacija_str in tiketi_za_proveru:
             try:
-                # ISPRAVKA: Rukovanje sa (ML) prefiksom
-                komb_str = tiket_kombinacija_str
-                if komb_str.startswith("(ML)"):
-                    komb_str = komb_str[4:]
+                # NOVO: Robusno rukovanje sa bilo kojim prefiksom (ML), (GEN), (POOL)
+                komb_str_bez_prefiksa = re.sub(r'^\(\w+\)', '', tiket_kombinacija_str)
+                tiket_brojevi_lista = [int(b) for b in komb_str_bez_prefiksa.strip("()").split(",")]
+                tiket_brojevi = set(tiket_brojevi_lista)
 
-                tiket_brojevi = set(int(b) for b in komb_str.strip("()").split(","))
+                # Računanje dodatnih metrika
+                promasaj = self.izracunaj_promasaj_za_kombinaciju(tiket_brojevi_lista, dobitni_brojevi_set)
+                iznenadjenje = self.izracunaj_indeks_iznenadjenja(tiket_brojevi_lista, model_verovatnoce)
+                metrike_json = json.dumps({"promasaj": promasaj, "iznenadjenje": iznenadjenje}) if promasaj is not None and iznenadjenje is not None else None
+
                 broj_pogodaka = len(dobitni_brojevi_set.intersection(tiket_brojevi))
                 datum_sada = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                cursor.execute("UPDATE odigrani_tiketi SET poslednji_rezultat = ?, datum_provere = ? WHERE id = ?", (broj_pogodaka, datum_sada, tiket_id))
+                cursor.execute("UPDATE odigrani_tiketi SET poslednji_rezultat = ?, datum_provere = ?, dodatne_metrike = ? WHERE id = ?", 
+                               (broj_pogodaka, datum_sada, metrike_json, tiket_id))
             except (ValueError, IndexError):
                 print(f"Greška: Nije moguće parsirati tiket ID: {tiket_id} sa kombinacijom: '{tiket_kombinacija_str}'. Preskačem proveru za ovaj tiket.")
                 continue

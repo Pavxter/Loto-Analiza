@@ -14,8 +14,7 @@ class DatabaseManager:
     def setup_database(self):
         """Kreira tabele ako ne postoje i vrši migracije."""
         cursor = self.db_conn.cursor()
-        cursor.execute('''CREATE TABLE IF NOT EXISTS istorijski_rezultati (id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER, datum TEXT, b1 INTEGER, b2 INTEGER, b3 INTEGER, b4 INTEGER, b5 INTEGER, b6 INTEGER, b7 INTEGER, UNIQUE(kolo, datum))''')
-        cursor.execute('''CREATE TABLE IF NOT EXISTS odigrani_tiketi (id INTEGER PRIMARY KEY AUTOINCREMENT, kombinacija TEXT UNIQUE, status TEXT DEFAULT 'aktivan', poslednji_rezultat INTEGER, datum_provere TEXT)''')
+        cursor.execute('''CREATE TABLE IF NOT EXISTS istorijski_rezultati (id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER, datum TEXT, b1 INTEGER, b2 INTEGER, b3 INTEGER, b4 INTEGER, b5 INTEGER, b6 INTEGER, b7 INTEGER, UNIQUE(kolo, datum))'''); cursor.execute('''CREATE TABLE IF NOT EXISTS odigrani_tiketi (id INTEGER PRIMARY KEY AUTOINCREMENT, kombinacija TEXT UNIQUE, status TEXT DEFAULT 'aktivan', poslednji_rezultat INTEGER, datum_provere TEXT, dodatne_metrike TEXT)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS ai_log (id INTEGER PRIMARY KEY AUTOINCREMENT, datum_vreme TEXT, tip_zahteva TEXT, prompt TEXT, odgovor TEXT)''')
         cursor.execute('''CREATE TABLE IF NOT EXISTS virtualne_igre (
             id INTEGER PRIMARY KEY AUTOINCREMENT, 
@@ -66,6 +65,17 @@ class DatabaseManager:
                 print("--- Migracija uspešna! ---")
         except Exception as e:
             print(f"Greška prilikom migracije baze (dodavanje kolone 'indeks_iznenadjenja'): {e}")
+
+        # Migracija: Dodavanje kolone 'dodatne_metrike' u tabelu 'odigrani_tiketi'
+        try:
+            cursor.execute("PRAGMA table_info(odigrani_tiketi)")
+            kolone = [info[1] for info in cursor.fetchall()]
+            if 'dodatne_metrike' not in kolone:
+                print("--- MIGRACIJA BAZE: Dodajem kolonu 'dodatne_metrike' u tabelu 'odigrani_tiketi'... ---")
+                cursor.execute("ALTER TABLE odigrani_tiketi ADD COLUMN dodatne_metrike TEXT")
+                self.db_conn.commit(); print("--- Migracija uspešna! ---")
+        except Exception as e:
+            print(f"Greška prilikom migracije baze (dodavanje kolone 'dodatne_metrike'): {e}")
 
         self.db_conn.commit()
         self.import_from_csv_if_needed('loto_podaci.csv')
