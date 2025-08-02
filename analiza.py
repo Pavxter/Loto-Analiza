@@ -1,4 +1,4 @@
-# analiza.py (v10.0)
+# analiza.py (v10.1)
 
 import sys
 import io
@@ -329,7 +329,23 @@ class LotoAnalizator(QMainWindow):
             counts = analizirani_df[col_name].value_counts()
             if not counts.empty: self.poziciona_frekvencija.loc[counts.index, f'poz_{i}'] = counts
         self.pozicioni_prosek = analizirani_df[self.kolone_za_brojeve].mean()
-        print("--- Sve analize uspešno završene! ---")
+
+        # Zadatak 1: Kreiranje "Modela Pristrasnosti"
+        self.model_pristrasnosti = {}
+        broj_kola_u_analizi = len(analizirani_df)
+        if broj_kola_u_analizi > 0:
+            # Očekivana frekvencija je broj kola podeljen sa brojem mogućih brojeva.
+            # Svaki broj ima istu šansu da bude izvučen na bilo kojoj poziciji u idealnom scenariju.
+            ocekivana_frekvencija = broj_kola_u_analizi / MAX_BROJ
+            if ocekivana_frekvencija > 0:
+                for poz_idx, poz_col in enumerate(self.poziciona_frekvencija.columns, 1):
+                    for broj_idx, stvarna_frekvencija in self.poziciona_frekvencija[poz_col].items():
+                        broj = broj_idx
+                        # Skor = Stvarno / Očekivano. > 1 je "vruće", < 1 je "hladno".
+                        skor = stvarna_frekvencija / ocekivana_frekvencija
+                        self.model_pristrasnosti[(broj, poz_idx)] = skor
+        
+        print("--- Sve analize uspešno završene (uključujući model pristrasnosti)! ---")
 
     def osvezi_sve_analize(self):
         period = self.analiza_period_input.value() if hasattr(self, 'analiza_period_input') else 0
@@ -510,7 +526,7 @@ class LotoAnalizator(QMainWindow):
         print(f"Bazen '{bazen_text}' je prebačen u generator.")
 
     def initUI(self):
-        self.setWindowTitle('Loto Analizator v10.0 - Napredne Analize')
+        self.setWindowTitle('Loto Analizator v10.1 - Napredne Analize')
         self.setGeometry(100, 100, 1200, 800)
         
         self.tabs = QTabWidget()
@@ -622,6 +638,13 @@ class LotoAnalizator(QMainWindow):
         forma_layout.addRow(QLabel("<b>--- Fuzija i Optimizacija ---</b>")); forma_layout.addRow(self.diverzitet_checkbox); forma_layout.addRow(QLabel("Max dozvoljena sličnost:"), self.slicnost_input)
         self.min_sv_input = QDoubleSpinBox(); self.min_sv_input.setRange(4, 36); self.min_sv_input.setDecimals(2); self.min_sv_input.setValue(17.14); self.max_sv_input = QDoubleSpinBox(); self.max_sv_input.setRange(4, 36); self.max_sv_input.setDecimals(2); self.max_sv_input.setValue(22.86); self.parni_input = QSpinBox(); self.parni_input.setRange(0, 7); self.parni_input.setValue(3); self.neparni_input = QSpinBox(); self.neparni_input.setRange(0, 7); self.neparni_input.setValue(4); self.vruci_input = QSpinBox(); self.vruci_input.setRange(0, 7); self.vruci_input.setValue(2); self.neutralni_input = QSpinBox(); self.neutralni_input.setRange(0, 7); self.neutralni_input.setValue(3); self.hladni_input = QSpinBox(); self.hladni_input.setRange(0, 7); self.hladni_input.setValue(2); self.uzastopni_input = QSpinBox(); self.uzastopni_input.setRange(0, 6); self.uzastopni_input.setValue(1); self.dekada_max_input = QSpinBox(); self.dekada_max_input.setRange(1, 7); self.dekada_max_input.setValue(3);
         forma_layout.addRow(QLabel("<b>--- Filteri Srednje Vrednosti ---</b>")); forma_layout.addRow(QLabel("Minimalna sr. vrednost:"), self.min_sv_input); forma_layout.addRow(QLabel("Maksimalna sr. vrednost:"), self.max_sv_input); forma_layout.addRow(QLabel("<b>--- Filteri Tipa Broja ---</b>")); forma_layout.addRow(QLabel("Broj parnih:"), self.parni_input); forma_layout.addRow(QLabel("Broj neparnih:"), self.neparni_input); forma_layout.addRow(QLabel("<b>--- Filteri Frekvencije (Istorijski) ---</b>")); forma_layout.addRow(QLabel("Broj 'vrućih' brojeva:"), self.vruci_input); forma_layout.addRow(QLabel("Broj 'neutralnih' brojeva:"), self.neutralni_input); forma_layout.addRow(QLabel("Broj 'hladnih' brojeva:"), self.hladni_input); forma_layout.addRow(QLabel("<b>--- Strukturni Filteri ---</b>")); forma_layout.addRow(QLabel("Broj uzastopnih parova (tačno):"), self.uzastopni_input); forma_layout.addRow(QLabel("Max brojeva iz jedne dekade:"), self.dekada_max_input)
+        
+        # Zadatak 3: Dodavanje Nove Kontrole na UI
+        forma_layout.addRow(QLabel("<b>--- Bodovanje Pristrasnosti Mašine (Hi-Kvadrat) ---</b>"))
+        self.primeni_pristrasnost_checkbox = QCheckBox("Primeni bodovanje po pristrasnosti mašine")
+        self.primeni_pristrasnost_checkbox.setToolTip("Ako je uključeno, favorizuje kombinacije koje odgovaraju 'vrućim' pozicijama za brojeve, naučenim iz istorije.")
+        forma_layout.addRow(self.primeni_pristrasnost_checkbox)
+
         self.analiza_period_input.valueChanged.connect(self.osvezi_sve_analize)
         dugmici_layout = QHBoxLayout(); self.generisi_dugme = QPushButton("Generiši Kombinacije"); self.generisi_dugme.clicked.connect(self.pokreni_generisanje); self.ai_dugme = QPushButton("🤖 Pitaj AI za Preporuku"); self.ai_dugme.clicked.connect(self.pokreni_ai_preporuku); self.ai_dugme.setEnabled(False); dugmici_layout.addWidget(self.generisi_dugme); dugmici_layout.addWidget(self.ai_dugme);
         self.broj_kombinacija_label = QLabel("Broj pronađenih kombinacija: 0"); self.broj_kombinacija_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.rangiraj_checkbox = QCheckBox("Prikaži samo rangiranih Top 50"); self.rangiraj_checkbox.setChecked(True)
@@ -770,7 +793,7 @@ class LotoAnalizator(QMainWindow):
 
     def prikazi_about_prozor(self):
         """Prikazuje 'About' prozor sa informacijama."""
-        tekst = """<b>Loto Analizator v10.0</b><br><br>
+        tekst = """<b>Loto Analizator v10.1</b><br><br>
                    Aplikacija za statističku analizu, generisanje i bektestiranje Loto 7/39 strategija.<br>
                    Razvijena u saradnji sa Google AI.<br><br>
                    Sva prava zadržana."""
@@ -1207,6 +1230,19 @@ class LotoAnalizator(QMainWindow):
                 if abs(ritam_broja - prosek_svih_ritmova) < 3:
                     skor_ritma += 5
             skor += skor_ritma
+
+        # Zadatak 2: Unapređenje Sistema Bodovanja (Bonus/Kazna za Pristrasnost)
+        if self.primeni_pristrasnost_checkbox.isChecked():
+            skor_pristrasnosti = 0
+            # Kombinacija je sortirana, tako da je pozicija i-tog elementa (i+1)
+            for i, broj in enumerate(kombinacija):
+                pozicija = i + 1
+                # Uzimamo skor iz modela, ako ne postoji, podrazumevana vrednost je 1 (neutralno)
+                bonus_skor = self.model_pristrasnosti.get((broj, pozicija), 1.0)
+                # Dodajemo bonus/kaznu. Množimo sa 10 da bi imalo veći uticaj.
+                # (skor - 1) pretvara skorove u opseg oko nule (npr. 1.2 -> 0.2, 0.8 -> -0.2)
+                skor_pristrasnosti += (bonus_skor - 1) * 10 
+            skor += skor_pristrasnosti
             
         return round(skor, 2)
 

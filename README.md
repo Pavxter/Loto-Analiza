@@ -29,6 +29,7 @@ Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionaln
         *   Maksimalan broj brojeva iz iste dekade.
     *   Mogućnost generisanja iz celokupnog opsega (1-39) ili iz prilagođenog **bazena brojeva**.
     *   Bodovanje i rangiranje generisanih kombinacija.
+    *   **Bodovanje po Pristrasnosti Mašine:** Opciono primenjuje dodatni nivo bodovanja koji favorizuje kombinacije koje se poklapaju sa statistički "vrućim" pozicijama za određene brojeve, na osnovu Hi-Kvadrat analize.
     *   Filter za **diverzitet** koji eliminiše previše slične kombinacije.
 
 *   **Kreator Bazena:**
@@ -82,10 +83,9 @@ Aplikacija je organizovana u tabove, od kojih svaki nudi specifičnu funkcionaln
 
 1.  **Klonirajte repozitorijum:**
     ```bash
-    git clone https://github.com/KorisnickoIme/Loto-Analiza.git
+    git clone https://github.com/Pavxter/Loto-Analiza.git
     cd Loto-Analiza
     ```
-    (Zamenite `KorisnickoIme` sa vašim korisničkim imenom na GitHubu).
 
 2.  **Instalirajte zavisnosti:**
     Preporučuje se kreiranje virtualnog okruženja.
