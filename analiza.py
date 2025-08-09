@@ -1,4 +1,4 @@
-# analiza.py (v10.3)
+# analiza.py (v10.4)
 
 import sys
 import io
@@ -771,6 +771,34 @@ class LotoAnalizator(QMainWindow):
         bajes_akcije_layout.addStretch()
         bajes_layout.addLayout(bajes_akcije_layout)
 
+        # Bajesovski Hibrid Tab (Zadatak 1.1, 1.2)
+        self.tab_hibrid = QWidget()
+        hibrid_layout = QVBoxLayout(self.tab_hibrid)
+        hibrid_info_label = QLabel("Ovaj model kombinuje analizu frekvencije, Bajesovsko učenje i povezanost brojeva da bi kreirao optimizovan bazen.")
+        hibrid_info_label.setWordWrap(True)
+        hibrid_layout.addWidget(hibrid_info_label)
+        self.hibrid_pokreni_dugme = QPushButton("Pokreni Hibridnu Analizu")
+        hibrid_layout.addWidget(self.hibrid_pokreni_dugme)
+        self.hibrid_rezultati_tabela = QTableWidget()
+        self.hibrid_rezultati_tabela.setColumnCount(3)
+        self.hibrid_rezultati_tabela.setHorizontalHeaderLabels(["Broj", "Finalni Hibridni Skor", "Komponente Skora (Bajes+Povezanost)"])
+        self.hibrid_rezultati_tabela.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.hibrid_rezultati_tabela.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.hibrid_rezultati_tabela.setSortingEnabled(True)
+        hibrid_layout.addWidget(self.hibrid_rezultati_tabela)
+        hibrid_akcije_layout = QHBoxLayout()
+        hibrid_akcije_layout.addWidget(QLabel("Uzmi Top:"))
+        self.hibrid_broj_za_bazen = QSpinBox()
+        self.hibrid_broj_za_bazen.setRange(10, 20)
+        self.hibrid_broj_za_bazen.setValue(15)
+        hibrid_akcije_layout.addWidget(self.hibrid_broj_za_bazen)
+        self.hibrid_sacuvaj_bektest_dugme = QPushButton("Sačuvaj Hibridni Bazen za Bektest")
+        hibrid_akcije_layout.addWidget(self.hibrid_sacuvaj_bektest_dugme)
+        self.hibrid_prebaci_u_generator_dugme = QPushButton("Koristi kao Bazen u Generatoru")
+        hibrid_akcije_layout.addWidget(self.hibrid_prebaci_u_generator_dugme)
+        hibrid_akcije_layout.addStretch()
+        hibrid_layout.addLayout(hibrid_akcije_layout)
+
         # Povezivanje signala za Dashboard (Zadatak 2.3)
         self.dashboard_osvezi_dugme.clicked.connect(self.osvezi_dashboard_prikaz)
         self.db_prebaci_u_generator_dugme.clicked.connect(self.dashboard_prebaci_u_generator)
@@ -780,7 +808,20 @@ class LotoAnalizator(QMainWindow):
         self.bajes_sacuvaj_bektest_dugme.clicked.connect(self.bajes_sacuvaj_za_bektest)
         self.bajes_prebaci_u_generator_dugme.clicked.connect(self.bajes_prebaci_u_generator)
 
-        self.tabs.insertTab(0, self.tab_dashboard, "📈 Strateški Dashboard"); self.tabs.addTab(self.tab_generator, "Generator"); self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena"); self.tabs.addTab(self.tab_bajes, "Bajesovska Analiza"); self.tabs.addTab(self.tab_ml_generator, "ML Generator"); self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi"); self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja"); self.tabs.addTab(self.tab_bektest, "Bektest Strategija")
+        # Povezivanje signala za Hibridni model (Zadatak 2.1)
+        self.hibrid_pokreni_dugme.clicked.connect(self.pokreni_hibridnu_analizu)
+        self.hibrid_sacuvaj_bektest_dugme.clicked.connect(self.hibrid_sacuvaj_za_bektest)
+        self.hibrid_prebaci_u_generator_dugme.clicked.connect(self.hibrid_prebaci_u_generator)
+
+        self.tabs.insertTab(0, self.tab_dashboard, "📈 Strateški Dashboard")
+        self.tabs.addTab(self.tab_generator, "Generator")
+        self.tabs.addTab(self.tab_hibrid, "Bajesovski Hibrid")
+        self.tabs.addTab(self.tab_kreator_bazena, "Kreator Bazena")
+        self.tabs.addTab(self.tab_bajes, "Bajesovska Analiza")
+        self.tabs.addTab(self.tab_ml_generator, "ML Generator")
+        self.tabs.addTab(self.tab_moji_tiketi, "Moji Tiketi")
+        self.tabs.addTab(self.tab_istorija, "Istorija Izvlačenja")
+        self.tabs.addTab(self.tab_bektest, "Bektest Strategija")
         
         # --- Faza 1: Kreiranje UI za Napredne Analize ---
         self.tab_napredne_analize = QWidget()
@@ -1932,6 +1973,215 @@ Analiziraj ove podatke i odgovori mi na sledeća pitanja:
         except Exception as e:
             QMessageBox.critical(self, "Greška", f"Došlo je do greške pri prebacivanju bazena: {e}")
             print(f"Greška u bajes_prebaci_u_generator: {e}")
+
+    def hibrid_prebaci_u_generator(self):
+        """
+        Preuzima Top N brojeva iz Hibridne analize i prebacuje ih
+        u polje za bazen na "Generator" tabu.
+        """
+        if self.hibrid_rezultati_tabela.rowCount() == 0:
+            QMessageBox.warning(self, "Greška", "Prvo morate pokrenuti Hibridnu analizu.")
+            return
+
+        try:
+            N = self.hibrid_broj_za_bazen.value()
+            
+            if self.hibrid_rezultati_tabela.rowCount() < N:
+                QMessageBox.warning(self, "Greška", f"Nema dovoljno brojeva ({self.hibrid_rezultati_tabela.rowCount()}) u rezultatima za odabir Top {N}.")
+                return
+
+            bazen_brojeva = [self.hibrid_rezultati_tabela.item(i, 0).text() for i in range(N)]
+            bazen_string = ", ".join(bazen_brojeva)
+
+            self.bazen_brojeva_input.setText(bazen_string)
+            self.koristi_bazen_checkbox.setChecked(True)
+            self.tabs.setCurrentWidget(self.tab_generator)
+            QMessageBox.information(self, "Uspeh", f"Bazen od Top {N} brojeva iz Hibridne analize je uspešno prebačen u Generator.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške pri prebacivanju bazena: {e}")
+            print(f"Greška u hibrid_prebaci_u_generator: {e}")
+
+    def izracunaj_matricu_povezanosti(self):
+        """
+        (Zadatak 2.2)
+        Kreira i vraća tabelu (matricu) 39x39 koja broji koliko puta 
+        je svaki par brojeva izvučen zajedno u istoriji.
+        """
+        print("--- Računam matricu povezanosti brojeva... ---")
+        matrica = pd.DataFrame(0, index=range(1, MAX_BROJ + 1), columns=range(1, MAX_BROJ + 1))
+        
+        if self.loto_df.empty:
+            return matrica
+
+        sve_kombinacije = self.loto_df[self.kolone_za_brojeve].dropna().astype(int).values
+        
+        for kombinacija in sve_kombinacije:
+            for par in itertools.combinations(kombinacija, 2):
+                # Pošto je matrica simetrična, povećavamo oba smera
+                matrica.loc[par[0], par[1]] += 1
+                matrica.loc[par[1], par[0]] += 1
+        
+        print("--- Matrica povezanosti uspešno izračunata. ---")
+        return matrica
+
+    def pokreni_hibridnu_analizu(self):
+        """
+        (Zadatak 2.3)
+        Glavna funkcija hibridnog modela. Spaja dve analize:
+        A) Bajesovska iteracija za fino podešavanje verovanja.
+        B) Analiza povezanosti za bonus skor.
+        """
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            self.hibrid_rezultati_tabela.setSortingEnabled(False)
+            self.hibrid_rezultati_tabela.clearContents()
+            self.hibrid_rezultati_tabela.setRowCount(0)
+
+            if self.loto_df.empty:
+                QMessageBox.warning(self, "Nema Podataka", "Nema istorijskih podataka za analizu.")
+                return
+
+            # Korak 1: Bajesovska Iteracija sa neutralnim priorom
+            # Počinjemo sa uniformnom distribucijom verovatnoće
+            bajes_skorovi = {broj: 1.0 / MAX_BROJ for broj in range(1, MAX_BROJ + 1)}
+            
+            # Sortiramo DataFrame po kolu da osiguramo deterministički redosled
+            df_za_analizu = self.loto_df.sort_values(by='kolo').copy()
+
+            learning_rate = 0.005
+            for index, kolo in df_za_analizu.iterrows():
+                izvuceni_brojevi = set(kolo[self.kolone_za_brojeve].dropna().astype(int))
+                if len(izvuceni_brojevi) != BROJEVA_U_KOMBINACIJI: continue
+                
+                for broj in range(1, MAX_BROJ + 1):
+                    if broj in izvuceni_brojevi:
+                        bajes_skorovi[broj] *= (1 + learning_rate)
+                    else:
+                        bajes_skorovi[broj] *= (1 - learning_rate)
+                
+                suma_skorova = sum(bajes_skorovi.values())
+                if suma_skorova > 0:
+                    bajes_skorovi = {broj: v / suma_skorova for broj, v in bajes_skorovi.items()}
+
+            # Korak 2: Analiza Povezanosti
+            matrica_povezanosti = self.izracunaj_matricu_povezanosti()
+
+            # Korak 3: Fuzija i Finalno Rangiranje
+            finalni_skorovi = {}
+            
+            # a. Uzeti prvih 20 brojeva sa Bajesovske liste.
+            top_20_bajes_brojevi = [broj for broj, skor in sorted(bajes_skorovi.items(), key=lambda item: item[1], reverse=True)[:20]]
+
+            # b. Za svaki od 39 brojeva, izračunati dodatni "bonus skor povezanosti".
+            for broj_za_analizu in range(1, MAX_BROJ + 1):
+                bonus_povezanosti = 0
+                # Saberemo vrednosti iz matrice za par (broj_za_analizu, svaki_broj_u_top20)
+                for top_broj in top_20_bajes_brojevi:
+                    if broj_za_analizu != top_broj: # Ne računamo povezanost broja sa samim sobom
+                        bonus_povezanosti += matrica_povezanosti.loc[broj_za_analizu, top_broj]
+                
+                # c. Izračunati finalni_hibridni_skor
+                # Dajemo težinu Bajesovskom skoru i bonusu. Npr. 80% Bajes, 20% Povezanost
+                # Normalizovaćemo bonus da ne bi bio previše dominantan
+                max_moguci_bonus = matrica_povezanosti.sum().max()
+                normalizovan_bonus = (bonus_povezanosti / max_moguci_bonus) if max_moguci_bonus > 0 else 0
+
+                bajes_komponenta = bajes_skorovi.get(broj_za_analizu, 0)
+                finalni_hibridni_skor = (bajes_komponenta * 0.8) + (normalizovan_bonus * 0.2)
+
+                finalni_skorovi[broj_za_analizu] = {
+                    "final": finalni_hibridni_skor,
+                    "bajes": bajes_komponenta,
+                    "povezanost": bonus_povezanosti # Čuvamo sirovi bonus za prikaz
+                }
+
+            # Prikaz Rezultata
+            sortirani_rezultati = sorted(finalni_skorovi.items(), key=lambda item: item[1]['final'], reverse=True)
+            
+            self.hibrid_rezultati_tabela.setRowCount(len(sortirani_rezultati))
+            for i, (broj, skorovi) in enumerate(sortirani_rezultati):
+                item_broj = QTableWidgetItem(str(broj))
+                
+                item_final_skor = QTableWidgetItem()
+                item_final_skor.setData(Qt.ItemDataRole.DisplayRole, f"{skorovi['final']:.8f}")
+                item_final_skor.setData(Qt.ItemDataRole.EditRole, skorovi['final'])
+                
+                item_komponente = QTableWidgetItem(f"B: {skorovi['bajes']:.6f} + P: {skorovi['povezanost']}")
+
+                self.hibrid_rezultati_tabela.setItem(i, 0, item_broj)
+                self.hibrid_rezultati_tabela.setItem(i, 1, item_final_skor)
+                self.hibrid_rezultati_tabela.setItem(i, 2, item_komponente)
+
+            self.hibrid_rezultati_tabela.setSortingEnabled(True)
+            self.hibrid_rezultati_tabela.sortByColumn(1, Qt.SortOrder.DescendingOrder)
+            QMessageBox.information(self, "Analiza Završena", "Hibridna Bajesovska analiza je uspešno završena.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške tokom Hibridne analize: {e}")
+            print(f"Greška u pokreni_hibridnu_analizu: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def hibrid_sacuvaj_za_bektest(self):
+        """
+        (Zadatak 2.4)
+        Uzima N najboljih brojeva iz Hibridne analize, generiše sve
+        kombinacije i čuva ih kao set za budući bektest.
+        """
+        if self.hibrid_rezultati_tabela.rowCount() == 0:
+            QMessageBox.warning(self, "Greška", "Prvo morate pokrenuti Hibridnu analizu.")
+            return
+
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            
+            N = self.hibrid_broj_za_bazen.value()
+            
+            if self.hibrid_rezultati_tabela.rowCount() < N:
+                QMessageBox.warning(self, "Greška", f"Nema dovoljno brojeva ({self.hibrid_rezultati_tabela.rowCount()}) u rezultatima za odabir Top {N}.")
+                return
+
+            bazen_brojeva = []
+            for i in range(N):
+                bazen_brojeva.append(int(self.hibrid_rezultati_tabela.item(i, 0).text()))
+            
+            bazen_brojeva.sort()
+            bazen_brojeva_str = ",".join(map(str, bazen_brojeva))
+
+            sve_kombinacije = list(itertools.combinations(bazen_brojeva, BROJEVA_U_KOMBINACIJI))
+            broj_kombinacija = len(sve_kombinacije)
+
+            if broj_kombinacija > 300000:
+                 potvrda = QMessageBox.question(self, "Veliki Broj Kombinacija", 
+                                       f"Ova akcija će generisati {broj_kombinacija} kombinacija. To može potrajati. Da li ste sigurni?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                 if potvrda == QMessageBox.StandardButton.No:
+                     return
+
+            lista_kombinacija_str = ";".join([str(tuple(k)) for k in sve_kombinacije])
+            
+            filter_podesavanja = f"Bajesovski Hibridni Model (Top {N})"
+
+            cursor = self.db_manager.db_conn.cursor()
+            cursor.execute("SELECT max(kolo) FROM istorijski_rezultati")
+            poslednje_poznato_kolo = cursor.fetchone()[0]
+            kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
+
+            cursor.execute("""
+                INSERT INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, broj_kombinacija, bazen_brojeva_str))
+            
+            self.db_manager.db_conn.commit()
+            self.osvezi_tabelu_bektesta()
+            QMessageBox.information(self, "Uspeh", f"Set od {broj_kombinacija} kombinacija iz Hibridnog modela je sačuvan za bektest kola {kolo_za_igru}.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške pri čuvanju bazena za bektest: {e}")
+            print(f"Greška u hibrid_sacuvaj_za_bektest: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
 
 
 if __name__ == '__main__':

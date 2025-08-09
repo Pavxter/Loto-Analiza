@@ -12,7 +12,7 @@ import time
 
 # Konstante
 MODEL_PATH = 'loto_decoder_model.keras'
-LATENT_DIM = 3 
+LATENT_DIM = 4 
 BROJ_BROJEVA = 39 
 
 def pripremi_podatke():
