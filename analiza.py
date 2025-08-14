@@ -1,4 +1,4 @@
-# analiza.py (v10.4)
+# analiza.py (v10.6)
 
 import sys
 import io
@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QTabWidget,
                                QSpinBox, QPushButton, QTextEdit, QListWidget, QGridLayout,
                                QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
                                QAbstractItemView, QLineEdit, QMessageBox, QMenu, QDateEdit,
-                               QDialog, QDialogButtonBox, QDoubleSpinBox, QCheckBox, QComboBox)
+                               QDialog, QDialogButtonBox, QDoubleSpinBox, QCheckBox, QComboBox, QInputDialog)
 from PySide6.QtCore import Qt, QDate, QThread, Signal
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
@@ -525,6 +525,64 @@ class LotoAnalizator(QMainWindow):
         self.koristi_bazen_checkbox.setChecked(True)
         print(f"Bazen '{bazen_text}' je prebačen u generator.")
 
+    def sacuvaj_ceo_bazen_za_bektest(self):
+        """
+        Uzima kreirani bazen iz Kreatora Bazena, generiše SVE moguće
+        kombinacije i čuva ih kao jedan set za bektest.
+        """
+        bazen_text = self.bazen_rezultat_output.text()
+        if not bazen_text:
+            QMessageBox.warning(self, "Greška", "Nema kreiranog bazena za čuvanje.")
+            return
+
+        try:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            
+            bazen_brojeva = sorted([int(b.strip()) for b in bazen_text.split(',')])
+            broj_brojeva_u_bazenu = len(bazen_brojeva)
+
+            if broj_brojeva_u_bazenu < 7:
+                raise ValueError("Bazen mora sadržati najmanje 7 brojeva.")
+
+            # Upozorenje o veličini
+            broj_kombinacija = len(list(itertools.combinations(bazen_brojeva, BROJEVA_U_KOMBINACIJI)))
+            if broj_kombinacija > 150000: # Prag za upozorenje
+                 potvrda = QMessageBox.question(self, "Veliki Broj Kombinacija", 
+                                       f"Bazen sadrži {broj_brojeva_u_bazenu} brojeva, što će generisati {broj_kombinacija:,} kombinacija. Ovo može potrajati i zauzeti dosta prostora u bazi. Da li ste sigurni da želite da nastavite?".replace(',', '.'),
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                 if potvrda == QMessageBox.StandardButton.No:
+                     QApplication.restoreOverrideCursor(); return
+
+            # Generisanje Svih Kombinacija
+            sve_kombinacije = itertools.combinations(bazen_brojeva, BROJEVA_U_KOMBINACIJI)
+            lista_kombinacija_str = ";".join([str(tuple(k)) for k in sve_kombinacije])
+            
+            # Kreiranje Oznake
+            oznaka = f"Fuzija Trendova (Ceo Bazen od {broj_brojeva_u_bazenu} br.)"
+            bazen_brojeva_str = ",".join(map(str, bazen_brojeva))
+
+            cursor = self.db_manager.db_conn.cursor()
+            cursor.execute("SELECT max(kolo) FROM istorijski_rezultati")
+            poslednje_poznato_kolo = cursor.fetchone()[0]
+            kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
+
+            # Upis u Bazu
+            cursor.execute("""
+                INSERT INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), oznaka, lista_kombinacija_str, broj_kombinacija, bazen_brojeva_str))
+            
+            self.db_manager.db_conn.commit()
+            self.osvezi_tabelu_bektesta()
+            QMessageBox.information(self, "Uspeh", f"Set od {broj_kombinacija:,} kombinacija je sačuvan za bektest kola {kolo_za_igru}.".replace(',', '.'))
+
+        except ValueError as ve:
+             QMessageBox.critical(self, "Greška u Bazenu", str(ve))
+        except Exception as e:
+            QMessageBox.critical(self, "Greška", f"Došlo je do nepredviđene greške: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
     def initUI(self):
         self.setWindowTitle('Loto Analizator v10.1 - Napredne Analize')
         self.setGeometry(100, 100, 1200, 800)
@@ -605,22 +663,53 @@ class LotoAnalizator(QMainWindow):
         tab_redosled = QWidget(); layout_redosled = QVBoxLayout(tab_redosled); layout_redosled.addWidget(self.grafikon_redosleda)
         
         # ML Generator Tab
-        self.tab_ml_generator = QWidget(); ml_layout = QVBoxLayout(self.tab_ml_generator)
-        ml_info = QLabel("Ovaj panel koristi Veštačku Inteligenciju (VAE neuronsku mrežu) da nauči 'suštinu' dobitnih kombinacija i generiše potpuno nove, statistički slične predloge.")
-        ml_info.setWordWrap(True); ml_layout.addWidget(ml_info)
-        self.treniraj_dugme = QPushButton("Istreniraj ML Model (sporo, radi se jednom)"); self.treniraj_dugme.clicked.connect(self.pokreni_trening)
-        ml_layout.addWidget(self.treniraj_dugme)
-        generisi_layout = QHBoxLayout(); self.ml_broj_predloga = QSpinBox(); self.ml_broj_predloga.setRange(1, 50); self.ml_broj_predloga.setValue(10)
-        self.generisi_ml_dugme = QPushButton("Generiši ML Predloge"); self.generisi_ml_dugme.clicked.connect(self.generisi_ml_predloge)
-        generisi_layout.addWidget(QLabel("Broj predloga:")); generisi_layout.addWidget(self.ml_broj_predloga); generisi_layout.addWidget(self.generisi_ml_dugme)
-        ml_layout.addLayout(generisi_layout)
-        self.ml_rezultati_output = QListWidget()
-        self.ml_rezultati_output.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.ml_rezultati_output.customContextMenuRequested.connect(self.prikazi_kontekstni_meni_ml)
-        ml_layout.addWidget(self.ml_rezultati_output)
-        self.sacuvaj_ml_set_dugme = QPushButton("Sačuvaj Ovaj ML Set za Bektest"); self.sacuvaj_ml_set_dugme.clicked.connect(self.sacuvaj_ml_set_za_bektest)
-        ml_layout.addWidget(self.sacuvaj_ml_set_dugme)
-        self.ml_status_label = QLabel("Status: Model nije istreniran."); self.ml_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter); ml_layout.addWidget(self.ml_status_label)
+        self.tab_ml_generator = QWidget()
+        ml_layout = QVBoxLayout(self.tab_ml_generator)
+        
+        ml_info = QLabel("Ovaj panel koristi Veštačku Inteligenciju (VAE neuronsku mrežu) da nauči 'suštinu' dobitnih kombinacija i generiše statistički najverovatnije brojeve (bazen) ili gotove kombinacije.")
+        ml_info.setWordWrap(True)
+        ml_layout.addWidget(ml_info)
+        
+        # --- Dugmad za akcije ---
+        akcije_layout = QHBoxLayout()
+        self.treniraj_dugme = QPushButton("Istreniraj ML Model (sporo, radi se jednom)")
+        self.treniraj_dugme.clicked.connect(self.pokreni_trening)
+        self.generisi_bazen_dugme = QPushButton("Generiši Bazen Brojeva")
+        self.generisi_bazen_dugme.clicked.connect(self.pokreni_ml_generisanje_bazena) # Faza 3.1
+        self.generisi_komb_dugme = QPushButton("Generiši Gotove Kombinacije")
+        self.generisi_komb_dugme.clicked.connect(self.generisi_ml_predloge) # Stara funkcija
+        
+        akcije_layout.addWidget(self.treniraj_dugme)
+        akcije_layout.addWidget(self.generisi_bazen_dugme)
+        akcije_layout.addWidget(self.generisi_komb_dugme)
+        ml_layout.addLayout(akcije_layout)
+
+        # --- Prikaz rezultata (Tabela za bazen) ---
+        self.ml_rezultati_tabela = QTableWidget()
+        self.ml_rezultati_tabela.setColumnCount(2)
+        self.ml_rezultati_tabela.setHorizontalHeaderLabels(["Broj", "ML Skor (Frekvencija)"])
+        self.ml_rezultati_tabela.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.ml_rezultati_tabela.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.ml_rezultati_tabela.setSortingEnabled(True)
+        ml_layout.addWidget(self.ml_rezultati_tabela)
+
+        # --- Panel za akciju (čuvanje bazena) ---
+        bektest_panel_layout = QHBoxLayout()
+        bektest_panel_layout.addWidget(QLabel("Uzmi Top:"))
+        self.ml_broj_za_bazen = QSpinBox()
+        self.ml_broj_za_bazen.setRange(10, 25)
+        self.ml_broj_za_bazen.setValue(15)
+        bektest_panel_layout.addWidget(self.ml_broj_za_bazen)
+        
+        self.ml_sacuvaj_bektest_dugme = QPushButton("Sačuvaj ML Bazen za Bektest")
+        self.ml_sacuvaj_bektest_dugme.clicked.connect(self.ml_sacuvaj_za_bektest) # Faza 3.1
+        bektest_panel_layout.addWidget(self.ml_sacuvaj_bektest_dugme)
+        bektest_panel_layout.addStretch()
+        ml_layout.addLayout(bektest_panel_layout)
+
+        self.ml_status_label = QLabel("Status: Spreman."); 
+        self.ml_status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        ml_layout.addWidget(self.ml_status_label)
 
         # Generator Tab
         self.tab_generator = QWidget(); glavni_layout_gen = QVBoxLayout(self.tab_generator); forma_layout = QFormLayout();
@@ -736,12 +825,17 @@ class LotoAnalizator(QMainWindow):
         kreator_layout.addLayout(sekcija4_layout)
         self.prebaci_bazen_dugme = QPushButton("Prebaci Bazen u Generator")
         kreator_layout.addWidget(self.prebaci_bazen_dugme)
+        
+        self.sacuvaj_ceo_bazen_dugme = QPushButton("Sačuvaj CEO Bazen za Bektest (sve komb.)")
+        kreator_layout.addWidget(self.sacuvaj_ceo_bazen_dugme)
+
         kreator_layout.addStretch()
 
         # Povezivanje signala
         self.analiziraj_period_dugme.clicked.connect(self.analiziraj_period_za_bazen)
         self.kreiraj_bazen_dugme.clicked.connect(self.kreiraj_bazen_fuzijom)
         self.prebaci_bazen_dugme.clicked.connect(self.prebaci_bazen_u_generator)
+        self.sacuvaj_ceo_bazen_dugme.clicked.connect(self.sacuvaj_ceo_bazen_za_bektest)
         
         # Bajesovska Analiza Tab (Faza 1.1, 1.2)
         self.tab_bajes = QWidget()
@@ -867,7 +961,7 @@ class LotoAnalizator(QMainWindow):
 
     def prikazi_about_prozor(self):
         """Prikazuje 'About' prozor sa informacijama."""
-        tekst = """<b>Loto Analizator v10.4</b><br><br>
+        tekst = """<b>Loto Analizator v10.6</b><br><br>
                    Aplikacija za statističku analizu, generisanje i bektestiranje Loto 7/39 strategija.<br>
                    Razvijena u saradnji sa Google AI.<br><br>
                    Sva prava zadržana."""
@@ -1004,19 +1098,7 @@ class LotoAnalizator(QMainWindow):
         izabrana_akcija = kontekstni_meni.exec(self.tabela_bektesta.viewport().mapToGlobal(position))
         if izabrana_akcija == obrisi_akcija: self.obrisi_bektest(id_unosa)
 
-    def prikazi_kontekstni_meni_ml(self, position):
-        izabrani_item = self.ml_rezultati_output.itemAt(position)
-        if not izabrani_item or not izabrani_item.text() or "---" in izabrani_item.text() or "Generišem" in izabrani_item.text():
-            return
-
-        kontekstni_meni = QMenu(self)
-        dodaj_u_pracenje_akcija = kontekstni_meni.addAction("Dodaj u Praćenje Tiketa")
-        
-        izabrana_akcija = kontekstni_meni.exec(self.ml_rezultati_output.viewport().mapToGlobal(position))
-        
-        if izabrana_akcija == dodaj_u_pracenje_akcija:
-            self.ml_rezultati_output.setCurrentItem(izabrani_item)
-            self.dodaj_ml_tiket_u_pracenje()
+    
 
     def izmeni_unos_istorije(self, unos_id):
         cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT kolo, datum, b1, b2, b3, b4, b5, b6, b7 FROM istorijski_rezultati WHERE id=?", (unos_id,)); podaci = cursor.fetchone()
@@ -1097,24 +1179,7 @@ class LotoAnalizator(QMainWindow):
         except sqlite3.IntegrityError: QMessageBox.warning(self, "Greška", f"Set za kolo {kolo_za_igru} sa istim filter podešavanjima je već sačuvan.")
         except Exception as e: QMessageBox.critical(self, "Greška Baze", f"Došlo je do greške pri čuvanju seta: {e}")
 
-    def sacuvaj_ml_set_za_bektest(self):
-        broj_stavki = self.ml_rezultati_output.count()
-        if broj_stavki == 0 or "---" in self.ml_rezultati_output.item(0).text():
-            QMessageBox.warning(self, "Greška", "Nema generisanih ML predloga za čuvanje.")
-            return
-        cursor = self.db_manager.db_conn.cursor(); cursor.execute("SELECT max(kolo) FROM istorijski_rezultati"); poslednje_poznato_kolo = cursor.fetchone()[0]
-        kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
-        sve_kombinacije = [self.ml_rezultati_output.item(i).text() for i in range(broj_stavki)]
-        lista_kombinacija_str = ";".join(sve_kombinacije)
-        filter_podesavanja = f"ML Model v1 (VAE, LatentDim={ml_generator.LATENT_DIM})"
-        try:
-            cursor.execute("INSERT OR IGNORE INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) VALUES (?, ?, ?, ?, ?, ?)",
-                           (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, lista_kombinacija_str, len(sve_kombinacije), ""))
-            self.db_manager.db_conn.commit()
-            self.osvezi_tabelu_bektesta()
-            QMessageBox.information(self, "Uspeh", f"ML set od {len(sve_kombinacije)} kombinacija je sačuvan za bektest kola {kolo_za_igru}.")
-        except sqlite3.IntegrityError: QMessageBox.warning(self, "Greška", f"Set za kolo {kolo_za_igru} sa istim ML podešavanjima je već sačuvan.")
-        except Exception as e: QMessageBox.critical(self, "Greška Baze", f"Došlo je do greške pri čuvanju seta: {e}")
+    
 
     def dodaj_tiket_u_pracenje(self):
         izabrani_tiket = self.rezultati_output.currentItem()
@@ -1262,24 +1327,171 @@ class LotoAnalizator(QMainWindow):
         QMessageBox.information(self, "Trening Modela", rezultat)
         self.ml_status_label.setText(f"Status: {rezultat}")
         self.treniraj_dugme.setEnabled(True)
-        self.generisi_ml_dugme.setEnabled(True)
-        
-    def generisi_ml_predloge(self):
-        broj = self.ml_broj_predloga.value()
-        self.ml_rezultati_output.clear()
-        self.ml_rezultati_output.addItem("Generišem predloge...")
-        QApplication.processEvents()
-        
-        predlozi, greska = ml_generator.generisi_kombinacije(broj)
-        
-        self.ml_rezultati_output.clear()
-        if greska:
-            self.ml_status_label.setText(f"Status: Greška!")
-        else:
-            self.ml_status_label.setText(f"Status: Uspešno generisano {len(predlozi)} predloga.")
+        self.generisi_bazen_dugme.setEnabled(True)
+        self.generisi_komb_dugme.setEnabled(True)
 
-        for p in predlozi:
-            self.ml_rezultati_output.addItem(str(p))    
+    def pokreni_ml_generisanje_bazena(self):
+        """
+        Poziva ml_generator.generisi_bazen_brojeva(), dobija rangiranu listu 
+        i popunjava self.ml_rezultati_tabela. (Faza 3.1)
+        """
+        self.ml_status_label.setText("Status: Generišem bazen brojeva... Molim sačekajte.")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            bazen_df, greska = ml_generator.generisi_bazen_brojeva()
+            if greska:
+                raise Exception(greska)
+            
+            self.ml_rezultati_tabela.setSortingEnabled(False)
+            self.ml_rezultati_tabela.clearContents()
+            self.ml_rezultati_tabela.setRowCount(len(bazen_df))
+            
+            for i, red in bazen_df.iterrows():
+                broj = int(red['Broj'])
+                frekvencija = int(red['Frekvencija'])
+                
+                item_broj = QTableWidgetItem(str(broj))
+                item_frekv = QTableWidgetItem()
+                item_frekv.setData(Qt.ItemDataRole.DisplayRole, str(frekvencija))
+                item_frekv.setData(Qt.ItemDataRole.EditRole, frekvencija) # Za sortiranje
+
+                self.ml_rezultati_tabela.setItem(i, 0, item_broj)
+                self.ml_rezultati_tabela.setItem(i, 1, item_frekv)
+
+            self.ml_rezultati_tabela.setSortingEnabled(True)
+            self.ml_rezultati_tabela.sortByColumn(1, Qt.SortOrder.DescendingOrder)
+            self.ml_status_label.setText(f"Status: Bazen od {len(bazen_df)} brojeva uspešno generisan.")
+
+        except Exception as e:
+            self.ml_status_label.setText(f"Status: Greška!")
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške pri generisanju ML bazena: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def generisi_ml_predloge(self):
+        """
+        Generiše gotove kombinacije i prikazuje ih u privremenom prozoru. (Faza 3.1 modifikovano)
+        """
+        broj, ok = QInputDialog.getInt(self, "Generisanje Kombinacija", "Unesite broj ML predloga za generisanje:", 10, 1, 100)
+        if not ok:
+            return
+
+        self.ml_status_label.setText(f"Status: Generišem {broj} gotovih kombinacija...")
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            predlozi, greska = ml_generator.generisi_kombinacije(broj)
+            if greska:
+                raise Exception(greska)
+
+            # Prikaz u QListWidget unutar QDialog-a
+            dialog = QDialog(self)
+            dialog.setWindowTitle(f"Generisanih {len(predlozi)} ML Kombinacija")
+            dialog.setMinimumSize(300, 400)
+            layout = QVBoxLayout(dialog)
+            lista_widget = QListWidget()
+            for p in predlozi:
+                lista_widget.addItem(str(p))
+            layout.addWidget(lista_widget)
+            
+            # Dugme za čuvanje seta
+            sacuvaj_dugme = QPushButton("Sačuvaj Ovaj Set za Bektest")
+            def sacuvaj_ovaj_set():
+                self.sacuvaj_privremeni_ml_set(predlozi)
+                dialog.accept()
+            sacuvaj_dugme.clicked.connect(sacuvaj_ovaj_set)
+            layout.addWidget(sacuvaj_dugme)
+
+            dialog.exec()
+            self.ml_status_label.setText(f"Status: Uspešno generisano i prikazano {len(predlozi)} predloga.")
+
+        except Exception as e:
+            self.ml_status_label.setText(f"Status: Greška!")
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške pri generisanju ML predloga: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()
+
+    def sacuvaj_privremeni_ml_set(self, lista_kombinacija):
+        """Pomoćna funkcija za čuvanje seta iz privremenog prozora."""
+        if not lista_kombinacija:
+            QMessageBox.warning(self, "Greška", "Nema generisanih ML predloga za čuvanje.")
+            return
+        
+        try:
+            cursor = self.db_manager.db_conn.cursor()
+            cursor.execute("SELECT max(kolo) FROM istorijski_rezultati")
+            poslednje_poznato_kolo = cursor.fetchone()[0]
+            kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
+            
+            sve_kombinacije_str = ";".join([str(k) for k in lista_kombinacija])
+            filter_podesavanja = f"ML Gotove Kombinacije (VAE, LatentDim={ml_generator.LATENT_DIM})"
+            
+            cursor.execute("INSERT OR IGNORE INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) VALUES (?, ?, ?, ?, ?, ?)",
+                           (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), filter_podesavanja, sve_kombinacije_str, len(lista_kombinacija), ""))
+            self.db_manager.db_conn.commit()
+            self.osvezi_tabelu_bektesta()
+            QMessageBox.information(self, "Uspeh", f"ML set od {len(lista_kombinacija)} kombinacija je sačuvan za bektest kola {kolo_za_igru}.")
+        except Exception as e:
+            QMessageBox.critical(self, "Greška Baze", f"Došlo je do greške pri čuvanju ML seta: {e}")
+
+    def ml_sacuvaj_za_bektest(self):
+        """
+        Uzima Top N brojeva iz tabele bazena, generiše sve kombinacije (N, 7) 
+        i čuva ih za bektest. (Faza 3.1)
+        """
+        if self.ml_rezultati_tabela.rowCount() == 0:
+            QMessageBox.warning(self, "Greška", "Prvo morate generisati ML bazen brojeva.")
+            return
+
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            N = self.ml_broj_za_bazen.value()
+            if self.ml_rezultati_tabela.rowCount() < N:
+                raise ValueError(f"Nema dovoljno brojeva ({self.ml_rezultati_tabela.rowCount()}) u rezultatima za odabir Top {N}.")
+
+            # Uzimanje Top N brojeva iz tabele (koja je već sortirana)
+            bazen_brojeva = [int(self.ml_rezultati_tabela.item(i, 0).text()) for i in range(N)]
+            bazen_brojeva.sort()
+            
+            # Generisanje Svih Kombinacija
+            sve_kombinacije = list(itertools.combinations(bazen_brojeva, BROJEVA_U_KOMBINACIJI))
+            broj_kombinacija = len(sve_kombinacije)
+
+            if broj_kombinacija > 300000:
+                 potvrda = QMessageBox.question(self, "Veliki Broj Kombinacija", 
+                                       f"Ova akcija će generisati {broj_kombinacija} kombinacija. To može potrajati. Da li ste sigurni?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                 if potvrda == QMessageBox.StandardButton.No:
+                     QApplication.restoreOverrideCursor()
+                     return
+
+            self.ml_status_label.setText(f"Status: Generišem {broj_kombinacija} kombinacija iz bazena...")
+            QApplication.processEvents()
+
+            lista_kombinacija_str = ";".join([str(tuple(k)) for k in sve_kombinacije])
+            bazen_brojeva_str = ",".join(map(str, bazen_brojeva))
+            oznaka = f"ML Bazen (Top {N} brojeva)"
+
+            cursor = self.db_manager.db_conn.cursor()
+            cursor.execute("SELECT max(kolo) FROM istorijski_rezultati")
+            poslednje_poznato_kolo = cursor.fetchone()[0]
+            kolo_za_igru = (poslednje_poznato_kolo or 0) + 1
+
+            # Upis u Bazu
+            cursor.execute("""
+                INSERT INTO virtualne_igre (kolo, datum_kreiranja, filter_podesavanja, lista_kombinacija, broj_kombinacija, bazen_brojeva) 
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (kolo_za_igru, datetime.now().strftime("%Y-%m-%d %H:%M"), oznaka, lista_kombinacija_str, broj_kombinacija, bazen_brojeva_str))
+            
+            self.db_manager.db_conn.commit()
+            self.osvezi_tabelu_bektesta()
+            self.ml_status_label.setText(f"Status: Set od {broj_kombinacija} kombinacija je sačuvan.")
+            QMessageBox.information(self, "Uspeh", f"Set od {broj_kombinacija} kombinacija iz ML bazena je sačuvan za bektest kola {kolo_za_igru}.")
+
+        except Exception as e:
+            self.ml_status_label.setText(f"Status: Greška!")
+            QMessageBox.critical(self, "Greška", f"Došlo je do greške pri čuvanju ML bazena za bektest: {e}")
+        finally:
+            QApplication.restoreOverrideCursor()    
 
     def izracunaj_skor(self, kombinacija):
         skor = 0
@@ -1553,23 +1765,7 @@ class LotoAnalizator(QMainWindow):
         else:
             QMessageBox.warning(self, "Provera Završena", f"Tiketi su provereni. Kolo {kolo} već postoji u bazi i nije ponovo dodato.")
 
-    def dodaj_ml_tiket_u_pracenje(self):
-        izabrani_tiket = self.ml_rezultati_output.currentItem()
-        if not izabrani_tiket:
-            QMessageBox.warning(self, "Greška", "Nije izabrana nijedna ML kombinacija.")
-            return
-        
-        kombinacija_za_upis = "(ML)" + izabrani_tiket.text()
-            
-        print(f"Dodajem ML tiket u praćenje: {kombinacija_za_upis}")
-        try:
-            cursor = self.db_manager.db_conn.cursor()
-            cursor.execute("INSERT OR IGNORE INTO odigrani_tiketi (kombinacija) VALUES (?)", (kombinacija_za_upis,))
-            self.db_manager.db_conn.commit()
-            self.osvezi_tabelu_tiketa()
-            QMessageBox.information(self, "Uspeh", f"ML Kombinacija {kombinacija_za_upis} je uspešno dodata u praćenje.")
-        except Exception as e:
-            QMessageBox.critical(self, "Greška Baze", f"Došlo je do greške pri upisu ML tiketa u bazu: {e}")
+    
 
     def closeEvent(self, event):
         self.db_manager.close()

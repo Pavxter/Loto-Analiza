@@ -145,3 +145,41 @@ def generisi_kombinacije(broj_predloga=10):
         return finalni_predlozi, False
     except Exception as e:
         return [f"GREŠKA pri generisanju: {e}"], True
+
+def generisi_bazen_brojeva(broj_kombinacija_za_analizu=500):
+    """
+    Generiše rangiranu listu najverovatnijih brojeva ("bazen") na osnovu
+    velikog broja generisanih kombinacija.
+    """
+    if not os.path.exists(MODEL_PATH):
+        return None, f"GREŠKA: Model '{MODEL_PATH}' nije pronađen. Molim Vas, prvo istrenirajte model."
+    
+    try:
+        decoder = keras.models.load_model(MODEL_PATH)
+        print(f"ML Motor: Generišem {broj_kombinacija_za_analizu} kombinacija za analizu bazena...")
+        
+        # Generiši veliki broj kombinacija
+        random_latent_vectors = np.random.normal(size=(broj_kombinacija_za_analizu, LATENT_DIM))
+        generisani_vektori = decoder.predict(random_latent_vectors, verbose=0)
+        
+        # Dekodiraj u listu brojeva
+        sve_kombinacije = []
+        for vektor in generisani_vektori:
+            indeksi_brojeva = np.argsort(vektor)[-7:] + 1
+            sve_kombinacije.append(sorted(indeksi_brojeva))
+            
+        # "Spljošti" listu kombinacija u jednu listu svih brojeva
+        svi_brojevi = [broj for kombinacija in sve_kombinacije for broj in kombinacija]
+        
+        # Izračunaj frekvenciju svakog broja
+        frekvencije = pd.Series(svi_brojevi).value_counts().reset_index()
+        frekvencije.columns = ['Broj', 'Frekvencija']
+        
+        # Sortiraj po frekvenciji
+        rangirani_brojevi = frekvencije.sort_values(by='Frekvencija', ascending=False)
+        
+        print(f"ML Motor: Bazen brojeva uspešno generisan.")
+        return rangirani_brojevi, None
+        
+    except Exception as e:
+        return None, f"GREŠKA pri generisanju bazena brojeva: {e}"
