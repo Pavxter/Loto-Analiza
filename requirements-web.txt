@@ -1,0 +1,7 @@
+# Web verzija Loto Analizatora (FastAPI backend)
+fastapi
+uvicorn[standard]
+python-multipart
+pandas
+scipy
+openpyxl

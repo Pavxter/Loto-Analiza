@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "loto-web",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["pokreni.py", "--bez-otvaranja", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}

@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="sr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Loto Analizator</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎱</text></svg>">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+</head>
+<body>
+<div class="app" x-data="app()" x-init="init()" x-cloak>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">L</div>
+      <div>
+        <h1>Loto Analizator</h1>
+        <small>7 / 39 &middot; web v1</small>
+      </div>
+    </div>
+    <template x-for="s in strane" :key="s.id">
+      <div class="nav-item" :class="{active: strana === s.id}" @click="idi(s.id)">
+        <span class="ico" x-text="s.ico"></span>
+        <span x-text="s.naziv"></span>
+      </div>
+    </template>
+    <div class="nav-spacer"></div>
+    <div class="nav-foot">
+      <span x-text="brojKola"></span> kola u bazi<br>
+      Analiza istorije, ne predviđanje.
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <div class="topbar">
+      <div>
+        <h2 x-text="aktivna().naziv"></h2>
+        <div class="sub" x-text="aktivna().opis"></div>
+      </div>
+      <div class="spacer"></div>
+      <div class="period-ctl" x-show="aktivna().period">
+        <span>Period:</span>
+        <select x-model.number="period" @change="ucitajStranu()">
+          <option :value="0">Sva kola</option>
+          <option :value="50">Poslednjih 50</option>
+          <option :value="100">Poslednjih 100</option>
+          <option :value="200">Poslednjih 200</option>
+          <option :value="500">Poslednjih 500</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ============ DASHBOARD ============ -->
+      <section x-show="strana==='dashboard'">
+        <template x-if="loading"><div class="center-load"><div class="spinner"></div>Učitavam…</div></template>
+        <template x-if="!loading && dash">
+          <div>
+            <div class="grid g-4">
+              <div class="card kpi"><span class="label">Prosečna sredina</span><span class="value" x-text="dash.globalni_prosek"></span></div>
+              <div class="card kpi"><span class="label">Std. devijacija</span><span class="value" x-text="dash.globalna_std_dev"></span></div>
+              <div class="card kpi"><span class="label">Najčešći par/nepar</span><span class="value sm" x-text="dash.par_nepar"></span></div>
+              <div class="card kpi"><span class="label">Analizirano</span><span class="value sm" x-text="dash.naslov_sufiks"></span></div>
+            </div>
+
+            <div class="grid g-2" style="margin-top:16px">
+              <div class="card">
+                <h3>Vrući brojevi</h3>
+                <p class="hint">Najčešće izvučeni u periodu</p>
+                <div class="balls"><template x-for="b in dash.vruci" :key="b"><div class="ball vruc" x-text="b"></div></template></div>
+              </div>
+              <div class="card">
+                <h3>Hladni brojevi</h3>
+                <p class="hint">Najređe izvučeni u periodu</p>
+                <div class="balls"><template x-for="b in dash.hladni" :key="b"><div class="ball hladan" x-text="b"></div></template></div>
+              </div>
+            </div>
+
+            <div class="grid g-2" style="margin-top:16px">
+              <div class="card">
+                <h3>Frekvencija brojeva</h3>
+                <div id="dash-freq" class="chart"></div>
+              </div>
+              <div class="card">
+                <h3>Predlog bazena</h3>
+                <p class="hint">Fuzija top-12 vrućih i top-12 svežih brojeva</p>
+                <div class="balls" style="margin-bottom:16px">
+                  <template x-for="b in dash.predlog_bazena" :key="b">
+                    <div class="ball" :class="klasaBroja(b)" x-text="b"></div>
+                  </template>
+                </div>
+                <button class="btn" @click="bazenUGenerator(dash.predlog_bazena)">Prebaci u Generator →</button>
+              </div>
+            </div>
+            <div class="notice" style="margin-top:16px">
+              <span>ℹ️</span>
+              <span>Loto izvlačenja su nezavisni slučajni događaji. Ovi pokazatelji opisuju <b>prošlost</b> i služe za istraživanje i zabavu — ne predviđaju buduće brojeve.</span>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ============ STATISTIKA ============ -->
+      <section x-show="strana==='statistika'">
+        <template x-if="loading"><div class="center-load"><div class="spinner"></div>Računam…</div></template>
+        <template x-if="!loading && stat">
+          <div>
+            <div class="card"><h3>Frekvencija po broju</h3>
+              <div class="legend">
+                <span><i class="dot" style="background:var(--vruc)"></i>Vruć</span>
+                <span><i class="dot" style="background:var(--neutralan)"></i>Neutralan</span>
+                <span><i class="dot" style="background:var(--hladan)"></i>Hladan</span>
+              </div>
+              <div id="st-freq" class="chart lg"></div>
+            </div>
+            <div class="grid g-2" style="margin-top:16px">
+              <div class="card"><h3>Raspodela srednjih vrednosti</h3><div id="st-sv" class="chart"></div></div>
+              <div class="card"><h3>Trend srednje vrednosti (kroz istoriju)</h3><div id="st-trend" class="chart"></div></div>
+            </div>
+            <div class="grid g-3" style="margin-top:16px">
+              <div class="card"><h3>Ritam ponavljanja</h3><p class="hint">Prosečan razmak (u kolima) između pojava broja</p><div id="st-ritam" class="chart"></div></div>
+              <div class="card"><h3>Uzastopni brojevi</h3><p class="hint">Koliko kola ima N susednih brojeva</p><div id="st-uzastopni" class="chart"></div></div>
+              <div class="card"><h3>Raspodela po dekadama</h3><p class="hint">Prosek brojeva po grupi</p><div id="st-dekade" class="chart"></div></div>
+            </div>
+
+            <div class="section-title">Napredno — poziciona analiza</div>
+            <div class="card"><h3>Frekvencija broja po poziciji izvlačenja</h3>
+              <p class="hint">Toplotna mapa: red = broj, kolona = redni broj izvlačenja</p>
+              <div id="st-heat" class="chart lg"></div>
+            </div>
+            <div class="card" style="margin-top:16px">
+              <h3>Hi-kvadrat test pristrasnosti pozicija</h3>
+              <button class="btn ghost sm" @click="pokreniHiKvadrat()">Pokreni test</button>
+              <template x-if="hik">
+                <div style="margin-top:12px">
+                  <template x-if="hik.ok">
+                    <div>
+                      <div class="row" style="gap:24px">
+                        <div class="kpi"><span class="label">Hi-kvadrat</span><span class="value sm mono" x-text="hik.chi2"></span></div>
+                        <div class="kpi"><span class="label">P-vrednost</span><span class="value sm mono" x-text="hik.p"></span></div>
+                        <div class="kpi"><span class="label">Zaključak</span><span class="value sm"><span class="tag" :class="hik.pristrasno?'warn':'ok'" x-text="hik.pristrasno?'Pristrasno':'Nasumično'"></span></span></div>
+                      </div>
+                      <p class="muted" style="margin-top:10px" x-text="hik.zakljucak"></p>
+                    </div>
+                  </template>
+                  <template x-if="!hik.ok"><p class="muted" x-text="hik.poruka"></p></template>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ============ RANGIRANJE ============ -->
+      <section x-show="strana==='rangiranje'">
+        <div class="card">
+          <div class="row" style="justify-content:space-between">
+            <div>
+              <h3>Rangiranje brojeva</h3>
+              <p class="hint">Tri metode koje rangiraju svih 39 brojeva. Sve reflektuju istorijsku frekvenciju — poređenje pokazuje koliko su slične.</p>
+            </div>
+            <div class="seg">
+              <button :class="{active: metoda==='frekvencija'}" @click="metoda='frekvencija'; ucitajRang()">Frekvencija</button>
+              <button :class="{active: metoda==='bajes'}" @click="metoda='bajes'; ucitajRang()">Bajesovski</button>
+              <button :class="{active: metoda==='hibrid'}" @click="metoda='hibrid'; ucitajRang()">Hibridni</button>
+            </div>
+          </div>
+          <div id="rang-chart" class="chart lg" style="margin-top:14px"></div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h3>Rangirana lista</h3>
+          <div style="max-height:360px; overflow:auto">
+            <table class="tbl">
+              <thead><tr><th>#</th><th>Broj</th><th>Skor</th><th x-show="metoda==='hibrid'">Povezanost</th></tr></thead>
+              <tbody>
+                <template x-for="(r,i) in rang" :key="r.broj">
+                  <tr>
+                    <td class="num" x-text="i+1"></td>
+                    <td><div class="ball sm" x-text="r.broj"></div></td>
+                    <td class="num mono" x-text="formatSkor(r.skor)"></td>
+                    <td class="num" x-show="metoda==='hibrid'" x-text="r.povezanost"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ GENERATOR ============ -->
+      <section x-show="strana==='generator'">
+        <div class="grid g-2">
+          <div class="card">
+            <h3>Podešavanja</h3>
+            <div class="field">
+              <label class="check"><input type="checkbox" x-model="gen.koristiBazen"> Koristi prilagođeni bazen</label>
+            </div>
+            <div class="field" x-show="gen.koristiBazen">
+              <label>Bazen brojeva (zarezom razdvojeni)</label>
+              <input class="inp" x-model="gen.bazenText" placeholder="npr. 1, 5, 8, 12, 22, 23, 30, 37">
+            </div>
+            <div class="row">
+              <div class="field"><label>Min. sredina</label><input class="inp" type="number" x-model.number="gen.min_sv" step="0.1"></div>
+              <div class="field"><label>Max. sredina</label><input class="inp" type="number" x-model.number="gen.max_sv" step="0.1"></div>
+            </div>
+            <div class="row">
+              <div class="field"><label class="check"><input type="checkbox" x-model="gen.f_parni"> Tačno parnih</label><input class="inp" type="number" min="0" max="7" x-model.number="gen.parni" :disabled="!gen.f_parni"></div>
+              <div class="field"><label class="check"><input type="checkbox" x-model="gen.f_uzastopni"> Uzastopnih</label><input class="inp" type="number" min="0" max="6" x-model.number="gen.uzastopni" :disabled="!gen.f_uzastopni"></div>
+            </div>
+            <div class="row">
+              <div class="field"><label class="check"><input type="checkbox" x-model="gen.f_vruci"> Vrućih</label><input class="inp" type="number" min="0" max="7" x-model.number="gen.vruci" :disabled="!gen.f_vruci"></div>
+              <div class="field"><label class="check"><input type="checkbox" x-model="gen.f_hladni"> Hladnih</label><input class="inp" type="number" min="0" max="7" x-model.number="gen.hladni" :disabled="!gen.f_hladni"></div>
+              <div class="field"><label class="check"><input type="checkbox" x-model="gen.f_dekada"> Max po dekadi</label><input class="inp" type="number" min="1" max="7" x-model.number="gen.dekada_max" :disabled="!gen.f_dekada"></div>
+            </div>
+            <div class="field">
+              <label>Strategija svežine</label>
+              <select class="inp" x-model="gen.strategija">
+                <option value="favorizuj">Favorizuj sveže</option>
+                <option value="kaznjavaj">Kažnjavaj sveže</option>
+                <option value="ignorisi">Ignoriši</option>
+              </select>
+            </div>
+            <div class="field"><label class="check"><input type="checkbox" x-model="gen.pristrasnost"> Primeni model pozicione pristrasnosti u bodovanju</label></div>
+            <div class="field"><label class="check"><input type="checkbox" x-model="gen.unikati"> Izbaci kombinacije koje su već izvučene</label></div>
+            <div class="row">
+              <div class="field"><label class="check"><input type="checkbox" x-model="gen.diverzitet"> Filter diverziteta (max sličnost)</label><input class="inp" type="number" min="1" max="6" x-model.number="gen.max_slicnost" :disabled="!gen.diverzitet"></div>
+            </div>
+            <button class="btn" @click="generisi()" :disabled="gen.radi"><span x-show="gen.radi" class="spinner"></span> Generiši</button>
+          </div>
+
+          <div class="card">
+            <h3>Rezultat</h3>
+            <p class="hint" x-text="gen.rezime || 'Podesi filtere i klikni Generiši.'"></p>
+            <div style="max-height:520px; overflow:auto">
+              <table class="tbl" x-show="gen.rezultati.length">
+                <thead><tr><th>Skor</th><th>Kombinacija</th><th></th></tr></thead>
+                <tbody>
+                  <template x-for="(k,i) in gen.rezultati" :key="i">
+                    <tr>
+                      <td class="num mono" x-text="k.skor"></td>
+                      <td><div class="balls">
+                        <template x-for="b in k.brojevi" :key="b"><div class="ball sm" x-text="b"></div></template>
+                      </div></td>
+                      <td><button class="btn ghost sm" @click="dodajTiketIz(k.brojevi)">+ tiket</button></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ BEKTEST ============ -->
+      <section x-show="strana==='bektest'">
+        <div class="notice" style="margin-bottom:16px"><span>🧪</span><span>Bektest čuva strategiju za buduće kolo. Kad uneseš to kolo (na strani „Podaci"), rezultat se automatski izračuna — koliko brojeva iz bazena je pogođeno i najbolji rezultat kombinacija.</span></div>
+        <div class="card">
+          <h3>Sačuvane strategije</h3>
+          <div style="max-height:520px; overflow:auto">
+            <table class="tbl">
+              <thead><tr><th>ID</th><th>Kolo</th><th>Opis</th><th>Bazen</th><th>Broj komb.</th><th>Rezultat</th><th>Promašaj</th><th>Iznenađenje</th><th></th></tr></thead>
+              <tbody>
+                <template x-for="b in bektestovi" :key="b.id">
+                  <tr>
+                    <td class="num" x-text="b.id"></td>
+                    <td class="num" x-text="b.kolo"></td>
+                    <td x-text="opisBektesta(b)"></td>
+                    <td class="muted" style="max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" x-text="b.bazen_brojeva"></td>
+                    <td class="num" x-text="b.broj_kombinacija"></td>
+                    <td><span x-show="b.rezultat" x-text="b.rezultat"></span><span class="muted" x-show="!b.rezultat">— čeka kolo —</span></td>
+                    <td class="num" x-text="b.indeks_promasaja ?? '—'"></td>
+                    <td class="num mono" x-text="b.indeks_iznenadjenja!=null ? Number(b.indeks_iznenadjenja).toFixed(1) : '—'"></td>
+                    <td><button class="btn danger sm" @click="obrisiBektest(b.id)">✕</button></td>
+                  </tr>
+                </template>
+                <tr x-show="!bektestovi.length"><td colspan="9" class="muted" style="text-align:center; padding:24px">Nema sačuvanih bektestova.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TIKETI ============ -->
+      <section x-show="strana==='tiketi'">
+        <div class="card">
+          <h3>Dodaj tiket</h3>
+          <div class="row">
+            <div class="field" style="flex:2"><label>Kombinacija (7 brojeva, zarezom)</label><input class="inp" x-model="noviTiket" placeholder="npr. 3, 8, 12, 19, 22, 30, 37"></div>
+            <button class="btn" @click="dodajTiket()">Dodaj</button>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h3>Moji tiketi</h3>
+          <div style="max-height:520px; overflow:auto">
+            <table class="tbl">
+              <thead><tr><th>ID</th><th>Kombinacija</th><th>Poslednji rezultat</th><th>Provereno</th><th></th></tr></thead>
+              <tbody>
+                <template x-for="t in tiketi" :key="t.id">
+                  <tr>
+                    <td class="num" x-text="t.id"></td>
+                    <td class="mono" x-text="t.kombinacija"></td>
+                    <td><span x-show="t.poslednji_rezultat!=null" class="tag" :class="t.poslednji_rezultat>=4?'ok':'neutralan'" x-text="(t.poslednji_rezultat ?? 0)+' pogodaka'"></span><span class="muted" x-show="t.poslednji_rezultat==null">—</span></td>
+                    <td class="muted" x-text="t.datum_provere || '—'"></td>
+                    <td><button class="btn danger sm" @click="obrisiTiket(t.id)">✕</button></td>
+                  </tr>
+                </template>
+                <tr x-show="!tiketi.length"><td colspan="5" class="muted" style="text-align:center; padding:24px">Nema tiketa.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PODACI ============ -->
+      <section x-show="strana==='podaci'">
+        <div class="grid g-2">
+          <div class="card">
+            <h3>Unesi novo kolo</h3>
+            <p class="hint">Automatski proverava sve tikete i bektestove za to kolo.</p>
+            <div class="field"><label>Broj kola</label><input class="inp" type="number" x-model.number="unos.kolo"></div>
+            <div class="field"><label>Datum</label><input class="inp" type="date" x-model="unos.datum"></div>
+            <div class="field"><label>7 brojeva (zarezom)</label><input class="inp" x-model="unos.brojevi" placeholder="npr. 2, 4, 6, 10, 12, 18, 37"></div>
+            <button class="btn" @click="dodajKolo()">Sačuvaj kolo</button>
+          </div>
+          <div class="card">
+            <h3>Uvoz iz fajla</h3>
+            <p class="hint">CSV ili Excel sa kolonama: kolo, datum, b1, b2, b3, b4, b5, b6, b7</p>
+            <input class="inp" type="file" accept=".csv,.xlsx,.xls" @change="izabranFajl($event)">
+            <label class="check" style="margin-top:12px"><input type="checkbox" x-model="uvozZameni"> Zameni postojeću istoriju (obriši sve pa uvezi)</label>
+            <div class="notice warn" x-show="uvozZameni" style="margin-top:10px">
+              <span>⚠️</span><span>Ova opcija briše svih <b x-text="brojKola"></b> kola i uvozi nova iz fajla. Pre brisanja se automatski pravi rezervna kopija (loto_baza_backup_…).</span>
+            </div>
+            <button class="btn" :class="uvozZameni ? '' : 'ghost'" style="margin-top:12px" @click="uvezi()" :disabled="!fajl" x-text="uvozZameni ? 'Zameni istoriju uvozom' : 'Uvezi (dodaj)'"></button>
+          </div>
+        </div>
+        <div class="card" style="margin-top:16px">
+          <h3>Poslednja kola</h3>
+          <div style="max-height:420px; overflow:auto">
+            <table class="tbl">
+              <thead><tr><th>Kolo</th><th>Datum</th><th>Brojevi</th></tr></thead>
+              <tbody>
+                <template x-for="r in istorija" :key="r.id">
+                  <tr>
+                    <td class="num" x-text="r.kolo"></td>
+                    <td class="muted" x-text="r.datum"></td>
+                    <td><div class="balls"><template x-for="b in redBrojevi(r)" :key="b"><div class="ball sm" x-text="b"></div></template></div></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div class="toast-wrap">
+    <template x-for="t in toasts" :key="t.id"><div class="toast" :class="t.tip" x-text="t.tekst"></div></template>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

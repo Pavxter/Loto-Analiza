@@ -1,0 +1,333 @@
+"""FastAPI backend za Loto Analizator (web).
+
+Servira statički frontend i izlaže REST API koji poziva core module.
+Pokretanje:  python pokreni.py   (iz korena projekta)
+"""
+
+import io
+import os
+
+import pandas as pd
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from webapp.core import konfig, baza, analitika, rangiranje, generator, bektest
+
+STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
+
+app = FastAPI(title="Loto Analizator Web", version="1.0")
+
+# Jednostavan keš analize po periodu (invalidira se pri promeni podataka)
+_kes = {}
+
+
+def _osvezi_df():
+    conn = baza.konekcija()
+    try:
+        return analitika.ucitaj_df(conn)
+    finally:
+        conn.close()
+
+
+def _analiza(period=0):
+    kljuc = ("analiza", period, _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        _kes[kljuc] = analitika.Analiza(_osvezi_df(), period_analize=period)
+    return _kes[kljuc]
+
+
+def _invalidiraj():
+    _kes["verzija"] = _kes.get("verzija", 0) + 1
+    for k in [k for k in _kes if isinstance(k, tuple)]:
+        del _kes[k]
+
+
+# ---------------------------------------------------------------------------
+# Analiza / Dashboard / Statistika
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dashboard")
+def dashboard(period: int = 0):
+    return _analiza(period).kao_dashboard()
+
+
+@app.get("/api/statistika")
+def statistika(period: int = 0):
+    a = _analiza(period)
+    podaci = a.kao_statistika()
+    podaci["vremenska_serija"] = a.vremenska_serija()
+    return podaci
+
+
+@app.get("/api/hi-kvadrat")
+def hi_kvadrat():
+    return _analiza(0).hi_kvadrat_pozicija()
+
+
+@app.get("/api/bazen")
+def bazen(period: int = 0):
+    """Liste vrućih/hladnih/svežih za kreator bazena (kao analiziraj_period_za_bazen)."""
+    df = _osvezi_df()
+    if period <= 0 or period > len(df):
+        period = len(df)
+    df_p = df.tail(period)
+    if df_p.empty:
+        return {"vruci": [], "hladni": [], "svezi": []}
+    brojevi = df_p[konfig.KOLONE_ZA_BROJEVE].melt(value_name="broj")["broj"].dropna().astype(int)
+    freq = brojevi.value_counts()
+    vruci = [int(x) for x in freq.index.tolist()]
+    svi = set(range(1, konfig.MAX_BROJ + 1))
+    neizvuceni = sorted(svi - set(freq.index))
+    najredji = freq.sort_values(ascending=True).index.tolist()
+    hladni = list(dict.fromkeys([int(x) for x in (neizvuceni + najredji)]))
+    posl_10 = df.tail(konfig.PERIOD_SVEZIH_KOLA)
+    svezi_s = posl_10[konfig.KOLONE_ZA_BROJEVE].melt(value_name="broj")["broj"].dropna().astype(int)
+    svezi = [int(x) for x in svezi_s.value_counts().index.tolist()]
+    return {"vruci": vruci, "hladni": hladni, "svezi": svezi, "period": period}
+
+
+# ---------------------------------------------------------------------------
+# Rangiranje
+# ---------------------------------------------------------------------------
+
+@app.get("/api/rangiranje")
+def api_rangiranje(metoda: str = "frekvencija"):
+    df = _osvezi_df()
+    return {"metoda": metoda, "rang": rangiranje.rangiraj(df, metoda)}
+
+
+# ---------------------------------------------------------------------------
+# Generator
+# ---------------------------------------------------------------------------
+
+class GeneratorZahtev(BaseModel):
+    period: int = 0
+    bazen: list[int] | None = None
+    filteri: dict = {}
+
+
+@app.post("/api/generator")
+def api_generator(z: GeneratorZahtev):
+    a = _analiza(z.period)
+    izvor = z.bazen if z.bazen else None
+    if izvor is not None and len(set(izvor)) < konfig.BROJEVA_U_KOMBINACIJI:
+        raise HTTPException(400, f"Bazen mora imati bar {konfig.BROJEVA_U_KOMBINACIJI} brojeva.")
+    rez = generator.generisi(a, bazen=izvor, filteri=z.filteri or {})
+    # Ograniči prikaz da odgovor ne bude ogroman
+    rez["kombinacije"] = rez["kombinacije"][:200]
+    return rez
+
+
+# ---------------------------------------------------------------------------
+# Tiketi
+# ---------------------------------------------------------------------------
+
+class TiketZahtev(BaseModel):
+    kombinacija: str
+
+
+@app.get("/api/tiketi")
+def api_tiketi():
+    conn = baza.konekcija()
+    try:
+        return baza.svi_tiketi(conn)
+    finally:
+        conn.close()
+
+
+@app.post("/api/tiketi")
+def api_dodaj_tiket(z: TiketZahtev):
+    conn = baza.konekcija()
+    try:
+        nov = baza.dodaj_tiket(conn, z.kombinacija.strip())
+        return {"dodato": nov}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/tiketi/{tiket_id}")
+def api_obrisi_tiket(tiket_id: int):
+    conn = baza.konekcija()
+    try:
+        baza.obrisi_tiket(conn, tiket_id)
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Bektest
+# ---------------------------------------------------------------------------
+
+class BektestZahtev(BaseModel):
+    kolo: int
+    bazen: list[int] = []
+    opis: str = ""
+    tip: str = "lista"                     # 'lista' ili 'ceo_bazen'
+    kombinacije: list[list[int]] | None = None
+
+
+@app.get("/api/bektest")
+def api_bektest():
+    conn = baza.konekcija()
+    try:
+        return baza.svi_bektestovi(conn)
+    finally:
+        conn.close()
+
+
+@app.post("/api/bektest")
+def api_sacuvaj_bektest(z: BektestZahtev):
+    conn = baza.konekcija()
+    try:
+        nov = baza.sacuvaj_bektest(conn, z.kolo, z.bazen, z.opis, z.tip, z.kombinacije)
+        return {"sacuvano": nov}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/bektest/{bektest_id}")
+def api_obrisi_bektest(bektest_id: int):
+    conn = baza.konekcija()
+    try:
+        baza.obrisi_bektest(conn, bektest_id)
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Istorija / unos kola / uvoz
+# ---------------------------------------------------------------------------
+
+class KoloZahtev(BaseModel):
+    kolo: int
+    datum: str
+    brojevi: list[int]
+
+
+def _validiraj_brojeve(brojevi):
+    if len(brojevi) != konfig.BROJEVA_U_KOMBINACIJI:
+        raise HTTPException(400, f"Potrebno je tačno {konfig.BROJEVA_U_KOMBINACIJI} brojeva.")
+    if len(set(brojevi)) != len(brojevi):
+        raise HTTPException(400, "Svi brojevi moraju biti jedinstveni.")
+    for b in brojevi:
+        if not (1 <= b <= konfig.MAX_BROJ):
+            raise HTTPException(400, f"Broj {b} nije u opsegu 1-{konfig.MAX_BROJ}.")
+
+
+@app.get("/api/istorija")
+def api_istorija(limit: int = 50):
+    conn = baza.konekcija()
+    try:
+        redovi = conn.execute(
+            "SELECT * FROM istorijski_rezultati ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        return [dict(r) for r in redovi]
+    finally:
+        conn.close()
+
+
+@app.post("/api/istorija")
+def api_dodaj_kolo(z: KoloZahtev):
+    _validiraj_brojeve(z.brojevi)
+    conn = baza.konekcija()
+    try:
+        rezime = bektest.dodaj_kolo_i_proveri(conn, z.kolo, z.datum, z.brojevi)
+    finally:
+        conn.close()
+    _invalidiraj()
+    return rezime
+
+
+@app.put("/api/istorija/{unos_id}")
+def api_izmeni_kolo(unos_id: int, z: KoloZahtev):
+    _validiraj_brojeve(z.brojevi)
+    conn = baza.konekcija()
+    try:
+        baza.izmeni_kolo(conn, unos_id, z.kolo, z.datum, z.brojevi)
+    finally:
+        conn.close()
+    _invalidiraj()
+    return {"ok": True}
+
+
+@app.delete("/api/istorija/{unos_id}")
+def api_obrisi_kolo(unos_id: int):
+    conn = baza.konekcija()
+    try:
+        baza.obrisi_kolo(conn, unos_id)
+    finally:
+        conn.close()
+    _invalidiraj()
+    return {"ok": True}
+
+
+@app.post("/api/uvoz")
+async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
+    """Uvoz CSV/Excel: kolone kolo, datum, b1..b7.
+
+    zameni=False -> dodaje kola postojećoj istoriji (duplikati se preskaču).
+    zameni=True  -> prvo pravi backup, obriše SVU istoriju, pa uveze iz fajla (čist uvoz).
+    """
+    sadrzaj = await fajl.read()
+    try:
+        if fajl.filename.lower().endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(sadrzaj))
+        else:
+            df = pd.read_csv(io.BytesIO(sadrzaj))
+    except Exception as e:
+        raise HTTPException(400, f"Ne mogu da pročitam fajl: {e}")
+
+    obavezne = ["kolo", "datum"] + konfig.KOLONE_ZA_BROJEVE
+    if not all(c in df.columns for c in obavezne):
+        raise HTTPException(400, f"Fajl mora imati kolone: {', '.join(obavezne)}")
+
+    # Validacija sadržaja PRE brisanja (da ne obrišemo istoriju zbog lošeg fajla)
+    try:
+        redovi = []
+        for i, (_, red) in enumerate(df.iterrows(), start=2):  # 2 = prvi red posle zaglavlja
+            brojevi = [int(red[c]) for c in konfig.KOLONE_ZA_BROJEVE]
+            for b in brojevi:
+                if not (1 <= b <= konfig.MAX_BROJ):
+                    raise ValueError(f"red {i}: broj {b} van opsega 1-{konfig.MAX_BROJ}")
+            if len(set(brojevi)) != konfig.BROJEVA_U_KOMBINACIJI:
+                raise ValueError(f"red {i}: ponovljeni brojevi {brojevi}")
+            redovi.append((int(red["kolo"]), str(red["datum"]), brojevi))
+    except Exception as e:
+        raise HTTPException(400, f"Neispravan sadržaj fajla: {e}")
+
+    backup_putanja = None
+    conn = baza.konekcija()
+    obrisano = 0
+    uvezeno = 0
+    try:
+        if zameni:
+            backup_putanja = baza.napravi_backup()
+            obrisano = baza.obrisi_svu_istoriju(conn)
+        for kolo, datum, brojevi in redovi:
+            if baza.dodaj_kolo(conn, kolo, datum, brojevi):
+                uvezeno += 1
+    finally:
+        conn.close()
+    _invalidiraj()
+    return {
+        "uvezeno": uvezeno,
+        "ukupno_u_fajlu": len(df),
+        "zamenjeno": zameni,
+        "obrisano": obrisano,
+        "backup": os.path.basename(backup_putanja) if backup_putanja else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Statički frontend (mora biti poslednje da ne preuzme /api rute)
+# ---------------------------------------------------------------------------
+
+@app.get("/")
+def index():
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+
+
+app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")
