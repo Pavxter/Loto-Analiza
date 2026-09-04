@@ -68,9 +68,64 @@ def postavi_bazu(putanja=None):
             filter_podesavanja TEXT, lista_kombinacija TEXT, broj_kombinacija INTEGER,
             rezultat TEXT, bazen_brojeva TEXT, indeks_promasaja INTEGER,
             indeks_iznenadjenja REAL, UNIQUE(kolo, filter_podesavanja))""")
+        # broj je NULL za kombinacijske prognoze (PLAN_PROGNOZA_KOMBINACIJE §4) → nullable.
+        c.execute("""CREATE TABLE IF NOT EXISTS prognoze (
+            id       INTEGER PRIMARY KEY AUTOINCREMENT,
+            kolo     INTEGER NOT NULL,
+            metod    TEXT    NOT NULL,
+            broj     INTEGER,
+            period   INTEGER,
+            izvor    TEXT    NOT NULL,
+            pogodak  INTEGER,
+            kreirano TEXT    NOT NULL,
+            UNIQUE (kolo, metod, izvor))""")
+        conn.commit()
+        _prognoze_broj_nullable(c)   # migracija starih baza gde je broj bio NOT NULL
+        conn.commit()
+        _dodaj_kolone_ako_nema(c, "virtualne_igre", {
+            "prosek_preklapanja": "REAL",     # §8: prosek preklapanja kombinacija sa dobitnom
+            "maks_preklapanje": "INTEGER",    # §8: najbolje preklapanje u setu
+        })
+        # PLAN_PROGNOZA_KOMBINACIJE §4: kombinacijske prognoze u istoj tabeli.
+        # Napomena: kombinacijski metodi imaju zasebne id-jeve (k_*), pa postojeći
+        # UNIQUE(kolo, metod, izvor) i dalje razdvaja 'broj' od 'komb' bez rekonstrukcije.
+        _dodaj_kolone_ako_nema(c, "prognoze", {
+            "vrsta": "TEXT NOT NULL DEFAULT 'broj'",   # 'broj' | 'komb'
+            "kombinacija": "TEXT",                     # CSV 7 brojeva (sortirano) za 'komb'
+            "preklapanje": "INTEGER",                  # 0..7 posle ocene; NULL za 'broj'
+        })
         conn.commit()
     finally:
         conn.close()
+
+
+def _dodaj_kolone_ako_nema(cursor, tabela, kolone):
+    """Idempotentno dodaje kolone (SQLite ALTER TABLE ADD COLUMN) ako ne postoje."""
+    postojece = {r[1] for r in cursor.execute(f"PRAGMA table_info({tabela})").fetchall()}
+    for ime, tip in kolone.items():
+        if ime not in postojece:
+            cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN {ime} {tip}")
+
+
+def _prognoze_broj_nullable(cursor):
+    """Rekonstruiše tabelu prognoze da 'broj' bude nullable (SQLite ne može ALTER-om).
+
+    Potrebno jer stare baze imaju broj INTEGER NOT NULL, a kombinacijske prognoze ga
+    ostavljaju NULL. Kopira samo originalnih 8 kolona; nove (vrsta/…) doda kasnije
+    _dodaj_kolone_ako_nema. No-op ako je broj već nullable (nove/migrirane baze).
+    """
+    info = cursor.execute("PRAGMA table_info(prognoze)").fetchall()
+    broj = [r for r in info if r[1] == "broj"]
+    if not broj or broj[0][3] == 0:   # r[3] = notnull flag; 0 = već nullable
+        return
+    cursor.execute("ALTER TABLE prognoze RENAME TO _prognoze_staro")
+    cursor.execute("""CREATE TABLE prognoze (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, kolo INTEGER NOT NULL, metod TEXT NOT NULL,
+        broj INTEGER, period INTEGER, izvor TEXT NOT NULL, pogodak INTEGER,
+        kreirano TEXT NOT NULL, UNIQUE (kolo, metod, izvor))""")
+    cursor.execute("INSERT INTO prognoze (id, kolo, metod, broj, period, izvor, pogodak, kreirano) "
+                   "SELECT id, kolo, metod, broj, period, izvor, pogodak, kreirano FROM _prognoze_staro")
+    cursor.execute("DROP TABLE _prognoze_staro")
 
 
 # ----------------------------------------------------------------------------
@@ -184,12 +239,91 @@ def obrisi_bektest(conn, unos_id):
     conn.commit()
 
 
-def azuriraj_rezultat_bektesta(conn, bektest_id, rezultat, indeks_promasaja, indeks_iznenadjenja):
+def azuriraj_rezultat_bektesta(conn, bektest_id, rezultat, indeks_promasaja, indeks_iznenadjenja,
+                               prosek_preklapanja=None, maks_preklapanje=None):
     conn.execute(
-        "UPDATE virtualne_igre SET rezultat=?, indeks_promasaja=?, indeks_iznenadjenja=? WHERE id=?",
-        (rezultat, indeks_promasaja, indeks_iznenadjenja, bektest_id),
+        "UPDATE virtualne_igre SET rezultat=?, indeks_promasaja=?, indeks_iznenadjenja=?, "
+        "prosek_preklapanja=?, maks_preklapanje=? WHERE id=?",
+        (rezultat, indeks_promasaja, indeks_iznenadjenja, prosek_preklapanja, maks_preklapanje, bektest_id),
     )
     conn.commit()
+
+
+# ----------------------------------------------------------------------------
+# Prognoze (strana „Prognoza")
+# ----------------------------------------------------------------------------
+
+def sacuvaj_prognozu(conn, kolo, metod, broj, period, izvor):
+    """Upisuje/menja prognozu. Ocenjenu prognozu je ZABRANJENO menjati — vraća False.
+
+    UNIQUE(kolo, metod, izvor) + INSERT OR REPLACE: ponovni upis zamenjuje samo
+    dok je pogodak IS NULL (poenta eksperimenta, PLAN_PROGNOZA.md §3).
+    """
+    red = conn.execute(
+        "SELECT pogodak FROM prognoze WHERE kolo=? AND metod=? AND izvor=?",
+        (kolo, metod, izvor)).fetchone()
+    if red is not None and red["pogodak"] is not None:
+        return False
+    conn.execute(
+        "INSERT OR REPLACE INTO prognoze (kolo, metod, broj, period, izvor, pogodak, kreirano) "
+        "VALUES (?, ?, ?, ?, ?, NULL, ?)",
+        (kolo, metod, broj, period, izvor, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+    conn.commit()
+    return True
+
+
+def sacuvaj_prognozu_komb(conn, kolo, metod, kombinacija_csv, period, izvor):
+    """Upisuje/menja kombinacijsku prognozu. Ocenjenu (preklapanje != NULL) ZABRANJENO menjati.
+
+    UNIQUE(kolo, metod, izvor) i dalje razdvaja od jednobrojnih jer su metod id-jevi
+    različiti (k_*). Vrsta='komb', broj=NULL, pogodak=NULL (PLAN_PROGNOZA_KOMBINACIJE §4).
+    """
+    red = conn.execute(
+        "SELECT preklapanje FROM prognoze WHERE kolo=? AND metod=? AND izvor=?",
+        (kolo, metod, izvor)).fetchone()
+    if red is not None and red["preklapanje"] is not None:
+        return False
+    conn.execute(
+        "INSERT OR REPLACE INTO prognoze "
+        "(kolo, metod, broj, period, izvor, pogodak, kreirano, vrsta, kombinacija, preklapanje) "
+        "VALUES (?, ?, NULL, ?, ?, NULL, ?, 'komb', ?, NULL)",
+        (kolo, metod, period, izvor, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), kombinacija_csv))
+    conn.commit()
+    return True
+
+
+def prognoze_za_kolo(conn, kolo, izvor=None):
+    if izvor:
+        redovi = conn.execute(
+            "SELECT * FROM prognoze WHERE kolo=? AND izvor=? ORDER BY metod", (kolo, izvor)).fetchall()
+    else:
+        redovi = conn.execute(
+            "SELECT * FROM prognoze WHERE kolo=? ORDER BY izvor, metod", (kolo,)).fetchall()
+    return [dict(r) for r in redovi]
+
+
+def prognoze_lista(conn, izvor=None, metod=None, limit=100, samo_ocenjene=False, vrsta=None):
+    uslovi, parametri = [], []
+    if izvor:
+        uslovi.append("izvor=?"); parametri.append(izvor)
+    if metod:
+        uslovi.append("metod=?"); parametri.append(metod)
+    if vrsta:
+        uslovi.append("vrsta=?"); parametri.append(vrsta)
+    if samo_ocenjene:
+        uslovi.append(("preklapanje IS NOT NULL" if vrsta == "komb" else "pogodak IS NOT NULL"))
+    where = ("WHERE " + " AND ".join(uslovi)) if uslovi else ""
+    parametri.append(limit)
+    redovi = conn.execute(
+        f"SELECT * FROM prognoze {where} ORDER BY kolo DESC, metod LIMIT ?", parametri).fetchall()
+    return [dict(r) for r in redovi]
+
+
+def obrisi_retro_prognoze(conn):
+    """Briše sve retro prognoze (pred ponovni bektest ili pri zameni istorije)."""
+    cur = conn.execute("DELETE FROM prognoze WHERE izvor='retro'")
+    conn.commit()
+    return cur.rowcount
 
 
 # ----------------------------------------------------------------------------

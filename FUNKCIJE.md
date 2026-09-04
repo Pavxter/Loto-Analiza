@@ -110,6 +110,11 @@ Srce aplikacije — pravi kombinacije po zadatim pravilima i boduje ih.
 **Skor** kombinuje blizinu prosečnoj srednjoj vrednosti, svežinu, ritam i (opciono) pristrasnost.
 Rezultat je tabela kombinacija sa skorom; klik „+ tiket" dodaje kombinaciju u „Moje tikete".
 
+**Panel „Različitost seta"** (ispod skora) posle svakog generisanja pokazuje: **prosečno i
+maksimalno preklapanje** po svim parovima generisanih kombinacija (uz referencu — nasumičan
+set bi imao ~1,26) i **pokrivenost** (koliko od 39 brojeva set ukupno sadrži, vizuelno kao
+39 kuglica). Time filter diverziteta dobija merljiv, vidljiv efekat.
+
 **Kako koristiti:** Podesi filtere → „Generiši". Ako je rezultat prazan, filteri su prestrogi
 (npr. zbir uslova nemoguć) — olabavi ih.
 
@@ -123,6 +128,8 @@ Prati koliko su uspešne sačuvane strategije za buduća kola.
 - Kad uneseš to kolo (na strani „Podaci"), aplikacija **automatski** izračuna:
   - **Rezultat** — koliko brojeva iz bazena je pogođeno i najbolji rezultat kombinacija
     (7:x, 6:x, 5:x, 4:x pogodaka).
+  - **Prosek / Maks preklapanja** — prosečan i najbolji broj zajedničkih brojeva svih
+    kombinacija sa dobitnom (slučajno očekivanje po kombinaciji: **1,26**).
   - **Indeks promašaja** — zbir „udaljenosti" najbliže kombinacije od dobitne (manje = bliže).
   - **Indeks iznenađenja** — koliko je kombinacija statistički „retka" (veće = ređa).
 - Dugme ✕ briše bektest.
@@ -189,6 +196,123 @@ ne napravi izlazni fajl. Rezultat je `<ime>_za_uvoz.csv` spreman za uvoz u aplik
 
 **Kako koristiti (redovna upotreba):** posle svakog izvlačenja otvoriš „Podaci", uneseš
 kolo i brojeve, klik „Sačuvaj kolo" — sve analize i provere se osveže automatski.
+
+---
+
+## 8. Prognoza
+
+Statistički eksperiment: predviđanje **jednog broja** (1–39) za sledeće kolo, sa
+sedam paralelnih metoda i kontrolnom grupom.
+
+> **Svrha:** ovo NIJE proricanje. Meri se da li ijedan metod pogađa statistički
+> značajno više od nasumične osnovne linije **17,95%** (verovatnoća da nasumično
+> izabran broj bude među 7 izvučenih od 39). Očekivani ishod poštene igre: nijedan.
+
+### Metode (prediktori)
+| Metod | Logika |
+|---|---|
+| **Najvrući** | Broj sa najviše pojavljivanja u periodu. |
+| **Najhladniji** | Najmanje pojavljivanja; prioritet neizvučenim („due" hipoteza). |
+| **Bajesovski** | Najviši skor Bajesovog modela (isti kao na strani Rangiranje). |
+| **Hibridni** | Najviši hibridni skor (80% Bajes + 20% povezanost). |
+| **Ritam koji kasni** | Najveći odnos D/R — broj koji najviše „kasni" za svojim ritmom. |
+| **Najsvežiji** | Prvi izvučen broj iz poslednjeg kola. |
+| **Nasumični (kontrola)** | Nasumičan broj, seedovan brojem kola. Referenca — ako i on „odskoči", greška je u sistemu. |
+
+### Kako radi
+- **Predlozi:** otvaranjem strane računaju se i **zaključavaju** predlozi za sledeće
+  kolo. „Preračunaj predloge" ih menja samo dok kolo nije uneto — ocenjena prognoza
+  je nepromenljiva (poenta eksperimenta).
+- **Automatska ocena:** pri unosu kola na strani „Podaci" sve prognoze za to kolo
+  dobijaju pogodak ✓/✗ bez ikakve akcije.
+- **Retro-bektest:** dugme prolazi kroz celu istoriju (walk-forward, period 100 kola,
+  preskače prvih 50) i ocenjuje sve metode retroaktivno. Determinističan — svako
+  pokretanje daje isti rezultat. Retro i uživo rezultati se vode **odvojeno** (retro
+  je metodološki slabiji).
+- **Grafikon:** kumulativna uspešnost po metodu, isprekidana linija = baseline 17,95%,
+  osenčana zona = 95% pojas pouzdanosti (sužava se sa brojem kola). Linija unutar
+  zone = nerazlučivo od slučajnosti.
+- **Tabela:** za svaki metod n, pogoci, uspešnost, p-vrednost (dvostrani binomni test)
+  i zaključak. Prag je pooštren Bonferroni korekcijom (0,05 / 7 ≈ **0,007**) jer se
+  7 metoda testira paralelno.
+- Ako metod „odskače": najverovatniji uzroci su greška u podacima, curenje budućnosti
+  ili slučajnost uprkos korekciji — **proveriti pre bilo kakvog zaključka**.
+
+### Rezultat retro-bektesta nad tvojom bazom (1.358 ocenjenih kola)
+Svih 7 metoda završilo je između 16,6% i 18,5% — statistički nerazlučivo od
+slučajnosti (svi p ≫ 0,007). Kontrolna grupa (18,19%) je čak nadmašila Bajesa.
+Upravo to teorija i predviđa za poštenu igru.
+
+### Tab „Kombinacija" — predviđanje 7 brojeva
+
+Pored jednog broja, svaki metod predlaže i **jednu kompletnu kombinaciju od 7 brojeva**.
+Umesto pogotka ✓/✗ meri se **preklapanje sa dobitnom kombinacijom** — koliko od 7
+predloženih brojeva se poklopi (0–7).
+
+| Metod | Logika |
+|---|---|
+| **Top-7 vrućih / hladnih** | 7 najfrekventnijih, odnosno 7 najređih brojeva u periodu. |
+| **Top-7 Bajes / hibrid** | Vrh Bajesove, odnosno hibridne rang-liste. |
+| **Top-7 po ritmu** | 7 brojeva sa najvećim odnosom kašnjenja i ritma (D/R). |
+| **Ko-okurencijski** | Pohlepno bira brojeve koji najčešće izlaze zajedno (jedini algoritamski nov). |
+| **Nasumični (kontrola)** | 7 nasumičnih brojeva (seed = kolo·2). Referenca za poređenje. |
+
+- **Osnovna linija:** ako su izvlačenja slučajna, svaka kombinacija ima isto očekivano
+  preklapanje **μ = 1,256** sa sledećim kolom (7·7/39), bez obzira kako je izabrana.
+- **Grafikon:** kumulativni prosek preklapanja po metodu; osenčena zona je pojas
+  `μ ± 1,96·σ/√n` (σ ≈ 0,932) koji se sužava sa brojem kola.
+- **Histogram:** raspodela preklapanja (0–7) izabranog metoda naspram teorijske
+  (hipergeometrijske) krive, sa hi-kvadrat testom. Metod može imati prosek ≈ μ a ipak
+  drugačiji **oblik** raspodele — i to je nalaz.
+- **Tabela:** prosek preklapanja, najbolje postignuto, p-vrednost (z-test proseka;
+  „—" za n < 30) i zaključak. Prag je Bonferroni preko **svih** metoda strane
+  (jednobrojni + kombinacijski = isti eksperiment): 0,05 / 14 ≈ **0,0036**.
+- **„+ tiket":** dugme na kartici predloga dodaje kombinaciju u „Moje tikete" da se
+  može stvarno pratiti.
+
+**Rezultat nad tvojom bazom (1.359 ocenjenih kola, retro):** svih 7 metoda ima prosek
+u rasponu 1,25–1,32, svi statistički nerazlučivi od μ = 1,256 (svi p ≫ 0,0036).
+Kontrolna grupa ima najviši prosek (1,32) — čist šum, i Bonferroni ga ispravno ne
+proglašava odskačućim. Poštena igra, kako teorija i predviđa.
+
+---
+
+## 9. Različitost
+
+Meri koliko se **izvučene kombinacije međusobno razlikuju** po sadržaju (broj
+zajedničkih brojeva) i poredi istoriju sa egzaktnom teorijskom raspodelom slučajnosti.
+
+> **Svrha:** kombinacije sličnih statističkih profila (sredina, par/nepar, dekade) po
+> pravilu dele vrlo malo zajedničkih brojeva. Ova strana to kvantifikuje i testira: da
+> li se istorija ponaša kao čista slučajnost, ili ne.
+
+### Teorijska osnova
+Za dve nezavisne slučajne kombinacije 7/39, broj zajedničkih brojeva k prati
+**hipergeometrijsku raspodelu** P(k) = C(7,k)·C(32,7−k)/C(39,7). Očekivano preklapanje
+je **1,256**, a najverovatnije je da dele tačno **1** broj (≈41%). Deliti 5+ brojeva je
+izuzetno retko (< 0,08%).
+
+### Analize
+- **Rekordi (cela istorija):** da li je ikad ponovljena identična kombinacija (7/7),
+  najveće preklapanje ikad (koja dva kola, koji brojevi) i broj parova sa 5+ zajedničkih
+  naspram slučajnog očekivanja. Uz objašnjenje **paradoksa rođendana** — ogroman broj
+  parova čini „neverovatna" poklapanja očekivanim.
+- **Uzastopna kola:** histogram preklapanja svakog para (N, N+1) preko teorijske krive,
+  sa hi-kvadrat testom.
+- **Svi parovi (sklopivo):** isto nad svim parovima kola (~milion). Test je ovde
+  orijentacioni jer parovi nisu potpuno nezavisni.
+- **Profil ne predviđa sadržaj:** za uzorak parova crta razliku profila (sredina /
+  broj parnih / raspored po dekadama) naspram broja zajedničkih brojeva, uz **Pearson-ov
+  koeficijent korelacije**. Slaba veza = profil ne nosi informaciju o sadržaju.
+- **Ko-okurencija parova:** toplotna mapa z-skorova (koliko češće/ređe od slučajnosti
+  se svaki par 39×39 pojavljuje zajedno), klik na ćeliju za detalje. Ispod je „kontrola
+  lažnih alarma": koliko parova je van 95% intervala naspram očekivanih **≈ 37** — ako
+  je posmatrano ≈ 37, „vrući parovi" su šum, ne signal.
+
+### Rezultat nad tvojom bazom
+Preklapanje uzastopnih kola i svih parova ne razlikuje se od slučajnosti (p ≫ 0,05);
+najveće preklapanje ikad je **6/7** (nikad identično), broj „vrućih parova" van intervala
+je ≈ očekivani. Sve u skladu sa čistom slučajnošću.
 
 ---
 

@@ -13,7 +13,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from webapp.core import konfig, baza, analitika, rangiranje, generator, bektest
+from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
+                         prognoza, razlicitost)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -21,6 +22,17 @@ app = FastAPI(title="Loto Analizator Web", version="1.0")
 
 # Jednostavan keš analize po periodu (invalidira se pri promeni podataka)
 _kes = {}
+
+
+@app.on_event("startup")
+def _startup():
+    """Osigurava šemu (nove kolone) i doračunava preklapanje starih bektestova (§8)."""
+    baza.postavi_bazu()
+    conn = baza.konekcija()
+    try:
+        bektest.migriraj_preklapanje_bektesta(conn)
+    finally:
+        conn.close()
 
 
 def _osvezi_df():
@@ -117,6 +129,8 @@ def api_generator(z: GeneratorZahtev):
     rez = generator.generisi(a, bazen=izvor, filteri=z.filteri or {})
     # Ograniči prikaz da odgovor ne bude ogroman
     rez["kombinacije"] = rez["kombinacije"][:200]
+    # Panel „Različitost seta" (§8) — mereno nad prikazanim setom
+    rez["razlicitost"] = razlicitost.razlicitost_seta([k["brojevi"] for k in rez["kombinacije"]])
     return rez
 
 
@@ -194,6 +208,174 @@ def api_obrisi_bektest(bektest_id: int):
     try:
         baza.obrisi_bektest(conn, bektest_id)
         return {"ok": True}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Prognoza (predviđanje jednog broja — statistički eksperiment)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/prognoza/predlozi")
+def api_prognoza_predlozi(period: int = 0):
+    """Uživo predlozi za sledeće kolo; računa i zaključava ih ako ne postoje."""
+    conn = baza.konekcija()
+    try:
+        return prognoza.generisi_uzivo(conn, period)
+    finally:
+        conn.close()
+
+
+@app.post("/api/prognoza/preracunaj")
+def api_prognoza_preracunaj(period: int = 0):
+    """Eksplicitno preračunava neocenjene uživo predloge (npr. posle promene perioda)."""
+    conn = baza.konekcija()
+    try:
+        return prognoza.preracunaj_uzivo(conn, period)
+    finally:
+        conn.close()
+
+
+@app.get("/api/prognoza/rezultati")
+def api_prognoza_rezultati(izvor: str = "uzivo"):
+    """Statistika po metodu + serije za kumulativni grafikon (jedan izvor: uzivo|retro)."""
+    if izvor not in ("uzivo", "retro"):
+        raise HTTPException(400, "izvor mora biti 'uzivo' ili 'retro'")
+    conn = baza.konekcija()
+    try:
+        return {"statistika": prognoza.statistika(conn, izvor),
+                "grafikon": prognoza.serije(conn, izvor), "izvor": izvor}
+    finally:
+        conn.close()
+
+
+@app.get("/api/prognoza/istorija")
+def api_prognoza_istorija(izvor: str = "", metod: str = "", limit: int = 50):
+    """Poslednje prognoze (podrazumevano 50), sa izvučenim brojevima ciljnog kola."""
+    conn = baza.konekcija()
+    try:
+        redovi = baza.prognoze_lista(conn, izvor or None, metod or None, limit, samo_ocenjene=False)
+        kola = {r["kolo"] for r in redovi}
+        izvuceni = {}
+        for k in kola:
+            red = conn.execute(
+                "SELECT b1,b2,b3,b4,b5,b6,b7 FROM istorijski_rezultati WHERE kolo=?", (k,)).fetchone()
+            if red:
+                izvuceni[k] = list(red)
+        for r in redovi:
+            r["izvuceni"] = izvuceni.get(r["kolo"])
+        return redovi
+    finally:
+        conn.close()
+
+
+@app.post("/api/prognoza/retro")
+def api_prognoza_retro():
+    """Pokreće retroaktivni bektest (jednobrojni + kombinacijski; briše stare retro redove)."""
+    conn = baza.konekcija()
+    try:
+        return prognoza.retro_bektest(conn)
+    finally:
+        conn.close()
+
+
+# --- Kombinacijske prognoze (PLAN_PROGNOZA_KOMBINACIJE §7) ---
+
+@app.get("/api/prognoza/komb/predlozi")
+def api_prognoza_komb_predlozi(period: int = 0):
+    conn = baza.konekcija()
+    try:
+        return prognoza.generisi_uzivo_komb(conn, period)
+    finally:
+        conn.close()
+
+
+@app.post("/api/prognoza/komb/preracunaj")
+def api_prognoza_komb_preracunaj(period: int = 0):
+    conn = baza.konekcija()
+    try:
+        return prognoza.preracunaj_uzivo_komb(conn, period)
+    finally:
+        conn.close()
+
+
+@app.get("/api/prognoza/komb/rezultati")
+def api_prognoza_komb_rezultati(izvor: str = "uzivo"):
+    if izvor not in ("uzivo", "retro"):
+        raise HTTPException(400, "izvor mora biti 'uzivo' ili 'retro'")
+    conn = baza.konekcija()
+    try:
+        return {"statistika": prognoza.statistika_komb(conn, izvor),
+                "grafikon": prognoza.serije_komb(conn, izvor), "izvor": izvor}
+    finally:
+        conn.close()
+
+
+@app.get("/api/prognoza/komb/histogram")
+def api_prognoza_komb_histogram(izvor: str = "uzivo", metod: str = ""):
+    conn = baza.konekcija()
+    try:
+        return prognoza.histogram_komb(conn, izvor, metod or None)
+    finally:
+        conn.close()
+
+
+@app.get("/api/prognoza/komb/istorija")
+def api_prognoza_komb_istorija(izvor: str = "", metod: str = "", limit: int = 50):
+    conn = baza.konekcija()
+    try:
+        redovi = baza.prognoze_lista(conn, izvor or None, metod or None, limit,
+                                     samo_ocenjene=False, vrsta="komb")
+        kola = {r["kolo"] for r in redovi}
+        izvuceni = {}
+        for k in kola:
+            red = conn.execute(
+                "SELECT b1,b2,b3,b4,b5,b6,b7 FROM istorijski_rezultati WHERE kolo=?", (k,)).fetchone()
+            if red:
+                izvuceni[k] = list(red)
+        for r in redovi:
+            r["izvuceni"] = izvuceni.get(r["kolo"])
+            r["komb_lista"] = [int(x) for x in (r["kombinacija"] or "").split(",") if x.strip()]
+        return redovi
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Različitost (analiza preklapanja kombinacija)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/razlicitost")
+def api_razlicitost(period: int = 0):
+    """Sve analize različitosti (keširano po periodu; rekordi uvek cela istorija)."""
+    kljuc = ("razlicitost", period, _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        conn = baza.konekcija()
+        try:
+            _kes[kljuc] = razlicitost.sve_analize(conn, period)
+        finally:
+            conn.close()
+    return _kes[kljuc]
+
+
+@app.get("/api/razlicitost/profil")
+def api_razlicitost_profil(period: int = 0, tip: str = "sredina"):
+    """Samo Analiza 4 za dati profil (brza promena dropdown-a bez preračuna ostatka)."""
+    conn = baza.konekcija()
+    try:
+        return razlicitost.analiza_profil(razlicitost.istorija_iz_conn(conn), period, tip)
+    finally:
+        conn.close()
+
+
+@app.get("/api/razlicitost/par")
+def api_razlicitost_par(a: int, b: int, period: int = 0):
+    """Detalj ćelije toplotne mape ko-okurencije (par a,b)."""
+    if not (1 <= a <= konfig.MAX_BROJ and 1 <= b <= konfig.MAX_BROJ) or a == b:
+        raise HTTPException(400, "Neispravan par brojeva.")
+    conn = baza.konekcija()
+    try:
+        return razlicitost.ko_okurencija_par(razlicitost.istorija_iz_conn(conn), a, b, period)
     finally:
         conn.close()
 
@@ -306,6 +488,8 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
         if zameni:
             backup_putanja = baza.napravi_backup()
             obrisano = baza.obrisi_svu_istoriju(conn)
+            # retro prognoze postaju nevažeće nad novom istorijom; uživo se zadržavaju
+            baza.obrisi_retro_prognoze(conn)
         for kolo, datum, brojevi in redovi:
             if baza.dodaj_kolo(conn, kolo, datum, brojevi):
                 uvezeno += 1

@@ -163,14 +163,21 @@ def dodaj_kolo_i_proveri(conn, kolo, datum, brojevi):
             pog = len(dobitni_set & set(bazen))
             bazen_rez = f"Bazen: {pog}/{len(bazen)} | "
 
-        # b) uspešnost kombinacija
+        # b) uspešnost kombinacija + preklapanje (§8: prosek i maks preko svih kombinacija)
         pogoci = {7: 0, 6: 0, 5: 0, 4: 0, 3: 0}
+        suma_prekl, broj_komb, maks_prekl = 0, 0, 0
         for komb in kombinacije:
-            p = len(dobitni_set & set(komb))
+            p = len(dobitni_set & set(komb))   # broj zajedničkih = preklapanje (0..7)
             if p in pogoci:
                 pogoci[p] += 1
+            suma_prekl += p
+            broj_komb += 1
+            if p > maks_prekl:
+                maks_prekl = p
         komb_rez = f"Komb: 7:{pogoci[7]}, 6:{pogoci[6]}, 5:{pogoci[5]}, 4:{pogoci[4]}"
         rezultat = bazen_rez + komb_rez
+        prosek_prekl = round(suma_prekl / broj_komb, 3) if broj_komb else None
+        maks_preklapanje = maks_prekl if broj_komb else None
 
         # c) indeks promašaja (najmanji u setu)
         ip = None
@@ -193,12 +200,54 @@ def dodaj_kolo_i_proveri(conn, kolo, datum, brojevi):
             if v is not None:
                 iznen_min = v if iznen_min is None else min(iznen_min, v)
 
-        baza.azuriraj_rezultat_bektesta(conn, red["id"], rezultat, ip, iznen_min)
+        baza.azuriraj_rezultat_bektesta(conn, red["id"], rezultat, ip, iznen_min,
+                                        prosek_prekl, maks_preklapanje)
         provereno_bektestova += 1
+
+    # 3) Ocena otvorenih prognoza za ovo kolo (strana „Prognoza", PLAN_PROGNOZA §4.3)
+    from . import prognoza
+    ocenjeno_prognoza = prognoza.oceni_prognoze(conn, kolo, dobitni_set)
 
     return {
         "dodato": uspeh,
         "kolo": kolo,
         "provereno_tiketa": provereno_tiketa,
         "provereno_bektestova": provereno_bektestova,
+        "ocenjeno_prognoza": ocenjeno_prognoza,
     }
+
+
+def migriraj_preklapanje_bektesta(conn):
+    """Jednokratno doračunava prosek/maks preklapanja za već ocenjene bektestove (§8).
+
+    Obrađuje samo redove koji su ocenjeni (rezultat != NULL) ali nemaju popunjeno
+    prosek_preklapanja. Posle prve migracije upit ne vraća ništa (jeftin no-op).
+    """
+    redovi = conn.execute(
+        "SELECT * FROM virtualne_igre WHERE rezultat IS NOT NULL AND prosek_preklapanja IS NULL"
+    ).fetchall()
+    obradjeno = 0
+    for red in [dict(r) for r in redovi]:
+        dob = conn.execute(
+            "SELECT b1,b2,b3,b4,b5,b6,b7 FROM istorijski_rezultati WHERE kolo=?",
+            (red["kolo"],)).fetchone()
+        if not dob:
+            continue   # kolo još nije uneto — nema dobitne kombinacije
+        dobitni_set = set(int(x) for x in dob)
+        kombinacije = _kombinacije_bektesta(red)
+        if not kombinacije:
+            continue
+        suma, maks, broj = 0, 0, 0
+        for komb in kombinacije:
+            p = len(dobitni_set & set(komb))
+            suma += p
+            broj += 1
+            if p > maks:
+                maks = p
+        prosek = round(suma / broj, 3) if broj else None
+        conn.execute(
+            "UPDATE virtualne_igre SET prosek_preklapanja=?, maks_preklapanje=? WHERE id=?",
+            (prosek, maks if broj else None, red["id"]))
+        obradjeno += 1
+    conn.commit()
+    return obradjeno
