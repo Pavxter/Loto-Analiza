@@ -130,8 +130,37 @@ function app() {
         const k = await jget(`/api/istorija/kontekst?granica=${this.ist.granica}&prozor=${this.ist.prozor}`);
         this.ist.kontekst = k;
         this.ist.cilj = k.cilj;
+        if (this.ist.broj != null) await this.istorijaBroj(this.ist.broj);   // osveži otvoreni detalj
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
       this.ist.loading = false;
+    },
+
+    async istorijaBroj(broj) {
+      this.ist.broj = broj;
+      try {
+        const d = await jget(`/api/istorija/broj/${broj}?granica=${this.ist.granica}&prozor=${this.ist.prozor}`);
+        this.ist.detalj = d;
+        this.$nextTick(() => {
+          const t = d.timeline;
+          crtaj('ist-timeline', {
+            ...bazaOpcija(),
+            grid: { left: 8, right: 12, top: 10, bottom: 20 },
+            tooltip: { trigger: 'axis', backgroundColor: '#1c2330', borderColor: '#262d3a', textStyle: { color: '#e6edf3' },
+              formatter: p => { const i = p[0].dataIndex; return this.formatKolo(t[i].kolo) + (t[i].pojavio ? ' · izašao' : ' · nije'); } },
+            xAxis: { type: 'category', data: t.map(x => x.kolo), show: false },
+            yAxis: { type: 'value', max: 1, min: 0, show: false },
+            series: [{ type: 'bar', barWidth: '70%',
+              data: t.map(x => ({ value: x.pojavio ? 1 : 0.06, itemStyle: { color: x.pojavio ? BOJE.accent : BOJE.mreza, borderRadius: [2, 2, 0, 0] } })) }],
+          });
+        });
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    brojRecenica() {
+      const d = this.ist.detalj; if (!d) return '';
+      const veza = d.znacajno ? 'razlika je značajna (proveriti)' : 'razlika nije značajna';
+      return `Broj ${d.broj} se pojavio ${d.u_prozoru} puta u poslednjih ${d.prozor_n} kola; ` +
+             `očekivanje ≈ ${d.ocekivano}; ${veza}.`;
     },
 
     istGranica(kolo) {

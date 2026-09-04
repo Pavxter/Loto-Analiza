@@ -115,6 +115,7 @@ body {
   background: var(--svez); box-shadow: 0 0 6px var(--svez);
 }
 .ball.sm { width: 28px; height: 28px; font-size: 12px; }
+.ball.active { outline: 2px solid var(--accent); outline-offset: 1px; color: #cfe0ff; }
 
 /* Chart container */
 .chart { width: 100%; height: 320px; }

@@ -143,9 +143,53 @@
                 <span style="font-weight:650; margin-left:6px" x-text="ist.kontekst.raspon_datuma ? (ist.kontekst.raspon_datuma[0] + ' → ' + ist.kontekst.raspon_datuma[1]) : ''"></span></div>
             </div>
 
+            <!-- Panel: detalj broja (Faza 2) -->
+            <template x-if="ist.detalj">
+              <div class="card" style="margin-top:12px; border-color:var(--accent)">
+                <div style="display:flex; align-items:center; gap:12px">
+                  <div class="ball" x-text="ist.detalj.broj"></div>
+                  <div style="flex:1">
+                    <h3 style="margin:0" x-text="'Broj ' + ist.detalj.broj + ' — istorija na granici ' + formatKolo(ist.granica)"></h3>
+                    <p class="hint" style="margin:2px 0 0" x-text="brojRecenica()"></p>
+                  </div>
+                  <button class="btn ghost sm" @click="ist.broj=null; ist.detalj=null">Zatvori ✕</button>
+                </div>
+
+                <div class="grid g-4" style="margin-top:14px">
+                  <div class="card kpi"><span class="label">U prozoru</span><span class="value" x-text="ist.detalj.u_prozoru + ' / ' + ist.detalj.prozor_n"></span></div>
+                  <div class="card kpi"><span class="label">Ukupno (≤ granice)</span><span class="value" x-text="ist.detalj.ukupno"></span></div>
+                  <div class="card kpi"><span class="label">Trenutni razmak</span><span class="value" x-text="ist.detalj.trenutni_razmak===null ? '—' : (ist.detalj.trenutni_razmak + ' kola')"></span></div>
+                  <div class="card kpi"><span class="label">Razmak (pros/min–maks)</span><span class="value sm" x-text="ist.detalj.prosek_razmak===null ? '—' : (ist.detalj.prosek_razmak + ' (' + ist.detalj.min_razmak + '–' + ist.detalj.max_razmak + ')')"></span></div>
+                </div>
+
+                <div class="grid g-2" style="margin-top:14px">
+                  <div>
+                    <h3 style="font-size:13px">Poslednje pojavljivanje</h3>
+                    <p class="muted" style="font-size:13px; margin:0">
+                      <span x-text="ist.detalj.poslednje_pojavljivanje ? formatKolo(ist.detalj.poslednje_pojavljivanje) : 'nije se pojavio ≤ granice'"></span>
+                      <template x-if="ist.detalj.prethodno_pojavljivanje"><span x-text="' · pre toga ' + formatKolo(ist.detalj.prethodno_pojavljivanje)"></span></template>
+                    </p>
+                    <h3 style="font-size:13px; margin-top:12px">Raspodela po poziciji izvlačenja</h3>
+                    <div class="balls" style="gap:10px">
+                      <template x-for="p in ist.detalj.pozicije" :key="p.pozicija">
+                        <div style="text-align:center">
+                          <div class="ball sm neutralan" x-text="p.broj" :style="p.broj===0 ? 'opacity:.35' : ''"></div>
+                          <div class="muted" style="font-size:10px; margin-top:2px" x-text="'poz ' + p.pozicija"></div>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                  <div>
+                    <h3 style="font-size:13px">Timeline u prozoru <span class="muted" style="font-weight:400; font-size:11px">(kada je izlazio)</span></h3>
+                    <div id="ist-timeline" style="height:120px"></div>
+                  </div>
+                </div>
+              </div>
+            </template>
+
             <!-- Tabela prethodnih kola (najnovije gore) -->
             <div class="card" style="margin-top:12px">
-              <h3>Prethodna kola <span class="muted" style="font-weight:400; font-size:12px" x-text="'(≤ ' + formatKolo(ist.granica) + ', klik na red bira to kolo kao cilj)'"></span></h3>
+              <h3>Prethodna kola <span class="muted" style="font-weight:400; font-size:12px" x-text="'(≤ ' + formatKolo(ist.granica) + ', klik na red bira kolo kao cilj, klik na broj otvara detalj)'"></span></h3>
               <table class="tbl" style="margin-top:6px">
                 <thead><tr><th>Kolo</th><th>Datum</th><th>Brojevi (redosled izvlačenja)</th></tr></thead>
                 <tbody>
@@ -154,7 +198,7 @@
                       <td class="num" x-text="formatKolo(k.kolo)"></td>
                       <td class="muted" x-text="k.datum || '—'"></td>
                       <td><div class="balls">
-                        <template x-for="b in k.brojevi" :key="b"><div class="ball sm neutralan" x-text="b"></div></template>
+                        <template x-for="b in k.brojevi" :key="b"><div class="ball sm neutralan" :class="{active: ist.broj===b}" style="cursor:pointer" @click.stop="istorijaBroj(b)" x-text="b"></div></template>
                       </div></td>
                     </tr>
                   </template>

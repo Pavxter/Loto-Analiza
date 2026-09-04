@@ -13,7 +13,7 @@ modulima. Numeracija kola (godina*1000+redni) nije kontinualna, pa se navigacija
 radi upitom nad poretkom u bazi, nikad aritmetikom kolo±1.
 """
 
-from . import konfig
+from . import konfig, analitika
 
 BROJEVA = konfig.BROJEVA_U_KOMBINACIJI
 
@@ -95,6 +95,20 @@ def detalj_kola(conn, kolo):
     return {"kolo": _red_u_kolo(r),
             "prethodno": prethodno_kolo(conn, kolo),
             "sledece": sledece_kolo(conn, kolo)}
+
+
+def detalj_broja(conn, broj, granica, prozor=None):
+    """Istorija jednog broja „kakva je bila na granici" (Faza 2).
+
+    Seče DataFrame na kola ≤ granica i prosleđuje ga analitika.detalj_broja —
+    nikakav račun se ne radi ovde (UPUTSTVO §1.3). Rezultati zavise isključivo od
+    kola ≤ granica (test curenja u kasnijoj fazi).
+    """
+    df = analitika.ucitaj_df(conn)
+    df = df[df["kolo"] <= granica]
+    d = analitika.detalj_broja(df, broj, prozor if (prozor and prozor > 0) else None)
+    d["granica"] = granica
+    return d
 
 
 # ----------------------------------------------------------------------------

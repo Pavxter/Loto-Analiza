@@ -112,11 +112,51 @@ def test_skok_i_granice():
         _ocisti(conn, putanja)
 
 
+def test_broj_zavisi_samo_od_prozora():
+    """Detalj broja: prozor menja rezultate; nikad se ne gleda kolo > granica."""
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        granica = 2021030
+        d10 = istorija.detalj_broja(conn, 7, granica, 10)
+        d50 = istorija.detalj_broja(conn, 7, granica, 50)
+        assert d10["prozor_n"] == 10 and d50["prozor_n"] == 50
+        assert d10["u_prozoru"] <= d50["u_prozoru"]          # manji prozor ≤ veći
+        assert d10["ukupno"] == d50["ukupno"]                # ukupno nezavisno od prozora
+        # nijedno kolo u timeline-u ne prelazi granicu
+        assert all(t["kolo"] <= granica for t in d50["timeline"])
+        if d50["poslednje_pojavljivanje"] is not None:
+            assert d50["poslednje_pojavljivanje"] <= granica
+        # zbir raspodele po pozicijama == broj pojavljivanja u prozoru
+        assert sum(p["broj"] for p in d50["pozicije"]) == d50["u_prozoru"]
+        print("test_broj_zavisi_samo_od_prozora: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
+def test_broj_ne_vidi_buducnost():
+    """Detalj na granici je identičan bez obzira na kola posle granice (anti-curenje)."""
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        granica = 2021020
+        pre = istorija.detalj_broja(conn, 13, granica, 30)
+        # dodaj „budućnost" (nova kola posle granice) i ponovo izračunaj za istu granicu
+        for kolo in (2021051, 2021052, 2021053):
+            baza.dodaj_kolo(conn, kolo, "2099-01-01", [13, 1, 2, 3, 4, 5, 6])
+        conn.commit()
+        posle = istorija.detalj_broja(conn, 13, granica, 30)
+        assert pre == posle, "detalj na granici se promenio zbog budućnosti!"
+        print("test_broj_ne_vidi_buducnost: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
 def main():
     test_granica_iskljucuje_buducnost()
     test_prethodno_sledece_preko_godine()
     test_prozor_velicina()
     test_skok_i_granice()
+    test_broj_zavisi_samo_od_prozora()
+    test_broj_ne_vidi_buducnost()
     print("\nSVI TESTOVI ISTORIJE PROSLI [OK]")
 
 

@@ -429,6 +429,18 @@ def api_istorija_kolo(kolo: int):
         conn.close()
 
 
+@app.get("/api/istorija/broj/{broj}")
+def api_istorija_broj(broj: int, granica: int, prozor: int = 0):
+    """Istorija jednog broja na granici (pojavljivanja, razmaci, pozicije, timeline)."""
+    if not (1 <= broj <= konfig.MAX_BROJ):
+        raise HTTPException(400, f"Broj {broj} nije u opsegu 1-{konfig.MAX_BROJ}.")
+    conn = baza.konekcija()
+    try:
+        return istorija.detalj_broja(conn, broj, granica, prozor)
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Istorija / unos kola / uvoz
 # ---------------------------------------------------------------------------

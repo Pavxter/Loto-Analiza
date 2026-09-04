@@ -222,3 +222,71 @@ class Analiza:
         sr = self.loto_df[KOLONE].mean(axis=1)
         kola = self.loto_df["kolo"].tolist()
         return {"kola": [int(k) for k in kola], "vrednosti": [round(float(x), 3) for x in sr.tolist()]}
+
+
+# ----------------------------------------------------------------------------
+# Detalj jednog broja (za stranu „Istraži istoriju", Faza 2)
+# ----------------------------------------------------------------------------
+
+def detalj_broja(loto_df, broj, prozor=None):
+    """Istorija jednog broja nad prosleđenim DataFrame-om (čista funkcija).
+
+    Poziva se sa isečkom „kola ≤ granica" — sam prozor bira poslednjih N tog isečka
+    (kao klasa Analiza). Frekvencija/pozicija/ritam se računaju ovde (ne u istorija.py).
+
+    Metrike po prozoru: broj pojavljivanja, razmaci (prosek/min/maks), raspodela po
+    poziciji izvlačenja, timeline (svako kolo + da li se pojavio). Metrike nad celim
+    isečkom (nezavisne od prozora): ukupno pojavljivanja, poslednje/prethodno
+    pojavljivanje i trenutni razmak (kola od poslednjeg pojavljivanja do granice).
+    """
+    df = loto_df.reset_index(drop=True)
+    n = len(df)
+    win = df.tail(prozor).reset_index(drop=True) if (prozor and 0 < prozor <= n) else df
+    prozor_n = len(win)
+
+    def _redovi(d):
+        return d[d[KOLONE].eq(broj).any(axis=1)]
+
+    svi = _redovi(df)
+    u_prozoru_red = _redovi(win)
+    ukupno = int(len(svi))
+    u_prozoru = int(len(u_prozoru_red))
+
+    poslednje = int(svi.iloc[-1]["kolo"]) if ukupno >= 1 else None
+    prethodno = int(svi.iloc[-2]["kolo"]) if ukupno >= 2 else None
+    # trenutni razmak: broj kola posle poslednjeg pojavljivanja, do granice (0 = izašao u granici)
+    trenutni_razmak = int(n - 1 - svi.index[-1]) if ukupno >= 1 else None
+
+    # razmaci između uzastopnih pojavljivanja u prozoru (u broju kola)
+    poz = list(u_prozoru_red.index)
+    razmaci = [poz[i + 1] - poz[i] for i in range(len(poz) - 1)]
+    prosek_razmak = round(sum(razmaci) / len(razmaci), 2) if razmaci else None
+
+    pozicije = [{"pozicija": i, "broj": int((win[c] == broj).sum())}
+                for i, c in enumerate(KOLONE, 1)]
+
+    kola_win = win["kolo"].astype(int).tolist()
+    maske_win = win[KOLONE].eq(broj).any(axis=1).tolist()
+    timeline = [{"kolo": int(k), "pojavio": bool(p)} for k, p in zip(kola_win, maske_win)]
+
+    p = BROJEVA_U_KOMBINACIJI / MAX_BROJ                      # 7/39 ≈ 0.1795
+    ocekivano = prozor_n * p                                  # izvedeno, ne hardkodovano
+    sd = (prozor_n * p * (1 - p)) ** 0.5 if prozor_n > 0 else 0.0
+    znacajno = bool(sd > 0 and abs(u_prozoru - ocekivano) > 1.96 * sd)
+
+    return {
+        "broj": int(broj),
+        "prozor_n": prozor_n,
+        "ukupno": ukupno,
+        "u_prozoru": u_prozoru,
+        "ocekivano": round(ocekivano, 2),
+        "znacajno": znacajno,
+        "poslednje_pojavljivanje": poslednje,
+        "prethodno_pojavljivanje": prethodno,
+        "trenutni_razmak": trenutni_razmak,
+        "prosek_razmak": prosek_razmak,
+        "min_razmak": min(razmaci) if razmaci else None,
+        "max_razmak": max(razmaci) if razmaci else None,
+        "pozicije": pozicije,
+        "timeline": timeline,
+    }
