@@ -41,6 +41,7 @@ function app() {
   return {
     strane: [
       { id: 'dashboard', naziv: 'Dashboard', ico: '🏠', opis: 'Ključni pokazatelji i predlog bazena', period: true },
+      { id: 'istorija', naziv: 'Istraži istoriju', ico: '🕰️', opis: 'Vremeplov kroz kola — šta je sistem znao u svakom trenutku', period: false },
       { id: 'statistika', naziv: 'Statistika', ico: '📊', opis: 'Frekvencija, srednje vrednosti, dekade, poziciona analiza', period: true },
       { id: 'razlicitost', naziv: 'Različitost', ico: '🧬', opis: 'Koliko se izvučene kombinacije razlikuju — poređenje sa čistom slučajnošću', period: true },
       { id: 'rangiranje', naziv: 'Rangiranje', ico: '🎯', opis: 'Rangiranje brojeva: Frekvencija / Bajes / Hibrid', period: false },
@@ -72,6 +73,7 @@ function app() {
              filterMetod: '', histMetod: '', hist: null, prag: 0.0036, brojMetoda: 14,
              ocekivano: 1.256, sigma: 0.9317, ucitano: false },
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
+    ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null },
 
     aktivna() { return this.strane.find(s => s.id === this.strana) || this.strane[0]; },
 
@@ -85,6 +87,7 @@ function app() {
     ucitajStranu() {
       const f = {
         dashboard: () => this.ucitajDashboard(),
+        istorija: () => this.ucitajIstorijskiPregled(),
         statistika: () => this.ucitajStatistiku(),
         razlicitost: () => this.ucitajRazlicitost(),
         rangiranje: () => this.ucitajRang(),
@@ -111,6 +114,40 @@ function app() {
     },
     formatSkor(s) { return s < 1 ? Number(s).toExponential(3) : Number(s).toFixed(2); },
     redBrojevi(r) { return [r.b1, r.b2, r.b3, r.b4, r.b5, r.b6, r.b7]; },
+    formatKolo(k) { if (k == null) return '—'; const s = String(k); return s.length > 4 ? s.slice(0, 4) + '-' + s.slice(4) : s; },
+
+    // ---------- ISTRAŽI ISTORIJU ----------
+    istKolaObrnuto() { return this.ist.kontekst ? [...this.ist.kontekst.kola].reverse() : []; },
+
+    async ucitajIstorijskiPregled() {
+      this.ist.loading = true;
+      try {
+        if (this.ist.granica == null) {
+          const g = await jget('/api/istorija/granice');
+          this.ist.granica = g.najnovije;   // start = najnovije poznato kolo
+        }
+        if (this.ist.granica == null) { this.ist.kontekst = null; return; }  // prazna baza
+        const k = await jget(`/api/istorija/kontekst?granica=${this.ist.granica}&prozor=${this.ist.prozor}`);
+        this.ist.kontekst = k;
+        this.ist.cilj = k.cilj;
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.ist.loading = false;
+    },
+
+    istGranica(kolo) {
+      if (kolo == null) return;
+      this.ist.granica = kolo;
+      this.ucitajIstorijskiPregled();
+    },
+
+    async izaberiKolo(kolo) {
+      // Klik na kolo u tabeli: to kolo postaje cilj -> granica je kolo pre njega.
+      try {
+        const d = await jget(`/api/istorija/kolo/${kolo}`);
+        this.ist.granica = d.prethodno != null ? d.prethodno : kolo;  // najstarije: ostaje granica
+        this.ucitajIstorijskiPregled();
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
 
     // ---------- DASHBOARD ----------
     async ucitajDashboard() {

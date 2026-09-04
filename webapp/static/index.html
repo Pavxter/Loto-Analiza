@@ -105,6 +105,67 @@
         </template>
       </section>
 
+      <!-- ============ ISTRAŽI ISTORIJU ============ -->
+      <section x-show="strana==='istorija'">
+        <template x-if="ist.loading && !ist.kontekst"><div class="center-load"><div class="spinner"></div>Učitavam…</div></template>
+        <template x-if="ist.kontekst">
+          <div>
+            <!-- Toolbar: navigacija + prozor -->
+            <div class="card" style="display:flex; flex-wrap:wrap; align-items:center; gap:12px">
+              <div style="display:flex; align-items:center; gap:6px">
+                <button class="btn ghost sm" @click="istGranica(ist.kontekst.skok_nazad)" :disabled="!ist.kontekst.prethodna_granica" title="Nazad za ceo prozor">«</button>
+                <button class="btn ghost sm" @click="istGranica(ist.kontekst.prethodna_granica)" :disabled="!ist.kontekst.prethodna_granica" title="Prethodno kolo">‹</button>
+                <div style="min-width:120px; text-align:center; font-weight:650; font-variant-numeric:tabular-nums" x-text="'Kolo ' + formatKolo(ist.granica)"></div>
+                <button class="btn ghost sm" @click="istGranica(ist.kontekst.sledeca_granica)" :disabled="!ist.kontekst.sledeca_granica" title="Sledeće kolo">›</button>
+                <button class="btn ghost sm" @click="istGranica(ist.kontekst.skok_napred)" :disabled="!ist.kontekst.sledeca_granica" title="Napred za ceo prozor">»</button>
+              </div>
+              <button class="btn ghost sm" @click="istGranica(ist.kontekst.najnovije)" :disabled="!ist.kontekst.sledeca_granica">Idi na najnovije</button>
+              <div class="spacer" style="flex:1"></div>
+              <div style="display:flex; align-items:center; gap:8px">
+                <span class="muted" style="font-size:12px">Prozor:</span>
+                <div class="seg">
+                  <template x-for="p in [20,50,100,200,0]" :key="p">
+                    <button :class="{active: ist.prozor===p}" @click="ist.prozor=p; ucitajIstorijskiPregled()" x-text="p===0 ? 'sva' : p"></button>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <!-- Info linija -->
+            <div class="card" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:24px; align-items:baseline">
+              <div><span class="muted" style="font-size:12px">Sistem zna zaključno sa</span>
+                <span style="font-weight:650; margin-left:6px" x-text="formatKolo(ist.granica)"></span></div>
+              <div><span class="muted" style="font-size:12px">Naredno kolo (cilj)</span>
+                <span style="font-weight:650; margin-left:6px" x-text="ist.kontekst.cilj ? formatKolo(ist.kontekst.cilj) : '— (najnovije u bazi)'"></span></div>
+              <div><span class="muted" style="font-size:12px">Kola u prozoru</span>
+                <span style="font-weight:650; margin-left:6px" x-text="ist.kontekst.broj_u_prozoru + ' / ' + ist.kontekst.ukupno_do_granice"></span></div>
+              <div x-show="ist.kontekst.raspon_datuma"><span class="muted" style="font-size:12px">Raspon</span>
+                <span style="font-weight:650; margin-left:6px" x-text="ist.kontekst.raspon_datuma ? (ist.kontekst.raspon_datuma[0] + ' → ' + ist.kontekst.raspon_datuma[1]) : ''"></span></div>
+            </div>
+
+            <!-- Tabela prethodnih kola (najnovije gore) -->
+            <div class="card" style="margin-top:12px">
+              <h3>Prethodna kola <span class="muted" style="font-weight:400; font-size:12px" x-text="'(≤ ' + formatKolo(ist.granica) + ', klik na red bira to kolo kao cilj)'"></span></h3>
+              <table class="tbl" style="margin-top:6px">
+                <thead><tr><th>Kolo</th><th>Datum</th><th>Brojevi (redosled izvlačenja)</th></tr></thead>
+                <tbody>
+                  <template x-for="k in istKolaObrnuto()" :key="k.kolo">
+                    <tr style="cursor:pointer" @click="izaberiKolo(k.kolo)">
+                      <td class="num" x-text="formatKolo(k.kolo)"></td>
+                      <td class="muted" x-text="k.datum || '—'"></td>
+                      <td><div class="balls">
+                        <template x-for="b in k.brojevi" :key="b"><div class="ball sm neutralan" x-text="b"></div></template>
+                      </div></td>
+                    </tr>
+                  </template>
+                  <tr x-show="!ist.kontekst.kola.length"><td colspan="3" class="muted" style="text-align:center; padding:20px">Nema kola u prozoru.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+      </section>
+
       <!-- ============ STATISTIKA ============ -->
       <section x-show="strana==='statistika'">
         <template x-if="loading"><div class="center-load"><div class="spinner"></div>Računam…</div></template>

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost)
+                         prognoza, razlicitost, istorija)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -376,6 +376,55 @@ def api_razlicitost_par(a: int, b: int, period: int = 0):
     conn = baza.konekcija()
     try:
         return razlicitost.ko_okurencija_par(razlicitost.istorija_iz_conn(conn), a, b, period)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Istraži istoriju (vremeplov) — UPUTSTVO_PROGRAMER_ISTORIJA.md, Faza 1
+# granica = poslednje poznato kolo (uključivo); cilj = prvo kolo posle nje.
+# Svi endpointi traže eksplicitnu `granica` (bez fallbacka na celu bazu → 422).
+# ---------------------------------------------------------------------------
+
+@app.get("/api/istorija/granice")
+def api_istorija_granice():
+    """Meta bez analize: najstarije/najnovije kolo i ukupno (bootstrap taba)."""
+    conn = baza.konekcija()
+    try:
+        return istorija.granice(conn)
+    finally:
+        conn.close()
+
+
+@app.get("/api/istorija/kontekst")
+def api_istorija_kontekst(granica: int, prozor: int = 0):
+    """Sve za početni ekran u jednom pozivu: prozor kola, cilj, granica, navigacija."""
+    conn = baza.konekcija()
+    try:
+        return istorija.kontekst(conn, granica, prozor)
+    finally:
+        conn.close()
+
+
+@app.get("/api/istorija/kola")
+def api_istorija_kola(granica: int, prozor: int = 0):
+    """Samo lista kola ≤ granica (poslednjih prozor) — za osvežavanje tabele."""
+    conn = baza.konekcija()
+    try:
+        return istorija.kola_do(conn, granica, prozor)
+    finally:
+        conn.close()
+
+
+@app.get("/api/istorija/kolo/{kolo}")
+def api_istorija_kolo(kolo: int):
+    """Detalj jednog kola + prethodno/sledeće (za klik u tabeli)."""
+    conn = baza.konekcija()
+    try:
+        d = istorija.detalj_kola(conn, kolo)
+        if d is None:
+            raise HTTPException(404, f"Kolo {kolo} ne postoji u bazi.")
+        return d
     finally:
         conn.close()
 
