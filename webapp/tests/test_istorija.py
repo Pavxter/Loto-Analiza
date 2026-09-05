@@ -150,6 +150,69 @@ def test_broj_ne_vidi_buducnost():
         _ocisti(conn, putanja)
 
 
+def test_sazetak_prozora():
+    """Sažetak „šta se dešavalo pre": pokriva svih 39, zbir = prozor_n * 7."""
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        granica = 2021030
+        k = istorija.kontekst(conn, granica, 50)
+        s = k["sazetak"]
+        assert s["prozor_n"] == 50
+        assert len(s["brojevi"]) == 39
+        assert sum(b["pojavljivanja"] for b in s["brojevi"]) == 50 * 7
+        for b in s["brojevi"]:
+            if b["pojavljivanja"] == 0:
+                assert b["poslednje"] is None and b["razmak"] is None
+            else:
+                assert b["poslednje"] <= granica and 0 <= b["razmak"] < 50
+        print("test_sazetak_prozora: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
+def test_razlicitost_cilja():
+    """Preklapanje cilja sa prošlošću: samo kola < cilj, ne vidi budućnost."""
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        cilj = 2021030
+        d = istorija.razlicitost_cilja(conn, cilj, 20)
+        assert d is not None and d["cilj"] == cilj
+        assert d["granica"] == 2021029
+        assert d["prozor_n"] == 20
+        assert 0 <= d["sa_prethodnim"]["k"] <= 7
+        assert d["maks"]["kolo"] < cilj                      # rekord je iz prošlosti
+        assert all(p["puta"] > 0 for p in d["ponovljeni_parovi"])
+        assert istorija.razlicitost_cilja(conn, 9999999, 20) is None
+        # anti-curenje: kola posle cilja ne smeju menjati rezultat
+        for kolo in (2021051, 2021052):
+            baza.dodaj_kolo(conn, kolo, "2099-01-01", [1, 2, 3, 4, 5, 6, 7])
+        conn.commit()
+        assert istorija.razlicitost_cilja(conn, cilj, 20) == d
+        print("test_razlicitost_cilja: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
+def test_rangiranje_na_granici():
+    """Rangiranje po tri metode: kompletno, i nezavisno od budućnosti."""
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        granica = 2021030
+        r = istorija.rangiranje(conn, granica, 50)
+        assert len(r["tabela"]) == 39 and r["broj_kola"] == 50
+        for metoda in ("frekvencija", "bajes", "hibrid"):
+            rangovi = sorted(red[metoda]["rang"] for red in r["tabela"])
+            assert rangovi == list(range(1, 40)), f"{metoda}: rangovi nisu 1..39"
+        # anti-curenje
+        for kolo in (2021051, 2021052, 2021053):
+            baza.dodaj_kolo(conn, kolo, "2099-01-01", [1, 2, 3, 4, 5, 6, 7])
+        conn.commit()
+        assert istorija.rangiranje(conn, granica, 50) == r
+        print("test_rangiranje_na_granici: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
 def main():
     test_granica_iskljucuje_buducnost()
     test_prethodno_sledece_preko_godine()
@@ -157,6 +220,9 @@ def main():
     test_skok_i_granice()
     test_broj_zavisi_samo_od_prozora()
     test_broj_ne_vidi_buducnost()
+    test_sazetak_prozora()
+    test_razlicitost_cilja()
+    test_rangiranje_na_granici()
     print("\nSVI TESTOVI ISTORIJE PROSLI [OK]")
 
 

@@ -377,6 +377,62 @@ def razlicitost_seta(kombinacije):
 
 
 # ----------------------------------------------------------------------------
+# Preklapanje jedne kombinacije sa istorijom pre nje („Istraži istoriju", Faza 3)
+# ----------------------------------------------------------------------------
+
+def preklapanje_sa_istorijom(istorija_pre, cilj_brojevi, poslednjih=None):
+    """Kako se kombinacija `cilj` preklapa sa kolima IZVUČENIM PRE nje.
+
+    istorija_pre: lista (kolo, brojevi) strogo pre cilja, hronološki (istorija.py
+    je iseca). `poslednjih` bira prozor (None/0 = sva prethodna kola). Vraća:
+    preklapanje sa neposredno prethodnim kolom, prosek i raspodela nad prozorom,
+    maksimalno istorijsko preklapanje (+ u kom kolu), ponovljene parove iz cilja,
+    i teorijsku referencu μ/σ (razlicitost_teorija). Ne računa preklapanje ovde
+    dva puta — koristi isti bitmask kao ostatak modula.
+    """
+    ise = istorija_pre[-poslednjih:] if (poslednjih and poslednjih > 0) else istorija_pre
+    cm = T.maska(cilj_brojevi)
+    preklapanja = [(kolo, T.preklapanje(cm, T.maska(br))) for kolo, br in ise]
+    n = len(preklapanja)
+
+    raspodela = [0] * (K + 1)
+    for _kolo, k in preklapanja:
+        raspodela[k] += 1
+    prosek = sum(k for _kolo, k in preklapanja) / n if n else None
+
+    maks_k, maks_kolo = -1, None
+    for kolo, k in preklapanja:
+        if k > maks_k:
+            maks_k, maks_kolo = k, kolo
+
+    cb = sorted(set(int(x) for x in cilj_brojevi))
+    parovi = []
+    for i in range(len(cb)):
+        for j in range(i + 1, len(cb)):
+            a, b = cb[i], cb[j]
+            puta = sum(1 for _kolo, br in ise if a in br and b in br)
+            if puta > 0:
+                parovi.append({"a": a, "b": b, "puta": puta})
+    parovi.sort(key=lambda x: (-x["puta"], x["a"], x["b"]))
+
+    return {
+        "prozor_n": n,
+        "cilj_brojevi": cb,
+        "sa_prethodnim": ({"kolo": preklapanja[-1][0], "k": preklapanja[-1][1]}
+                          if preklapanja else None),
+        "prosek": (round(prosek, 3) if prosek is not None else None),
+        "raspodela": {"k": list(range(K + 1)), "broj": raspodela},
+        "maks": ({"k": maks_k, "kolo": maks_kolo} if maks_kolo is not None else None),
+        "ponovljeni_parovi": parovi,
+        "parova_ukupno": len(cb) * (len(cb) - 1) // 2,
+        "teorija": {
+            "ocekivano": round(T.ocekivano_preklapanje(), 4),
+            "sigma": round(T.sigma_preklapanja(), 4),
+        },
+    }
+
+
+# ----------------------------------------------------------------------------
 # Objedinjeni izlaz za stranu
 # ----------------------------------------------------------------------------
 

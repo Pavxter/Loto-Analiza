@@ -206,6 +206,90 @@
                 </tbody>
               </table>
             </div>
+
+            <!-- ===== Faza 3: Kontekst kola (collapsible) ===== -->
+            <!-- Sažetak prozora: šta se dešavalo pre -->
+            <div class="card" style="margin-top:12px">
+              <div class="coll-head" @click="istToggle('sazetak')">
+                <span class="caret" x-text="ist.otvori.sazetak ? '▾' : '▸'"></span>
+                <h3>Šta se dešavalo pre ovog kola <span class="muted" style="font-weight:400; font-size:12px">— sažetak prozora, svih 39 brojeva (klik na broj otvara detalj)</span></h3>
+              </div>
+              <div x-show="ist.otvori.sazetak" x-cloak style="margin-top:10px; max-height:340px; overflow:auto">
+                <table class="tbl">
+                  <thead><tr><th>Broj</th><th>Pojavljivanja</th><th>Poslednji put</th><th>Razmak (kola)</th></tr></thead>
+                  <tbody>
+                    <template x-for="b in istSazetakSort()" :key="b.broj">
+                      <tr>
+                        <td><div class="ball sm neutralan" :class="{active: ist.broj===b.broj}" style="cursor:pointer" @click="istorijaBroj(b.broj)" x-text="b.broj"></div></td>
+                        <td class="num" x-text="b.pojavljivanja"></td>
+                        <td class="muted" x-text="b.poslednje ? formatKolo(b.poslednje) : '—'"></td>
+                        <td class="num" x-text="b.razmak===null ? '—' : b.razmak"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Različitost cilja: koliko je naredno kolo slično prošlosti -->
+            <div class="card" style="margin-top:12px">
+              <div class="coll-head" @click="istToggle('razl')">
+                <span class="caret" x-text="ist.otvori.razl ? '▾' : '▸'"></span>
+                <h3>Različitost cilja <span class="muted" style="font-weight:400; font-size:12px">— koliko naredno kolo liči na prošlost</span></h3>
+              </div>
+              <div x-show="ist.otvori.razl" x-cloak style="margin-top:10px">
+                <p class="muted" x-show="ist.cilj==null" style="font-size:13px">Granica je najnovije kolo — nema narednog kola (cilja) za poređenje.</p>
+                <template x-if="ist.cilj!=null && ist.razl">
+                  <div>
+                    <div class="grid g-4">
+                      <div class="card kpi"><span class="label">Cilj</span><span class="value sm" x-text="formatKolo(ist.razl.cilj)"></span></div>
+                      <div class="card kpi"><span class="label">Sa prethodnim kolom</span><span class="value" x-text="ist.razl.sa_prethodnim ? (ist.razl.sa_prethodnim.k + ' / 7') : '—'"></span></div>
+                      <div class="card kpi"><span class="label">Prosek u prozoru</span><span class="value sm" x-text="(ist.razl.prosek===null?'—':ist.razl.prosek) + ' (μ=' + ist.razl.teorija.ocekivano + ')'"></span></div>
+                      <div class="card kpi"><span class="label">Maks. istorijsko</span><span class="value sm" x-text="ist.razl.maks ? (ist.razl.maks.k + '/7 · ' + formatKolo(ist.razl.maks.kolo)) : '—'"></span></div>
+                    </div>
+                    <div style="margin-top:12px">
+                      <h3 style="font-size:13px">Cilj — brojevi <span class="muted" style="font-weight:400; font-size:11px">(redosled izvlačenja)</span></h3>
+                      <div class="balls"><template x-for="b in ist.razl.cilj_brojevi" :key="b"><div class="ball sm neutralan" style="cursor:pointer" @click="istorijaBroj(b)" x-text="b"></div></template></div>
+                    </div>
+                    <div style="margin-top:12px" x-show="ist.razl.ponovljeni_parovi.length">
+                      <h3 style="font-size:13px">Ponovljeni parovi <span class="muted" style="font-weight:400; font-size:11px" x-text="'(' + ist.razl.ponovljeni_parovi.length + ' / ' + ist.razl.parova_ukupno + ' parova iz cilja se ranije javilo zajedno)'"></span></h3>
+                      <div style="display:flex; flex-wrap:wrap; gap:6px">
+                        <template x-for="p in ist.razl.ponovljeni_parovi" :key="p.a+'-'+p.b">
+                          <span class="tag" x-text="p.a + '+' + p.b + ' ×' + p.puta"></span>
+                        </template>
+                      </div>
+                    </div>
+                    <p class="muted" x-show="!ist.razl.ponovljeni_parovi.length" style="font-size:12px; margin-top:10px">Nijedan par iz cilja se nije ranije javio zajedno u prozoru.</p>
+                    <p class="hint" style="margin-top:10px">Očekivano preklapanje slučajne kombinacije: μ = <span x-text="ist.razl.teorija.ocekivano"></span>, σ = <span x-text="ist.razl.teorija.sigma"></span>. Vrednosti oko μ znače da je kolo „obično" u odnosu na prošlost.</p>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Rangiranje na granici: kako bi tri metode rangirale brojeve tada -->
+            <div class="card" style="margin-top:12px">
+              <div class="coll-head" @click="istToggle('rang')">
+                <span class="caret" x-text="ist.otvori.rang ? '▾' : '▸'"></span>
+                <h3>Rangiranje „tada" <span class="muted" style="font-weight:400; font-size:12px">— frekvencija / Bajes / hibrid nad podacima ≤ granice</span></h3>
+              </div>
+              <div x-show="ist.otvori.rang" x-cloak style="margin-top:10px; max-height:340px; overflow:auto">
+                <template x-if="ist.rang">
+                  <table class="tbl">
+                    <thead><tr><th>Broj</th><th>Frekvencija</th><th>Bajes</th><th>Hibrid</th></tr></thead>
+                    <tbody>
+                      <template x-for="r in istRangSort()" :key="r.broj">
+                        <tr>
+                          <td><div class="ball sm neutralan" :class="{active: ist.broj===r.broj}" style="cursor:pointer" @click="istorijaBroj(r.broj)" x-text="r.broj"></div></td>
+                          <td class="num"><b x-text="'#' + r.frekvencija.rang"></b> <span class="muted" x-text="'(' + r.frekvencija.skor + ')'"></span></td>
+                          <td class="num"><b x-text="'#' + r.bajes.rang"></b> <span class="muted" x-text="'(' + formatSkor(r.bajes.skor) + ')'"></span></td>
+                          <td class="num"><b x-text="'#' + r.hibrid.rang"></b> <span class="muted" x-text="'(' + formatSkor(r.hibrid.skor) + ')'"></span></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                </template>
+              </div>
+            </div>
           </div>
         </template>
       </section>

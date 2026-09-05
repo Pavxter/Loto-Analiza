@@ -13,9 +13,10 @@ modulima. Numeracija kola (godina*1000+redni) nije kontinualna, pa se navigacija
 radi upitom nad poretkom u bazi, nikad aritmetikom kolo±1.
 """
 
-from . import konfig, analitika
+from . import konfig, analitika, rangiranje as rang, razlicitost as razl
 
 BROJEVA = konfig.BROJEVA_U_KOMBINACIJI
+MAX_BROJ = konfig.MAX_BROJ
 
 
 def _kolone_brojeva():
@@ -134,6 +135,9 @@ def kontekst(conn, granica, prozor=None):
     ukupno = conn.execute(
         "SELECT COUNT(*) FROM istorijski_rezultati WHERE kolo <= ?", (granica,)).fetchone()[0]
     pom = prozor if (prozor and prozor > 0) else None
+    df = analitika.ucitaj_df(conn)
+    df = df[df["kolo"] <= granica]
+    sazetak = analitika.sazetak_prozora(df, pom)      # „šta se dešavalo pre" (Faza 3)
     return {
         "granica": granica,
         "cilj": sledece_kolo(conn, granica),
@@ -149,4 +153,58 @@ def kontekst(conn, granica, prozor=None):
         "skok_nazad": (_kolo_sa_pomerajem(conn, granica, -pom) if pom else najstarije_kolo(conn)),
         "skok_napred": (_kolo_sa_pomerajem(conn, granica, pom) if pom else najnovije_kolo(conn)),
         "raspon_datuma": ([kola[0]["datum"], kola[-1]["datum"]] if kola else None),
+        "sazetak": sazetak,
     }
+
+
+# ----------------------------------------------------------------------------
+# Kontekst kola: istorijska različitost i rangiranje „kakvo bi bilo na granici"
+# (Faza 3). istorija.py samo seče podskup i prosleđuje postojećim modulima (§1.3).
+# ----------------------------------------------------------------------------
+
+def razlicitost_cilja(conn, cilj, prozor=None):
+    """Preklapanje izvučene kombinacije `cilj` sa kolima PRE nje (< cilj).
+
+    Prosleđuje isečak razlicitost.preklapanje_sa_istorijom; granica = kolo pre
+    cilja. None ako `cilj` ne postoji u bazi.
+    """
+    r = conn.execute(
+        "SELECT b1,b2,b3,b4,b5,b6,b7 FROM istorijski_rezultati WHERE kolo = ?",
+        (cilj,)).fetchone()
+    if not r:
+        return None
+    cilj_brojevi = [int(x) for x in r]
+    pre = [(kolo, br) for kolo, br in razl.istorija_iz_conn(conn) if kolo < cilj]
+    d = razl.preklapanje_sa_istorijom(pre, cilj_brojevi,
+                                      prozor if (prozor and prozor > 0) else None)
+    d["cilj"] = cilj
+    d["granica"] = prethodno_kolo(conn, cilj)
+    return d
+
+
+def rangiranje(conn, granica, prozor=None):
+    """Rangiranje brojeva (frekvencija / Bajes / hibrid) „kakvo bi bilo na granici".
+
+    Seče df na kola ≤ granica (poslednjih prozor) i poziva rangiranje.py trima
+    metodama; spaja ih u jednu tabelu po broju sa rangom i skorom svake metode.
+    """
+    df = analitika.ucitaj_df(conn)
+    df = df[df["kolo"] <= granica]
+    if prozor and prozor > 0:
+        df = df.tail(prozor)
+    df = df.reset_index(drop=True)
+
+    def _rang_map(lista):
+        return {r["broj"]: (poz + 1, float(r["skor"])) for poz, r in enumerate(lista)}
+
+    rf = _rang_map(rang.frekvencija_rang(df))
+    rb = _rang_map(rang.bajes_rang(df))
+    rh = _rang_map(rang.hibrid_rang(df))
+    tabela = [{
+        "broj": b,
+        "frekvencija": {"rang": rf[b][0], "skor": round(rf[b][1], 6)},
+        "bajes": {"rang": rb[b][0], "skor": round(rb[b][1], 6)},
+        "hibrid": {"rang": rh[b][0], "skor": round(rh[b][1], 6)},
+    } for b in range(1, MAX_BROJ + 1)]
+    return {"granica": granica, "prozor": prozor or 0,
+            "broj_kola": int(len(df)), "tabela": tabela}

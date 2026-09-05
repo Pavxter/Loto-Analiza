@@ -441,6 +441,29 @@ def api_istorija_broj(broj: int, granica: int, prozor: int = 0):
         conn.close()
 
 
+@app.get("/api/istorija/razlicitost")
+def api_istorija_razlicitost(cilj: int, prozor: int = 0):
+    """Preklapanje izvučenog kola `cilj` sa istorijom pre njega (Faza 3)."""
+    conn = baza.konekcija()
+    try:
+        d = istorija.razlicitost_cilja(conn, cilj, prozor)
+        if d is None:
+            raise HTTPException(404, f"Kolo {cilj} ne postoji u bazi.")
+        return d
+    finally:
+        conn.close()
+
+
+@app.get("/api/istorija/rangiranje")
+def api_istorija_rangiranje(granica: int, prozor: int = 0):
+    """Rangiranje brojeva (frekvencija/Bajes/hibrid) kakvo bi bilo na granici (Faza 3)."""
+    conn = baza.konekcija()
+    try:
+        return istorija.rangiranje(conn, granica, prozor)
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Istorija / unos kola / uvoz
 # ---------------------------------------------------------------------------

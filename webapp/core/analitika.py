@@ -290,3 +290,28 @@ def detalj_broja(loto_df, broj, prozor=None):
         "pozicije": pozicije,
         "timeline": timeline,
     }
+
+
+def sazetak_prozora(loto_df, prozor=None):
+    """Sažetak „šta se dešavalo pre" za svih 39 brojeva u prozoru (Faza 3, §10).
+
+    Čista funkcija; poziva se sa isečkom „kola ≤ granica" (istorija.py je iseca).
+    Za svaki broj vraća: broj pojavljivanja u prozoru, poslednje kolo u kojem je
+    izašao i trenutni razmak (kola od poslednjeg pojavljivanja do kraja prozora;
+    0 = izašao u poslednjem kolu prozora, None = nije se pojavio). Sve zavisi
+    isključivo od prosleđenog isečka — nikad od kola > granica.
+    """
+    df = loto_df.reset_index(drop=True)
+    n = len(df)
+    win = df.tail(prozor).reset_index(drop=True) if (prozor and 0 < prozor <= n) else df
+    prozor_n = len(win)
+    kola_win = win["kolo"].astype(int).tolist() if prozor_n else []
+
+    brojevi = []
+    for broj in range(1, MAX_BROJ + 1):
+        idx = [i for i, v in enumerate(win[KOLONE].eq(broj).any(axis=1).tolist()) if v]
+        poslednje = kola_win[idx[-1]] if idx else None
+        razmak = (prozor_n - 1 - idx[-1]) if idx else None
+        brojevi.append({"broj": broj, "pojavljivanja": len(idx),
+                        "poslednje": poslednje, "razmak": razmak})
+    return {"prozor_n": prozor_n, "brojevi": brojevi}

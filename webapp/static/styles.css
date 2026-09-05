@@ -177,6 +177,15 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 }
 .notice.warn { background: #2a230f; border-color: #4a3d1a; color: #f2d488; }
 
+/* Tag / pill (npr. ponovljeni parovi) */
+.tag { background: var(--accent-soft); border: 1px solid #2a3f66; color: #bcd3ff;
+  border-radius: 20px; padding: 2px 9px; font-size: 12px; font-variant-numeric: tabular-nums; }
+
+/* Collapsible zaglavlje sekcije */
+.coll-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
+.coll-head h3 { margin: 0; flex: 1; }
+.coll-head .caret { color: var(--text-dim); font-size: 13px; }
+
 /* Toast */
 .toast-wrap { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 100; }
 .toast {

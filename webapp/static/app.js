@@ -73,7 +73,8 @@ function app() {
              filterMetod: '', histMetod: '', hist: null, prag: 0.0036, brojMetoda: 14,
              ocekivano: 1.256, sigma: 0.9317, ucitano: false },
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
-    ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null },
+    ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
+           otvori: { sazetak: false, razl: false, rang: false }, razl: null, rang: null },
 
     aktivna() { return this.strane.find(s => s.id === this.strana) || this.strane[0]; },
 
@@ -131,8 +132,41 @@ function app() {
         this.ist.kontekst = k;
         this.ist.cilj = k.cilj;
         if (this.ist.broj != null) await this.istorijaBroj(this.ist.broj);   // osveži otvoreni detalj
+        // osveži otvorene collapsible sekcije (Faza 3) da prate granicu/prozor
+        if (this.ist.otvori.razl) await this.ucitajIstRazlicitost();
+        if (this.ist.otvori.rang) await this.ucitajIstRangiranje();
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
       this.ist.loading = false;
+    },
+
+    istToggle(sekcija) {
+      this.ist.otvori[sekcija] = !this.ist.otvori[sekcija];
+      if (!this.ist.otvori[sekcija]) return;
+      if (sekcija === 'razl' && !this.ist.razl) this.ucitajIstRazlicitost();
+      if (sekcija === 'rang' && !this.ist.rang) this.ucitajIstRangiranje();
+    },
+
+    async ucitajIstRazlicitost() {
+      this.ist.razl = null;
+      if (this.ist.cilj == null) return;   // granica = najnovije → nema cilja
+      try {
+        this.ist.razl = await jget(`/api/istorija/razlicitost?cilj=${this.ist.cilj}&prozor=${this.ist.prozor}`);
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    async ucitajIstRangiranje() {
+      try {
+        this.ist.rang = await jget(`/api/istorija/rangiranje?granica=${this.ist.granica}&prozor=${this.ist.prozor}`);
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    istSazetakSort() {
+      const s = this.ist.kontekst && this.ist.kontekst.sazetak;
+      return s ? [...s.brojevi].sort((a, b) => b.pojavljivanja - a.pojavljivanja || a.broj - b.broj) : [];
+    },
+    istRangSort() {
+      const r = this.ist.rang;
+      return r ? [...r.tabela].sort((a, b) => a.hibrid.rang - b.hibrid.rang) : [];
     },
 
     async istorijaBroj(broj) {
