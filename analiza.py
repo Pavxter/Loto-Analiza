@@ -1316,7 +1316,8 @@ class LotoAnalizator(QMainWindow):
 
     def pokreni_trening(self):
         self.treniraj_dugme.setEnabled(False)
-        self.generisi_ml_dugme.setEnabled(False)
+        self.generisi_bazen_dugme.setEnabled(False)
+        self.generisi_komb_dugme.setEnabled(False)
         self.ml_status_label.setText("Status: Trening u toku... Molim sačekajte, ovo može potrajati.")
         
         self.worker = MLWorker(fn=ml_generator.treniraj_i_sacuvaj_model)
