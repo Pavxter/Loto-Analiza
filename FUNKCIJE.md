@@ -316,6 +316,73 @@ je ≈ očekivani. Sve u skladu sa čistom slučajnošću.
 
 ---
 
+## 10. Istraži istoriju (vremeplov)
+
+Putovanje kroz kola: bira se bilo koje odigrano kolo i vidi **tačno ono što je sistem
+znao u tom trenutku** — nijedna brojka ne „viri" iz budućnosti. Služi za učenje i
+proveru: šta bi svaka analiza pokazala „tada" i da li se to razlikuje od slučajnosti.
+
+### Dva ključna pojma
+| Pojam | Značenje | Primer |
+|---|---|---|
+| **Granica** | poslednje kolo koje sistem „zna" (uključivo) | 2026-060 |
+| **Cilj** | prvo stvarno kolo posle granice — ono što pokušavamo da „pogodimo" | 2026-061 |
+
+Pravilo kroz celu stranu: **dostupni podaci = sva kola ≤ granica**. Cilj i sve posle njega
+su nedostupni sve do trenutka kada svesno zatražiš ishod. Klik na kolo u tabeli bira to
+kolo **kao cilj** (granica postaje kolo pre njega), pa je „predikcija tada" uvek predikcija
+*za* kliknuto kolo.
+
+### Navigacija i prozor
+- Toolbar: `«` / `‹` (skok za ceo prozor / jedno kolo unazad), tekuće kolo, `›` / `»`
+  (napred), „Idi na najnovije". Kretanje ide **po redosledu u bazi**, ne aritmetikom
+  broja kola (prelaz godine 2025-052 → 2026-001 radi ispravno).
+- **Prozor** (20 / 50 / 100 / 200 / sva) — koliko poslednjih kola ≤ granice ulazi u
+  analize. Cela strana radi nad prozorom (brzo), osim kad izabereš „sva".
+- **Info linija:** sistem zna zaključno sa …, naredno kolo (cilj) …, kola u prozoru,
+  raspon datuma. Tu je i dugme **„Generiši sa znanjem do ovog kola →"** (vidi dole).
+- **Tabela prethodnih kola:** kolo, datum, 7 brojeva **redosledom izvlačenja**. Klik na
+  red bira kolo kao cilj; klik na broj otvara detalj broja.
+
+### Detalj broja (klik na bilo koji broj)
+Panel bez napuštanja strane: pojavljivanja u prozoru i ukupno (≤ granice), trenutni
+razmak, prosečan/min/maks razmak, poslednje/prethodno pojavljivanje, raspodela po
+poziciji izvlačenja i **timeline** (kada je broj izlazio u prozoru). Iznad je rečenica
+tumačenja („Broj 22 se pojavio 22 puta u poslednjih 100 kola; očekivanje ≈ 17,95;
+razlika nije značajna."). Linkovi **„Vidi broj u: Statistici / Rangiranju →"** skoče na
+taj tab i istaknu broj u grafikonu.
+
+### Kontekst kola (sklopive sekcije)
+- **Šta se dešavalo pre ovog kola** — sažetak prozora za svih 39 brojeva: pojavljivanja,
+  poslednji put, trenutni razmak (sortirano po učestalosti).
+- **Različitost cilja** — koliko naredno kolo liči na prošlost: preklapanje sa neposredno
+  prethodnim kolom, prosek u prozoru naspram μ, najveće istorijsko preklapanje i
+  ponovljeni parovi iz cilja. Link **„Cela analiza različitosti →"** vodi na stranu 9.
+- **Rangiranje „tada"** — kako bi tri metode (Frekvencija / Bajes / Hibrid) rangirale
+  brojeve nad podacima ≤ granice.
+
+### Predikcija „tada" (vremeplov prognoze)
+Najvažniji deo. Dugme **„Izračunaj šta bi sistem tada predvideo"** pokaže predloge svih
+sedam jednobrojnih i svih kombinacijskih metoda za cilj — **isključivo iz podataka ≤
+granica**. Tek dugme **„Prikaži stvarni ishod"** otkriva stvarno kolo i ocenu (pogodak
+✓/✗ za jedan broj, preklapanje 0–7 za kombinaciju) — ishod je namerno skriven do klika,
+to je poenta eksperimenta. Dugmad **◀ prethodno / sledeće ▶** pomeraju tačku uz
+automatski preračun (ishod se ponovo sakrije). Ispod je rečenica konteksta (μ = 1,256).
+
+> **Garancija tačnosti:** ovaj vremeplov koristi isti kod kao retro-bektest sa strane
+> Prognoza — rezultat za bilo koje kolo je bit-identičan odgovarajućem redu retro-bektesta
+> (pokriveno testom). Zato je i ovde ishod skoro uvek „nerazlučivo od slučajnosti".
+
+### Veza sa Generatorom (vremeplov generisanja)
+Dugme **„Generiši sa znanjem do ovog kola →"** otvara Generator koji analizira **samo
+kola ≤ granica** (polje „Analiziraj do kola" u Generatoru, prazno = cela baza). Tako se
+generisanje kombinacija može reprodukovati „iz prošlosti", bez uticaja kasnijih kola.
+
+**Kako koristiti:** izaberi kolo (ili se kreći strelicama), podesi prozor, otvori sekcije
+koje te zanimaju, pa u „Predikcija tada" prvo izračunaj predikciju a onda otkrij ishod.
+
+---
+
 ## Podešavanja i tehnički detalji
 
 - **Period analize** (gore desno) utiče na Dashboard, Statistiku i bodovanje generatora.
