@@ -6,7 +6,9 @@
   <title>Loto Analizator</title>
   <link rel="stylesheet" href="/styles.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎱</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
 <body>
@@ -382,6 +384,116 @@
                   </div>
                 </template>
               </div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ============ MAPA KOMBINACIJA ============ -->
+      <section x-show="strana==='mapa'">
+        <template x-if="!mapa.info"><div class="center-load"><div class="spinner"></div>Učitavam…</div></template>
+
+        <!-- Pločice nisu generisane (ne idu u git — prave se skriptom) -->
+        <template x-if="mapa.info && !mapa.info.slojevi.length">
+          <div class="card notice warn">
+            <strong>Pločice mape nisu generisane.</strong>
+            <p style="margin:6px 0 0">Mapa se ne crta iz sirovih podataka nego iz unapred ispečenih slika, koje ne idu u git.
+              Pokreni jednom iz korena projekta:</p>
+            <p class="mono" style="margin:8px 0 0">python -X utf8 generisi_mapu.py --sloj sve</p>
+            <p class="hint" style="margin:8px 0 0">Traje oko minut i zauzima oko 31 MB. Posle toga osveži stranu.</p>
+          </div>
+        </template>
+
+        <template x-if="mapa.info && mapa.info.slojevi.length">
+          <div>
+            <!-- Toolbar: sloj + legenda + zum -->
+            <div class="card" style="display:flex; flex-wrap:wrap; align-items:center; gap:14px">
+              <div style="display:flex; align-items:center; gap:8px">
+                <span class="muted" style="font-size:12px">Sloj:</span>
+                <select x-model="mapa.sloj" @change="mapaPostaviSloj()">
+                  <template x-for="s in mapa.info.slojevi" :key="s.sloj">
+                    <option :value="s.sloj" x-text="s.opis"></option>
+                  </template>
+                </select>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px">
+                <span class="muted" style="font-size:12px" x-text="mapaSloj().min"></span>
+                <span class="mapa-legenda" :style="'background: linear-gradient(90deg,' + mapa.info.skala_boja.join(',') + ')'"></span>
+                <span class="muted" style="font-size:12px" x-text="mapaSloj().max"></span>
+              </div>
+              <div class="spacer" style="flex:1"></div>
+              <div class="muted" style="font-size:12px" x-text="mapaRazmera()"></div>
+              <span class="muted" style="font-size:11px">Ctrl + točak zumira</span>
+              <button class="btn ghost sm" @click="mapaCelaSlika()">Cela mapa</button>
+            </div>
+
+            <!-- Platno -->
+            <div class="card" style="margin-top:12px; padding:0; overflow:hidden">
+              <div id="mapa-platno"></div>
+            </div>
+
+            <!-- Gde je moj tiket -->
+            <div class="card" style="margin-top:12px; display:flex; flex-wrap:wrap; align-items:center; gap:10px">
+              <span class="muted" style="font-size:12px">Gde je moj tiket:</span>
+              <input type="text" x-model="mapa.tiket" placeholder="npr. 3 7 12 19 24 31 38"
+                     style="flex:1; min-width:200px" @keydown.enter="mapaPronadjiTiket()">
+              <button class="btn sm" @click="mapaPronadjiTiket()">Pronađi</button>
+              <button class="btn ghost sm" @click="mapaSlucajna()" title="Nasumična kombinacija iz celog prostora">Slučajna</button>
+            </div>
+
+            <!-- Izabrana ćelija -->
+            <template x-if="mapa.detalj && mapa.detalj.brojevi">
+              <div class="card" style="margin-top:12px; border-color:var(--accent)">
+                <div style="display:flex; align-items:flex-start; gap:14px; flex-wrap:wrap">
+                  <div class="balls">
+                    <template x-for="b in mapa.detalj.brojevi" :key="b">
+                      <div class="ball" :class="klasaBroja(b)" x-text="b"></div>
+                    </template>
+                  </div>
+                  <div class="spacer" style="flex:1"></div>
+                  <button class="btn ghost sm" @click="mapaZatvori()">Zatvori ✕</button>
+                </div>
+
+                <div class="grid g-4" style="margin-top:14px">
+                  <div class="card kpi"><span class="label">Redni broj u prostoru</span>
+                    <span class="value sm mono" x-text="mapa.detalj.rang.toLocaleString('sr-RS') + ' / ' + mapa.info.ukupno_kombinacija.toLocaleString('sr-RS')"></span></div>
+                  <div class="card kpi"><span class="label">Ćelija na mapi</span>
+                    <span class="value sm mono" x-text="mapa.detalj.x + ', ' + mapa.detalj.y"></span></div>
+                  <div class="card kpi"><span class="label">Izvučena</span>
+                    <span class="value sm" x-text="mapa.detalj.izvucena.length ? mapa.detalj.izvucena.map(formatKolo).join(', ') : 'nikad'"></span></div>
+                  <div class="card kpi"><span class="label">Osobine</span>
+                    <span class="value sm" x-text="mapaOsobineTekst()"></span></div>
+                </div>
+
+                <template x-if="mapa.detalj.preklapanje">
+                  <p class="hint" style="margin:12px 0 0" x-text="mapaPreklapanjeRecenica()"></p>
+                </template>
+                <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap" x-show="mapaKoloZaOtvaranje()">
+                  <a href="#" class="link-sm" @click.prevent="mapaOtvoriKolo(mapaKoloZaOtvaranje())"
+                     x-text="'Otvori kolo ' + formatKolo(mapaKoloZaOtvaranje()) + ' u Istraži istoriju →'"></a>
+                </div>
+                <p class="hint" style="margin:8px 0 0" x-show="mapa.zum < mapa.info.max_zoom">
+                  Na ovom zumu jedan piksel pokriva više kombinacija, pa je klik izabrao jednu iz tog bloka.
+                  Zumiraj do kraja da biraš tačnu ćeliju.
+                </p>
+              </div>
+            </template>
+
+            <template x-if="mapa.detalj && !mapa.detalj.brojevi">
+              <div class="card" style="margin-top:12px">
+                <strong>Prazan deo mape.</strong>
+                <p class="hint" style="margin:6px 0 0">Kvadrat ima 4096 × 4096 = 16.777.216 ćelija, a kombinacija je 15.380.937.
+                  Preostalih <span x-text="mapa.info.praznih_celija.toLocaleString('sr-RS')"></span> ćelija nema kombinaciju i providne su.</p>
+              </div>
+            </template>
+
+            <!-- Šta mapa jeste, a šta nije -->
+            <div class="card" style="margin-top:12px">
+              <p class="hint" style="margin:0">
+                Mapa prikazuje svih <span x-text="mapa.info.ukupno_kombinacija.toLocaleString('sr-RS')"></span> kombinacija igre 7/39, svaku kao jednu ćeliju.
+                Boja je osobina same kombinacije (<span x-text="mapaSloj().opis.toLowerCase()"></span>), ne verovatnoća i ne učestalost izvlačenja.
+                Susedne ćelije su susedne po rednom broju, pa se razlikuju u poslednjim brojevima — mrlje i prelazi na mapi dolaze od tog redosleda, ne od izvlačenja.
+              </p>
             </div>
           </div>
         </template>

@@ -47,6 +47,14 @@ OSOBINE = {
                "opseg": (1, (MAX_BROJ - 1) // 10 + 1)},
 }
 
+# Kontrolne tačke skale (viridis). Ovde su, a ne u generatoru pločica, da bi
+# legenda u browseru i ispečene boje došle iz istog izvora.
+SKALA_BOJA = [
+    (68, 1, 84), (72, 40, 120), (62, 74, 137), (49, 104, 142),
+    (38, 130, 142), (31, 158, 137), (53, 183, 121), (109, 205, 89),
+    (180, 222, 44), (253, 231, 37),
+]
+
 
 def proveri_kombinaciju(komb):
     """Vraća sortiranu n-torku ili diže ValueError ako kombinacija nije ispravna."""
@@ -203,6 +211,27 @@ def osobine(komb):
         "parni": sum(1 for x in b if x % 2 == 0),
         "dekade": len({_dekada(x) for x in b}),
     }
+
+
+def detalj_kombinacije(brojevi):
+    """Sve što se o kombinaciji zna bez baze: rang, ćelija na mapi i osobine."""
+    b = proveri_kombinaciju(brojevi)
+    r = rang(b)
+    x, y = koordinate(r)
+    return {"brojevi": list(b), "rang": r, "x": x, "y": y, "osobine": osobine(b)}
+
+
+def detalj_celije(x, y):
+    """Isto, ali polazi od ćelije; za praznu ćeliju vraća samo koordinate."""
+    x, y = int(x), int(y)
+    if not (0 <= x < DIMENZIJA and 0 <= y < DIMENZIJA):
+        raise ValueError(f"Koordinate moraju biti u opsegu 0..{DIMENZIJA - 1}.")
+    r = rang_iz_koordinata(x, y)
+    if r is None:
+        return {"brojevi": None, "rang": None, "x": x, "y": y, "osobine": None}
+    d = detalj_kombinacije(unrang(r))
+    d["x"], d["y"] = x, y
+    return d
 
 
 def osobina_niz(naziv, kombinacije):

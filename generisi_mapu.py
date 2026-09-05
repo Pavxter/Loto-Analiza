@@ -37,13 +37,10 @@ PODRAZUMEVANI_IZLAZ = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                    "webapp", "static", "mapa")
 KOMAD = 2_000_000            # koliko rangova odjednom ide kroz Hilberta
 
-# Kontrolne tačke sekvencijalne skale (viridis). Indeks 0 palete je rezervisan
-# za prazne ćelije i providan je, pa boje idu na indekse 1..255.
-KONTROLNE_BOJE = [
-    (68, 1, 84), (72, 40, 120), (62, 74, 137), (49, 104, 142),
-    (38, 130, 142), (31, 158, 137), (53, 183, 121), (109, 205, 89),
-    (180, 222, 44), (253, 231, 37),
-]
+# Skala je u webapp/core/mapa.py da bi legenda u browseru i ispečene boje bile
+# iz istog izvora. Indeks 0 palete je rezervisan za prazne ćelije i providan je,
+# pa boje idu na indekse 1..255.
+KONTROLNE_BOJE = mapa.SKALA_BOJA
 
 
 def paleta():

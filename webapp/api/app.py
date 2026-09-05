@@ -5,7 +5,9 @@ Pokretanje:  python pokreni.py   (iz korena projekta)
 """
 
 import io
+import json
 import os
+import re
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -14,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija)
+                         prognoza, razlicitost, istorija, mapa)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -626,6 +628,100 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
 
 
 # ---------------------------------------------------------------------------
+# Mapa kombinacija (plan_mapa_kombinacija.md, Faza 2)
+# Pločice su statika (/mapa/{sloj}/{z}/{x}/{y}.png), ovde je samo ono što se
+# računa: šta je na ćeliji i gde je uneta kombinacija.
+# ---------------------------------------------------------------------------
+
+MAPA_DIR = os.path.join(STATIC_DIR, "mapa")
+
+
+def _mapa_slojevi():
+    """Slojevi za koje su pločice zaista generisane i slažu se sa rasporedom."""
+    slojevi = []
+    for naziv, osobina in mapa.OSOBINE.items():
+        put = os.path.join(MAPA_DIR, naziv, "meta.json")
+        if not os.path.isfile(put):
+            continue
+        try:
+            with open(put, encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if (meta.get("red_krive") != mapa.RED_KRIVE
+                or meta.get("dimenzija") != mapa.DIMENZIJA):
+            continue    # stare pločice za drugi raspored — ne nudi ih
+        slojevi.append({"sloj": naziv, "opis": osobina["opis"], "tip": osobina["tip"],
+                        "min": meta["min"], "max": meta["max"],
+                        "generisano": meta.get("generisano")})
+    return slojevi
+
+
+def _mapa_detalj(conn, brojevi):
+    """Detalj jedne kombinacije: mesto na mapi, osobine i odnos prema izvučenim."""
+    d = mapa.detalj_kombinacije(brojevi)
+    sve_izvuceno = razlicitost.istorija_iz_conn(conn)
+    trazena = tuple(d["brojevi"])
+    d["izvucena"] = [kolo for kolo, br in sve_izvuceno if tuple(sorted(br)) == trazena]
+    d["preklapanje"] = (razlicitost.preklapanje_sa_istorijom(sve_izvuceno, d["brojevi"])
+                        if sve_izvuceno else None)
+    return d
+
+
+@app.get("/api/mapa/info")
+def api_mapa_info():
+    """Raspored, dostupni slojevi i skala boja — bootstrap taba."""
+    conn = baza.konekcija()
+    try:
+        broj_kola = conn.execute("SELECT COUNT(*) FROM istorijski_rezultati").fetchone()[0]
+    finally:
+        conn.close()
+    return {
+        "dimenzija": mapa.DIMENZIJA,
+        "velicina_plocice": mapa.VELICINA_PLOCICE,
+        "max_zoom": mapa.MAX_ZOOM,
+        "ukupno_kombinacija": mapa.UKUPNO_KOMBINACIJA,
+        "praznih_celija": mapa.DIMENZIJA * mapa.DIMENZIJA - mapa.UKUPNO_KOMBINACIJA,
+        "broj_kola": int(broj_kola),
+        "slojevi": _mapa_slojevi(),
+        "skala_boja": ["#%02x%02x%02x" % boja for boja in mapa.SKALA_BOJA],
+    }
+
+
+@app.get("/api/mapa/komb")
+def api_mapa_komb(x: int, y: int):
+    """Šta je na ćeliji (x, y): kombinacija, osobine i preklapanje sa izvučenim."""
+    try:
+        d = mapa.detalj_celije(x, y)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if d["brojevi"] is None:
+        return d            # prazan deo krive: nema kombinacije na toj ćeliji
+    conn = baza.konekcija()
+    try:
+        return _mapa_detalj(conn, d["brojevi"])
+    finally:
+        conn.close()
+
+
+@app.get("/api/mapa/rang")
+def api_mapa_rang(brojevi: str):
+    """„Gde je moj tiket": 7 brojeva -> rang, ćelija na mapi i isti detalj."""
+    delovi = [d for d in re.split(r"[^0-9]+", brojevi.strip()) if d]
+    try:
+        b = [int(d) for d in delovi]
+    except ValueError:
+        raise HTTPException(400, "Brojevi moraju biti celi brojevi.")
+    conn = baza.konekcija()
+    try:
+        return _mapa_detalj(conn, b)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Statički frontend (mora biti poslednje da ne preuzme /api rute)
 # ---------------------------------------------------------------------------
 
@@ -636,7 +732,13 @@ class _NoCacheStatic(StaticFiles):
 
     def file_response(self, *args, **kwargs):
         resp = super().file_response(*args, **kwargs)
-        resp.headers["Cache-Control"] = "no-cache"
+        put = str(args[0]) if args else ""
+        if put.endswith(".png") and os.path.join("static", "mapa") in put:
+            # Pločice mape su nepromenljive dok se ne pokrene generisi_mapu.py;
+            # bez ovoga bi svako pomeranje mape slalo stotine revalidacija.
+            resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        else:
+            resp.headers["Cache-Control"] = "no-cache"
         return resp
 
 

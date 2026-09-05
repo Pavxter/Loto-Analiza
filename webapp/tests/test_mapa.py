@@ -1,4 +1,4 @@
-"""Testovi indeksiranja i rasporeda mape (plan_mapa_kombinacija.md, Faza 1).
+"""Testovi indeksiranja i rasporeda mape (plan_mapa_kombinacija.md, Faze 1 i 2).
 
 Pokriveni kriterijumi ove faze:
   - rang je zaista leksikografski, tj. jednak indeksu u itertools.combinations,
@@ -6,6 +6,7 @@ Pokriveni kriterijumi ove faze:
   - Hilbert je bijekcija i svi rangovi padaju unutar kvadrata 4096x4096,
   - susedni rangovi su susedne ćelije (osobina zbog koje je kriva izabrana),
   - vektorske osobine daju isto što i osobine jedne kombinacije,
+  - detalj kombinacije i detalj ćelije opisuju istu stvar iz dva pravca,
   - ako su pločice generisane, slažu se sa trenutnim konstantama.
 
 Pokretanje:  python -X utf8 -m webapp.tests.test_mapa
@@ -142,6 +143,29 @@ def test_osobine_vektorski_isto():
     print("test_osobine_vektorski_isto: OK")
 
 
+def test_detalj_kombinacije_i_celije():
+    """Detalj kombinacije i detalj ćelije opisuju istu stvar iz dva pravca (Faza 2)."""
+    izvlacenje = [23, 5, 39, 12, 7, 31, 18]          # redosled izvlačenja, ne sortirano
+    d = mapa.detalj_kombinacije(izvlacenje)
+    assert d["brojevi"] == sorted(izvlacenje)
+    assert d["rang"] == mapa.rang(izvlacenje)
+    assert (d["x"], d["y"]) == mapa.koordinate(d["rang"])
+    assert d["osobine"] == mapa.osobine(izvlacenje)
+    assert mapa.detalj_celije(d["x"], d["y"]) == d
+
+    x, y = mapa.hilbert_xy(mapa.UKUPNO_KOMBINACIJA)  # prva ćelija iza poslednje kombinacije
+    prazna = mapa.detalj_celije(x, y)
+    assert prazna["brojevi"] is None and prazna["rang"] is None and prazna["osobine"] is None
+
+    for xy in [(-1, 0), (0, mapa.DIMENZIJA)]:
+        try:
+            mapa.detalj_celije(*xy)
+        except ValueError:
+            continue
+        raise AssertionError(f"prihvaćene koordinate van kvadrata: {xy}")
+    print("test_detalj_kombinacije_i_celije: OK")
+
+
 def test_plocice_ako_postoje():
     """Ako su pločice generisane, moraju odgovarati trenutnim konstantama."""
     koren = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -197,6 +221,7 @@ def main():
     test_hilbert_susedi()
     test_prazan_deo_krive()
     test_osobine_vektorski_isto()
+    test_detalj_kombinacije_i_celije()
     test_plocice_ako_postoje()
     print("\nSVI TESTOVI MAPE PROSLI [OK]")
 
