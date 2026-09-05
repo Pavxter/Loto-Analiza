@@ -7,6 +7,7 @@ const BOJE = {
 
 const grafikoni = {};   // id -> echarts instanca
 let mapaL = null, mapaSlojL = null, mapaOznakaL = null, mapaGranice = null;   // Leaflet (Mapa kombinacija)
+const mapaTackeL = { stvarno: null, slucajno: null };   // slojevi tačaka na mapi
 
 function bazaOpcija() {
   return {
@@ -76,7 +77,8 @@ function app() {
              filterMetod: '', histMetod: '', hist: null, prag: 0.0036, brojMetoda: 14,
              ocekivano: 1.256, sigma: 0.9317, ucitano: false },
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
-    mapa: { info: null, sloj: '', detalj: null, tiket: '', zum: 0, uklopljeno: false },
+    mapa: { info: null, sloj: '', detalj: null, tiket: '', zum: 0, uklopljeno: false,
+            prikaz: 'stvarno', stvarno: null, slucajno: null, seed: null, radiUzorak: false },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false } },
@@ -265,6 +267,7 @@ function app() {
         }
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); return; }
       if (!this.mapa.info.slojevi.length) return;      // pločice nisu generisane
+      if (!this.mapa.stvarno) await this.mapaUcitajTacke();
       this.$nextTick(() => this.mapaPostavi());
     },
 
@@ -287,6 +290,8 @@ function app() {
         mapaL = L.map(el, {
           crs: L.CRS.Simple, minZoom: 0, maxZoom: MAXZ + 3,
           attributionControl: false, zoomControl: true,
+          preferCanvas: true,               // hiljade tačaka idu na canvas, ne u SVG
+
           // sitniji korak da mapa popuni platno; dugmad i dalje idu po ceo nivo
           zoomSnap: 0.25, zoomDelta: 1,
           // točak miša ostaje stranici (mapa je usred duge strane); Ctrl+točak zumira
@@ -301,7 +306,7 @@ function app() {
         mapaGranice = L.latLngBounds(mapaL.unproject([0, 0], MAXZ), mapaL.unproject([DIM, DIM], MAXZ));
         mapaL.setMaxBounds(mapaGranice.pad(0.1));
         mapaL.on('click', e => this.mapaKlik(e));
-        mapaL.on('zoomend', () => { this.mapa.zum = mapaL.getZoom(); });
+        mapaL.on('zoomend', () => { this.mapa.zum = mapaL.getZoom(); this.mapaAzurirajTacke(); });
         // Prvi fitBounds mora odmah: dok mapa nema postavljen pogled, Leaflet
         // ignoriše invalidateSize i veličina zauvek ostane 0.
         mapaL.fitBounds(mapaGranice);
@@ -311,6 +316,7 @@ function app() {
       }
       if (novoPlatno) this.mapa.uklopljeno = false;
       this.mapaPostaviSloj();
+      this.mapaCrtajTacke();
       this.mapaOsveziVelicinu();
     },
 
@@ -335,6 +341,85 @@ function app() {
         tileSize: this.mapa.info.velicina_plocice, minZoom: 0, maxZoom: MAXZ + 3,
         maxNativeZoom: MAXZ, noWrap: true, bounds: mapaGranice,
       }).addTo(mapaL);
+    },
+
+    async mapaUcitajTacke(seed = null) {
+      try {
+        if (!this.mapa.stvarno) {
+          const s = await jget('/api/mapa/tacke');
+          this.mapa.stvarno = s.tacke;
+        }
+        const k = await jget('/api/mapa/slucajno' + (seed === null ? '' : `?seed=${seed}`));
+        this.mapa.slucajno = k.tacke;
+        this.mapa.seed = k.seed;
+        this.mapaCrtajTacke();          // podaci mogu stići i pošto je mapa već gore
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    async mapaNoviUzorak() {
+      // Isti broj tačaka, drugi seed — poenta je da slika svaki put izgleda isto tako.
+      this.mapa.radiUzorak = true;
+      try {
+        await this.mapaUcitajTacke(Math.floor(Math.random() * 1e9));
+        if (this.mapa.prikaz === 'stvarno') this.mapa.prikaz = 'slucajno';
+        this.mapaCrtajTacke();
+      } finally { this.mapa.radiUzorak = false; }
+    },
+
+    mapaPrikazi(prikaz) { this.mapa.prikaz = prikaz; this.mapaCrtajTacke(); },
+
+    mapaPoluprecnik() {
+      // Na malom zumu tačke moraju biti sitne: 1.422 krupnih kružića prekriju mapu
+      // i slika bi lagala da je prostor pun. Na velikom zumu smeju da porastu.
+      const z = mapaL ? mapaL.getZoom() : 0;
+      return Math.max(1.2, Math.min(4.5, 1.4 + (z - 1) * 0.7));
+    },
+
+    mapaAzurirajTacke() {
+      const r = this.mapaPoluprecnik();
+      Object.values(mapaTackeL).forEach(g => g && g.eachLayer(m => m.setRadius(r)));
+    },
+
+    mapaGrupaTacaka(niz, boja) {
+      const MAXZ = this.mapa.info.max_zoom;
+      return L.layerGroup(niz.map(t => {
+        // +0.5 da tačka stoji na sredini svoje ćelije, a ne u njenom uglu
+        const m = L.circleMarker(mapaL.unproject([t.x + 0.5, t.y + 0.5], MAXZ),
+          { radius: this.mapaPoluprecnik(), weight: 0, fillColor: boja, fillOpacity: 0.9 });
+        m.on('click', e => {
+          L.DomEvent.stop(e);                       // da klik ne ode i mapi ispod
+          this.mapaUcitajCeliju(`/api/mapa/komb?x=${t.x}&y=${t.y}`, false);
+        });
+        return m;
+      }));
+    },
+
+    mapaBojaTacaka(ime) {
+      // Kad se gleda jedan set, oba imaju IDENTIČAN stil — u tome je poenta kontrole.
+      // Boje se razlikuju samo kad su oba seta na mapi istovremeno.
+      if (this.mapa.prikaz !== 'oba') return '#f2f6fb';
+      return ime === 'stvarno' ? BOJE.vruc : '#f2f6fb';
+    },
+
+    mapaCrtajTacke() {
+      if (!mapaL) return;
+      const izvori = { stvarno: this.mapa.stvarno, slucajno: this.mapa.slucajno };
+      for (const ime of Object.keys(izvori)) {
+        const niz = izvori[ime], boja = this.mapaBojaTacaka(ime);
+        if (mapaTackeL[ime]) { mapaL.removeLayer(mapaTackeL[ime]); mapaTackeL[ime] = null; }
+        if ((this.mapa.prikaz === ime || this.mapa.prikaz === 'oba') && niz && niz.length) {
+          mapaTackeL[ime] = this.mapaGrupaTacaka(niz, boja).addTo(mapaL);
+        }
+      }
+    },
+
+    mapaRecenicaRazmere() {
+      if (!this.mapa.info || !this.mapa.stvarno) return '';
+      const n = this.mapa.stvarno.length, uk = this.mapa.info.ukupno_kombinacija;
+      const procenat = (100 * n / uk).toFixed(3).replace('.', ',');
+      return `Prikazano je ${n.toLocaleString('sr-RS')} izvučenih od ${uk.toLocaleString('sr-RS')} `
+        + `mogućih kombinacija (${procenat}%). Tačke stoje onako kako teorija predviđa za slučajno `
+        + `izvlačenje; uključi „Slučajno" i uporedi dve slike.`;
     },
 
     async mapaKlik(e) {

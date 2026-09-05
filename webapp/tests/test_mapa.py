@@ -7,6 +7,7 @@ Pokriveni kriterijumi ove faze:
   - susedni rangovi su susedne ćelije (osobina zbog koje je kriva izabrana),
   - vektorske osobine daju isto što i osobine jedne kombinacije,
   - detalj kombinacije i detalj ćelije opisuju istu stvar iz dva pravca,
+  - kontrolni (slučajni) set je ponovljiv, u opsegu i ravnomeran,
   - ako su pločice generisane, slažu se sa trenutnim konstantama.
 
 Pokretanje:  python -X utf8 -m webapp.tests.test_mapa
@@ -166,6 +167,23 @@ def test_detalj_kombinacije_i_celije():
     print("test_detalj_kombinacije_i_celije: OK")
 
 
+def test_slucajni_rangovi():
+    """Kontrolni sloj mora biti ponovljiv, u opsegu i iste veličine kao stvarni (Faza 3)."""
+    a = mapa.slucajni_rangovi(1422)
+    b = mapa.slucajni_rangovi(1422)
+    assert np.array_equal(a, b), "isti seed mora dati isti kontrolni set"
+    assert not np.array_equal(a, mapa.slucajni_rangovi(1422, seed=1)), "drugi seed = drugi set"
+    assert len(a) == 1422
+    assert a.min() >= 0 and a.max() < mapa.UKUPNO_KOMBINACIJA
+    assert len(mapa.slucajni_rangovi(0)) == 0
+
+    # ravnomeran izbor po rangu je ravnomeran izbor kombinacije: prosek zbira
+    # velikog uzorka mora biti blizu proseka celog prostora (7 * 40/2 = 140)
+    uzorak = np.array([mapa.unrang(int(r)) for r in mapa.slucajni_rangovi(3000, seed=11)])
+    assert abs(mapa.osobina_niz("zbir", uzorak).mean() - 140) < 2
+    print("test_slucajni_rangovi: OK")
+
+
 def test_plocice_ako_postoje():
     """Ako su pločice generisane, moraju odgovarati trenutnim konstantama."""
     koren = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -222,6 +240,7 @@ def main():
     test_prazan_deo_krive()
     test_osobine_vektorski_isto()
     test_detalj_kombinacije_i_celije()
+    test_slucajni_rangovi()
     test_plocice_ako_postoje()
     print("\nSVI TESTOVI MAPE PROSLI [OK]")
 

@@ -47,6 +47,10 @@ OSOBINE = {
                "opseg": (1, (MAX_BROJ - 1) // 10 + 1)},
 }
 
+# Seed kontrolnog (slučajnog) sloja. Fiksan je da bi se ista „lažna istorija"
+# uvek iscrtala isto i da bi poređenje sa stvarnim tačkama bilo ponovljivo.
+SEED_KONTROLE = 20260905
+
 # Kontrolne tačke skale (viridis). Ovde su, a ne u generatoru pločica, da bi
 # legenda u browseru i ispečene boje došle iz istog izvora.
 SKALA_BOJA = [
@@ -211,6 +215,18 @@ def osobine(komb):
         "parni": sum(1 for x in b if x % 2 == 0),
         "dekade": len({_dekada(x) for x in b}),
     }
+
+
+def slucajni_rangovi(n, seed=SEED_KONTROLE):
+    """n rangova izvučenih ravnomerno iz celog prostora (kontrolni sloj mape).
+
+    Ravnomeran izbor po rangu je isto što i ravnomeran izbor kombinacije, jer je
+    rang bijekcija. Isti seed uvek daje isti set, pa je slika ponovljiva.
+    """
+    if n < 0:
+        raise ValueError("Broj tačaka ne može biti negativan.")
+    rng = np.random.default_rng(int(seed))
+    return rng.integers(0, UKUPNO_KOMBINACIJA, size=int(n), dtype=np.int64)
 
 
 def detalj_kombinacije(brojevi):

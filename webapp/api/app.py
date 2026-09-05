@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija, mapa)
+                         prognoza, razlicitost, istorija, mapa,
+                         razlicitost_teorija as teorija)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -686,6 +687,63 @@ def api_mapa_info():
         "slojevi": _mapa_slojevi(),
         "skala_boja": ["#%02x%02x%02x" % boja for boja in mapa.SKALA_BOJA],
     }
+
+
+def _tacke(rangovi, oznake):
+    """Rangovi -> tačke sa ćelijom i preklapanjem sa prethodnom tačkom u nizu.
+
+    Preklapanje se računa istom funkcijom kao svuda u projektu (teorija.preklapanje_brojeva),
+    da stvarne i kontrolne tačke ne bi merile istu stvar na dva načina.
+    """
+    x, y = mapa.hilbert_xy(rangovi) if rangovi else ([], [])
+    tacke, prethodni = [], None
+    for i, r in enumerate(rangovi):
+        brojevi = mapa.unrang(r)
+        tacke.append({
+            "kolo": oznake[i],
+            "rang": int(r),
+            "x": int(x[i]),
+            "y": int(y[i]),
+            "preklapanje_sa_prethodnim": (None if prethodni is None
+                                          else teorija.preklapanje_brojeva(prethodni, brojevi)),
+        })
+        prethodni = brojevi
+    return tacke
+
+
+@app.get("/api/mapa/tacke")
+def api_mapa_tacke(granica: int | None = None):
+    """Izvučene kombinacije kao tačke na mapi, hronološki (granica=None → sve)."""
+    conn = baza.konekcija()
+    try:
+        izvucena = razlicitost.istorija_iz_conn(conn)
+    finally:
+        conn.close()
+    if granica is not None:
+        izvucena = [(kolo, br) for kolo, br in izvucena if kolo <= granica]
+    rangovi = [mapa.rang(br) for _kolo, br in izvucena]
+    return {"granica": granica, "broj": len(rangovi),
+            "tacke": _tacke(rangovi, [kolo for kolo, _br in izvucena])}
+
+
+@app.get("/api/mapa/slucajno")
+def api_mapa_slucajno(n: int | None = None, seed: int = mapa.SEED_KONTROLE):
+    """Kontrolni sloj: isto toliko slučajnih kombinacija, isti oblik odgovora.
+
+    Bez `n` uzima onoliko tačaka koliko ima izvučenih kola, da bi dve slike bile
+    uporedive po broju tačaka, a ne samo po rasporedu.
+    """
+    if n is None:
+        conn = baza.konekcija()
+        try:
+            n = conn.execute("SELECT COUNT(*) FROM istorijski_rezultati").fetchone()[0]
+        finally:
+            conn.close()
+    if not (0 <= n <= 20000):
+        raise HTTPException(400, "Broj tačaka mora biti između 0 i 20000.")
+    rangovi = [int(r) for r in mapa.slucajni_rangovi(n, seed)]
+    return {"seed": int(seed), "broj": len(rangovi),
+            "tacke": _tacke(rangovi, [None] * len(rangovi))}
 
 
 @app.get("/api/mapa/komb")
