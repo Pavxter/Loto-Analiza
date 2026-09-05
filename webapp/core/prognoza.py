@@ -177,6 +177,69 @@ def oceni_prognoze(conn, kolo, dobitni_set):
 
 
 # ----------------------------------------------------------------------------
+# Vremeplov: predikcija „u tački" (UPUTSTVO_PROGRAMER_ISTORIJA.md §1.4, Faza 4)
+# ----------------------------------------------------------------------------
+# Jedan javni put za „predvidi za cilj nad podacima ≤ granica, pa evaluiraj".
+# Koristi ISTE čiste prediktore (prediktori.py / prediktori_komb.py) koje
+# test_ekvivalencija_i_bez_curenja i test_komb_bez_curenja porede sa retro-motorom
+# — pa je rezultat po konstrukciji identičan retro-bektest redu za to kolo. To
+# eksplicitno proverava test_prognoza_jednaka_retro_bektestu (test_istorija.py).
+# Retro-motor zadržava inkrementalno stanje (O(N) nad celom istorijom); jedan
+# poziv u tački je jeftin (≈ jedan korak retro-bektesta, PLAN Faza 4.2).
+
+def prognoza_u_tacki(istorija, granica, metode=None):
+    """Predikcije (jedan broj + kombinacija) za cilj = prvo kolo posle granice.
+
+    Prediktori vide isključivo kola ≤ granica (= strogo pre cilja) i fiksni
+    RETRO_PERIOD — isti ulaz kao jedan korak retro-bektesta. `metode` (skup id-jeva)
+    opciono sužava skup. Vraća None ako nema podataka ≤ granica. Ako granica nema
+    naredno kolo u prosleđenoj istoriji, cilj se pretpostavlja kao granica+1
+    (uživo režim; ocena tada nije moguća dok se kolo ne unese).
+    """
+    pre = [(kolo, br) for kolo, br in istorija if kolo <= granica]
+    if not pre:
+        return None
+    posle = [kolo for kolo, _br in istorija if kolo > granica]
+    cilj = posle[0] if posle else granica + 1
+
+    def _uzmi(reg):
+        return {m: fn(pre, RETRO_PERIOD, ciljno_kolo=cilj)
+                for m, (_n, fn, _o) in reg.items() if not metode or m in metode}
+
+    return {"granica": granica, "cilj": cilj, "period": RETRO_PERIOD,
+            "jedan_broj": _uzmi(PREDIKTORI), "kombinacija": _uzmi(PREDIKTORI_KOMB)}
+
+
+def oceni_u_tacki(prognoza, stvarni_brojevi):
+    """Ocena prognoze naspram stvarnog kola — ista pravila kao oceni_prognoze.
+
+    Jednobrojni: pogodak 0/1 (broj ∈ dobitni). Kombinacijski: preklapanje 0..7
+    (isti bitmask kao svuda). Vraća mape metod→ishod + sažetak (koliko pogodaka,
+    maks preklapanje, teorijske reference).
+    """
+    dobitni = {int(x) for x in stvarni_brojevi}
+    dob_maska = T.maska(dobitni)
+    jed = {m: {"broj": b, "pogodak": (1 if b in dobitni else 0)}
+           for m, b in prognoza["jedan_broj"].items() if b is not None}
+    komb = {m: {"kombinacija": list(k),
+                "preklapanje": T.preklapanje(T.maska(k), dob_maska)}
+            for m, k in prognoza["kombinacija"].items() if k}
+    maks_prekl = max((v["preklapanje"] for v in komb.values()), default=None)
+    return {
+        "granica": prognoza["granica"], "cilj": prognoza["cilj"],
+        "stvarni": sorted(dobitni),
+        "jedan_broj": jed, "kombinacija": komb,
+        "sazetak": {
+            "pogodaka": sum(v["pogodak"] for v in jed.values()),
+            "od_jednobrojnih": len(jed),
+            "maks_preklapanje": maks_prekl,
+            "baseline_udeo": round(100 * BASELINE, 2),
+            "ocekivano_preklapanje": round(MU_PREKL, 4),
+        },
+    }
+
+
+# ----------------------------------------------------------------------------
 # Retro-bektest (walk-forward, inkrementalno stanje)
 # ----------------------------------------------------------------------------
 

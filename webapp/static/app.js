@@ -74,7 +74,8 @@ function app() {
              ocekivano: 1.256, sigma: 0.9317, ucitano: false },
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
-           otvori: { sazetak: false, razl: false, rang: false }, razl: null, rang: null },
+           otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
+           vremeplov: { podaci: null, ishod: null, radi: false } },
 
     aktivna() { return this.strane.find(s => s.id === this.strana) || this.strane[0]; },
 
@@ -135,6 +136,8 @@ function app() {
         // osveži otvorene collapsible sekcije (Faza 3) da prate granicu/prozor
         if (this.ist.otvori.razl) await this.ucitajIstRazlicitost();
         if (this.ist.otvori.rang) await this.ucitajIstRangiranje();
+        // vremeplov (Faza 4): ako je prognoza već izračunata, preračunaj za novu granicu
+        if (this.ist.otvori.prog && this.ist.vremeplov.podaci) await this.vremeplovIzracunaj();
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
       this.ist.loading = false;
     },
@@ -167,6 +170,36 @@ function app() {
     istRangSort() {
       const r = this.ist.rang;
       return r ? [...r.tabela].sort((a, b) => a.hibrid.rang - b.hibrid.rang) : [];
+    },
+
+    // Vremeplov prognoze (Faza 4)
+    async vremeplovIzracunaj() {
+      this.ist.vremeplov.ishod = null;            // stari ishod se ne prenosi na novu tačku
+      this.ist.vremeplov.radi = true;
+      try {
+        this.ist.vremeplov.podaci = await jget(`/api/istorija/prognoza?granica=${this.ist.granica}`);
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.ist.vremeplov.radi = false;
+    },
+    async vremeplovIshod() {
+      this.ist.vremeplov.radi = true;
+      try {
+        this.ist.vremeplov.ishod = await jget(`/api/istorija/prognoza/ishod?granica=${this.ist.granica}`);
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.ist.vremeplov.radi = false;
+    },
+    vremeplovBroj(red) {
+      // jednobrojna prognoza: kad postoji ishod, oboji po pogotku
+      const i = this.ist.vremeplov.ishod;
+      if (!i) return 'neutralan';
+      const o = i.jedan_broj.find(x => x.metod === red.metod);
+      return o && o.pogodak ? 'vruc' : 'hladan';
+    },
+    vremeplovPreklapanje(metod) {
+      const i = this.ist.vremeplov.ishod;
+      if (!i) return '—';
+      const o = i.kombinacija.find(x => x.metod === metod);
+      return o ? o.preklapanje : '—';
     },
 
     async istorijaBroj(broj) {

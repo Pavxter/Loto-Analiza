@@ -290,6 +290,91 @@
                 </template>
               </div>
             </div>
+
+            <!-- Vremeplov prognoze: šta bi sistem tada predvideo + stvarni ishod (Faza 4) -->
+            <div class="card" style="margin-top:12px">
+              <div class="coll-head" @click="istToggle('prog')">
+                <span class="caret" x-text="ist.otvori.prog ? '▾' : '▸'"></span>
+                <h3>Predikcija „tada" <span class="muted" style="font-weight:400; font-size:12px">— šta bi sistem predvideo za naredno kolo, i šta se stvarno desilo</span></h3>
+              </div>
+              <div x-show="ist.otvori.prog" x-cloak style="margin-top:10px">
+                <p class="hint" style="margin:0 0 10px">Sistem zna zaključno sa <b x-text="formatKolo(ist.granica)"></b>. Predikcija je za cilj <b x-text="ist.kontekst.cilj ? formatKolo(ist.kontekst.cilj) : formatKolo(ist.granica+1) + ' (još nije odigrano)'"></b>. Ishod se prikazuje tek na klik — to je poenta eksperimenta.</p>
+
+                <!-- Korak 1: izračunaj -->
+                <template x-if="!ist.vremeplov.podaci">
+                  <button class="btn" @click="vremeplovIzracunaj()" :disabled="ist.vremeplov.radi" x-text="ist.vremeplov.radi ? 'Računam…' : 'Izračunaj šta bi sistem tada predvideo'"></button>
+                </template>
+
+                <template x-if="ist.vremeplov.podaci">
+                  <div>
+                    <!-- Korak po korak -->
+                    <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px">
+                      <button class="btn ghost sm" @click="istGranica(ist.kontekst.prethodna_granica)" :disabled="!ist.kontekst.prethodna_granica">◀ prethodno</button>
+                      <button class="btn ghost sm" @click="istGranica(ist.kontekst.sledeca_granica)" :disabled="!ist.kontekst.sledeca_granica">sledeće ▶</button>
+                      <span class="muted" style="font-size:12px" x-text="'cilj: ' + (ist.vremeplov.podaci.cilj ? formatKolo(ist.vremeplov.podaci.cilj) : '—') + ' · period ' + ist.vremeplov.podaci.period + ' kola'"></span>
+                    </div>
+
+                    <!-- Jednobrojne prognoze -->
+                    <h3 style="font-size:13px">Jedan broj (7 metoda)</h3>
+                    <table class="tbl" style="margin-top:4px">
+                      <thead><tr><th>Metod</th><th>Predlog</th><th>Ishod</th></tr></thead>
+                      <tbody>
+                        <template x-for="r in ist.vremeplov.podaci.jedan_broj" :key="r.metod">
+                          <tr>
+                            <td x-text="r.naziv" :title="r.opis"></td>
+                            <td><div class="ball sm" :class="vremeplovBroj(r)" style="cursor:pointer" @click="istorijaBroj(r.broj)" x-text="r.broj"></div></td>
+                            <td x-text="ist.vremeplov.ishod ? (vremeplovBroj(r)==='vruc' ? '✓ pogodak' : '✕') : '—'" :style="ist.vremeplov.ishod && vremeplovBroj(r)==='vruc' ? 'color:var(--ok)' : 'color:var(--text-dim)'"></td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+
+                    <!-- Kombinacijske prognoze -->
+                    <h3 style="font-size:13px; margin-top:14px">Kombinacija (7 brojeva po metodu)</h3>
+                    <table class="tbl" style="margin-top:4px">
+                      <thead><tr><th>Metod</th><th>Predlog</th><th>Preklapanje</th></tr></thead>
+                      <tbody>
+                        <template x-for="r in ist.vremeplov.podaci.kombinacija" :key="r.metod">
+                          <tr>
+                            <td x-text="r.naziv" :title="r.opis"></td>
+                            <td><div class="balls">
+                              <template x-for="b in r.kombinacija" :key="b">
+                                <div class="ball sm" :class="(ist.vremeplov.ishod && ist.vremeplov.ishod.stvarni && ist.vremeplov.ishod.stvarni.includes(b)) ? 'vruc' : 'neutralan'" x-text="b"></div>
+                              </template>
+                            </div></td>
+                            <td class="num" x-text="ist.vremeplov.ishod ? (vremeplovPreklapanje(r.metod) + ' / 7') : '—'"></td>
+                          </tr>
+                        </template>
+                      </tbody>
+                    </table>
+
+                    <!-- Korak 2: ishod -->
+                    <div style="margin-top:14px">
+                      <template x-if="!ist.vremeplov.ishod && ist.kontekst.cilj">
+                        <button class="btn" @click="vremeplovIshod()" :disabled="ist.vremeplov.radi" x-text="ist.vremeplov.radi ? 'Učitavam…' : 'Prikaži stvarni ishod'"></button>
+                      </template>
+                      <p class="muted" x-show="!ist.kontekst.cilj" style="font-size:13px">Naredno kolo (cilj) još nije odigrano — nema ishoda za poređenje.</p>
+
+                      <template x-if="ist.vremeplov.ishod && ist.vremeplov.ishod.cilj_postoji">
+                        <div class="notice" style="margin-top:4px; flex-direction:column; gap:8px; align-items:stretch">
+                          <div>Stvarno kolo <b x-text="formatKolo(ist.vremeplov.ishod.cilj)"></b>:
+                            <span class="balls" style="display:inline-flex; gap:4px; vertical-align:middle; margin-left:6px">
+                              <template x-for="b in ist.vremeplov.ishod.stvarni" :key="b"><div class="ball sm vruc" x-text="b"></div></template>
+                            </span>
+                          </div>
+                          <div style="font-size:13px">
+                            Jednobrojni pogoci: <b x-text="ist.vremeplov.ishod.sazetak.pogodaka + ' / ' + ist.vremeplov.ishod.sazetak.od_jednobrojnih"></b>
+                            · najbolje preklapanje kombinacije: <b x-text="(ist.vremeplov.ishod.sazetak.maks_preklapanje===null ? '—' : ist.vremeplov.ishod.sazetak.maks_preklapanje + ' / 7')"></b>
+                          </div>
+                        </div>
+                      </template>
+                    </div>
+
+                    <p class="hint" style="margin-top:12px">Očekivano preklapanje slučajne kombinacije: μ = <span x-text="ist.vremeplov.podaci.teorija.ocekivano"></span> (σ = <span x-text="ist.vremeplov.podaci.teorija.sigma"></span>). Slučajan jedan broj pogađa u ≈ <span x-text="ist.vremeplov.podaci.teorija.baseline_udeo"></span>% slučajeva. Skoro uvek: rezultat se ne razlikuje od slučajnosti.</p>
+                  </div>
+                </template>
+              </div>
+            </div>
           </div>
         </template>
       </section>

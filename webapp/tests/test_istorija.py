@@ -18,7 +18,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from webapp.core import baza, istorija  # noqa: E402
+from webapp.core import baza, istorija, prognoza  # noqa: E402
 
 
 def _sinteticka_baza():
@@ -213,6 +213,57 @@ def test_rangiranje_na_granici():
         _ocisti(conn, putanja)
 
 
+def test_prognoza_jednaka_retro_bektestu():
+    """Vremeplov mora dati IDENTIČNO što i red retro-bektesta za isto kolo (§1.4).
+
+    Dva odvojena puta bi se garantovano razišla; ovo dokazuje da je put jedan.
+    """
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        prognoza.retro_bektest(conn)                 # min_start=50 → retro za 2021001..2021050
+        ist = prognoza.istorija_iz_conn(conn)
+        for cilj in (2021001, 2021025, 2021050):
+            granica = istorija.prethodno_kolo(conn, cilj)
+            p = prognoza.prognoza_u_tacki(ist, granica)
+            assert p["cilj"] == cilj, (p["cilj"], cilj)
+            redovi = baza.prognoze_za_kolo(conn, cilj, "retro")
+            retro_jed = {r["metod"]: r["broj"] for r in redovi if r["vrsta"] != "komb"}
+            retro_komb = {r["metod"]: r["kombinacija"] for r in redovi if r["vrsta"] == "komb"}
+            for m, b in p["jedan_broj"].items():
+                assert retro_jed[m] == b, f"{cilj}/{m}: retro={retro_jed[m]} tacka={b}"
+            for m, k in p["kombinacija"].items():
+                assert retro_komb[m] == ",".join(map(str, k)), f"{cilj}/{m} komb razlika"
+        print("test_prognoza_jednaka_retro_bektestu: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
+def test_prognoza_ishod_i_bez_curenja():
+    """Ishod: pogodak/preklapanje tačni; nema cilja kad je granica najnovije;
+    kola posle cilja ne menjaju ni prognozu ni ocenu (anti-curenje)."""
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        granica = 2021029                            # cilj = 2021030
+        ishod = istorija.prognoza_ishod(conn, granica)
+        assert ishod["cilj_postoji"] and ishod["cilj"] == 2021030
+        stvarni = set(ishod["stvarni"])
+        for red in ishod["jedan_broj"]:
+            assert red["pogodak"] == (1 if red["broj"] in stvarni else 0)
+        for red in ishod["kombinacija"]:
+            assert red["preklapanje"] == len(set(red["kombinacija"]) & stvarni)
+        # granica = najnovije → nema narednog kola za ocenu
+        naj = istorija.najnovije_kolo(conn)
+        assert istorija.prognoza_ishod(conn, naj)["cilj_postoji"] is False
+        # anti-curenje: dodaj budućnost posle cilja, rezultat isti
+        for k in (2021051, 2021052):
+            baza.dodaj_kolo(conn, k, "2099-01-01", [1, 2, 3, 4, 5, 6, 7])
+        conn.commit()
+        assert istorija.prognoza_ishod(conn, granica) == ishod
+        print("test_prognoza_ishod_i_bez_curenja: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
 def main():
     test_granica_iskljucuje_buducnost()
     test_prethodno_sledece_preko_godine()
@@ -223,6 +274,8 @@ def main():
     test_sazetak_prozora()
     test_razlicitost_cilja()
     test_rangiranje_na_granici()
+    test_prognoza_jednaka_retro_bektestu()
+    test_prognoza_ishod_i_bez_curenja()
     print("\nSVI TESTOVI ISTORIJE PROSLI [OK]")
 
 

@@ -464,6 +464,32 @@ def api_istorija_rangiranje(granica: int, prozor: int = 0):
         conn.close()
 
 
+@app.get("/api/istorija/prognoza")
+def api_istorija_prognoza(granica: int):
+    """Vremeplov: šta bi sistem predvideo na granici, za cilj (Faza 4)."""
+    conn = baza.konekcija()
+    try:
+        p = istorija.prognoza_u_tacki(conn, granica)
+        if p is None:
+            raise HTTPException(404, f"Nema kola ≤ {granica} u bazi.")
+        return p
+    finally:
+        conn.close()
+
+
+@app.get("/api/istorija/prognoza/ishod")
+def api_istorija_prognoza_ishod(granica: int):
+    """Vremeplov: prognoza na granici + stvarni ishod cilja + evaluacija (Faza 4)."""
+    conn = baza.konekcija()
+    try:
+        p = istorija.prognoza_ishod(conn, granica)
+        if p is None:
+            raise HTTPException(404, f"Nema kola ≤ {granica} u bazi.")
+        return p
+    finally:
+        conn.close()
+
+
 # ---------------------------------------------------------------------------
 # Istorija / unos kola / uvoz
 # ---------------------------------------------------------------------------

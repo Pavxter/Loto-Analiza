@@ -13,7 +13,10 @@ modulima. Numeracija kola (godina*1000+redni) nije kontinualna, pa se navigacija
 radi upitom nad poretkom u bazi, nikad aritmetikom kolo±1.
 """
 
-from . import konfig, analitika, rangiranje as rang, razlicitost as razl
+from . import (konfig, analitika, rangiranje as rang, razlicitost as razl,
+               prognoza as prog, razlicitost_teorija as teorija)
+from .prediktori import PREDIKTORI
+from .prediktori_komb import PREDIKTORI_KOMB
 
 BROJEVA = konfig.BROJEVA_U_KOMBINACIJI
 MAX_BROJ = konfig.MAX_BROJ
@@ -208,3 +211,55 @@ def rangiranje(conn, granica, prozor=None):
     } for b in range(1, MAX_BROJ + 1)]
     return {"granica": granica, "prozor": prozor or 0,
             "broj_kola": int(len(df)), "tabela": tabela}
+
+
+# ----------------------------------------------------------------------------
+# Vremeplov prognoze (Faza 4): „šta bi sistem tada predvideo" + stvarni ishod.
+# istorija.py samo poziva prognoza.prognoza_u_tacki/oceni_u_tacki i pakuje za UI.
+# ----------------------------------------------------------------------------
+
+def _obogati_prognozu(p):
+    """Spakuj sirovu prognozu (metod→broj/komb) za UI: dodaj naziv/opis i teoriju."""
+    jed = [{"metod": m, "naziv": PREDIKTORI[m][0], "opis": PREDIKTORI[m][2], "broj": b}
+           for m, b in p["jedan_broj"].items() if b is not None]
+    komb = [{"metod": m, "naziv": PREDIKTORI_KOMB[m][0], "opis": PREDIKTORI_KOMB[m][2],
+             "kombinacija": list(k)} for m, k in p["kombinacija"].items() if k]
+    return {
+        "granica": p["granica"], "cilj": p["cilj"], "period": p["period"],
+        "jedan_broj": jed, "kombinacija": komb,
+        "teorija": {"ocekivano": round(teorija.ocekivano_preklapanje(), 4),
+                    "sigma": round(teorija.sigma_preklapanja(), 4),
+                    "baseline_udeo": round(100 * prog.BASELINE, 2)},
+    }
+
+
+def prognoza_u_tacki(conn, granica, metode=None):
+    """Šta bi sistem predvideo na granici (za cilj). None ako nema kola ≤ granica."""
+    p = prog.prognoza_u_tacki(prog.istorija_iz_conn(conn), granica, metode)
+    return _obogati_prognozu(p) if p is not None else None
+
+
+def prognoza_ishod(conn, granica, metode=None):
+    """Prognoza na granici + stvarni ishod cilja + evaluacija (pogodak / preklapanje).
+
+    `cilj_postoji=False` kad granica nema naredno kolo u bazi (tada nema ocene —
+    ishod se namerno ne prikazuje dok se kolo ne odigra). None ako nema kola ≤ granica.
+    """
+    ist = prog.istorija_iz_conn(conn)
+    p = prog.prognoza_u_tacki(ist, granica, metode)
+    if p is None:
+        return None
+    out = _obogati_prognozu(p)
+    stvarno = dict(ist).get(p["cilj"])          # brojevi cilja ako postoji u bazi
+    if stvarno is None:
+        out["cilj_postoji"] = False
+        return out
+    ocena = prog.oceni_u_tacki(p, stvarno)
+    for red in out["jedan_broj"]:
+        red["pogodak"] = ocena["jedan_broj"][red["metod"]]["pogodak"]
+    for red in out["kombinacija"]:
+        red["preklapanje"] = ocena["kombinacija"][red["metod"]]["preklapanje"]
+    out["cilj_postoji"] = True
+    out["stvarni"] = ocena["stvarni"]
+    out["sazetak"] = ocena["sazetak"]
+    return out
