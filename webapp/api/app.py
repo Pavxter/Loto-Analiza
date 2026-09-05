@@ -629,9 +629,21 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
 # Statički frontend (mora biti poslednje da ne preuzme /api rute)
 # ---------------------------------------------------------------------------
 
+class _NoCacheStatic(StaticFiles):
+    """StaticFiles sa 'Cache-Control: no-cache' — browser sme da kešira ali MORA
+    da revalidira (uz ETag/Last-Modified: 304 ako nije menjano, inače nova verzija).
+    Rešava „stara verzija posle update-a" bez ručnog hard refresh-a."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
+
+
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+    return FileResponse(os.path.join(STATIC_DIR, "index.html"),
+                        headers={"Cache-Control": "no-cache"})
 
 
-app.mount("/", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/", _NoCacheStatic(directory=STATIC_DIR), name="static")
