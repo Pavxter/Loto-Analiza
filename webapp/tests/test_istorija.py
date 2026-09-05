@@ -264,6 +264,30 @@ def test_prognoza_ishod_i_bez_curenja():
         _ocisti(conn, putanja)
 
 
+def test_generator_granica_ne_vidi_buducnost():
+    """Generator sa granicom (Faza 5) analizira samo kola ≤ granica — budućnost
+    (kola posle granice) ne sme uticati na skorove ni izbor kombinacija."""
+    from webapp.core import analitika, generator
+    conn, putanja, kola = _sinteticka_baza()
+    try:
+        granica = 2021020
+        bazen = list(range(1, 11))                # fiksni bazen → ograničen skup kombinacija
+        df = analitika.ucitaj_df(conn)
+        a1 = analitika.Analiza(df[df["kolo"] <= granica], period_analize=0)
+        r1 = generator.generisi(a1, bazen=bazen, filteri={})
+        # dodaj „budućnost" pa ponovo analiziraj do iste granice
+        for k in (2021051, 2021052):
+            baza.dodaj_kolo(conn, k, "2099-01-01", [1, 2, 3, 4, 5, 6, 7])
+        conn.commit()
+        df2 = analitika.ucitaj_df(conn)
+        a2 = analitika.Analiza(df2[df2["kolo"] <= granica], period_analize=0)
+        r2 = generator.generisi(a2, bazen=bazen, filteri={})
+        assert r1["kombinacije"] == r2["kombinacije"], "granica-analiza vidi budućnost!"
+        print("test_generator_granica_ne_vidi_buducnost: OK")
+    finally:
+        _ocisti(conn, putanja)
+
+
 def main():
     test_granica_iskljucuje_buducnost()
     test_prethodno_sledece_preko_godine()
@@ -276,6 +300,7 @@ def main():
     test_rangiranje_na_granici()
     test_prognoza_jednaka_retro_bektestu()
     test_prognoza_ishod_i_bez_curenja()
+    test_generator_granica_ne_vidi_buducnost()
     print("\nSVI TESTOVI ISTORIJE PROSLI [OK]")
 
 

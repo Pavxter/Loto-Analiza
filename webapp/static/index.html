@@ -141,6 +141,8 @@
                 <span style="font-weight:650; margin-left:6px" x-text="ist.kontekst.broj_u_prozoru + ' / ' + ist.kontekst.ukupno_do_granice"></span></div>
               <div x-show="ist.kontekst.raspon_datuma"><span class="muted" style="font-size:12px">Raspon</span>
                 <span style="font-weight:650; margin-left:6px" x-text="ist.kontekst.raspon_datuma ? (ist.kontekst.raspon_datuma[0] + ' → ' + ist.kontekst.raspon_datuma[1]) : ''"></span></div>
+              <div class="spacer" style="flex:1"></div>
+              <button class="btn ghost sm" @click="generisiDoKola()" title="Otvori Generator koji analizira samo kola ≤ granica">Generiši sa znanjem do ovog kola →</button>
             </div>
 
             <!-- Panel: detalj broja (Faza 2) -->
@@ -151,6 +153,11 @@
                   <div style="flex:1">
                     <h3 style="margin:0" x-text="'Broj ' + ist.detalj.broj + ' — istorija na granici ' + formatKolo(ist.granica)"></h3>
                     <p class="hint" style="margin:2px 0 0" x-text="brojRecenica()"></p>
+                    <div style="display:flex; gap:8px; margin-top:6px; flex-wrap:wrap">
+                      <span class="muted" style="font-size:12px">Vidi broj u:</span>
+                      <a href="#" class="link-sm" @click.prevent="skociNaBroj(ist.detalj.broj,'statistika')">Statistici →</a>
+                      <a href="#" class="link-sm" @click.prevent="skociNaBroj(ist.detalj.broj,'rangiranje')">Rangiranju →</a>
+                    </div>
                   </div>
                   <button class="btn ghost sm" @click="ist.broj=null; ist.detalj=null">Zatvori ✕</button>
                 </div>
@@ -260,7 +267,8 @@
                       </div>
                     </div>
                     <p class="muted" x-show="!ist.razl.ponovljeni_parovi.length" style="font-size:12px; margin-top:10px">Nijedan par iz cilja se nije ranije javio zajedno u prozoru.</p>
-                    <p class="hint" style="margin-top:10px">Očekivano preklapanje slučajne kombinacije: μ = <span x-text="ist.razl.teorija.ocekivano"></span>, σ = <span x-text="ist.razl.teorija.sigma"></span>. Vrednosti oko μ znače da je kolo „obično" u odnosu na prošlost.</p>
+                    <p class="hint" style="margin-top:10px">Očekivano preklapanje slučajne kombinacije: μ = <span x-text="ist.razl.teorija.ocekivano"></span>, σ = <span x-text="ist.razl.teorija.sigma"></span>. Vrednosti oko μ znače da je kolo „obično" u odnosu na prošlost.
+                      <a href="#" class="link-sm" style="margin-left:6px" @click.prevent="idi('razlicitost')">Cela analiza različitosti →</a></p>
                   </div>
                 </template>
               </div>
@@ -610,6 +618,13 @@
             <div class="field" x-show="gen.koristiBazen">
               <label>Bazen brojeva (zarezom razdvojeni)</label>
               <input class="inp" x-model="gen.bazenText" placeholder="npr. 1, 5, 8, 12, 22, 23, 30, 37">
+            </div>
+            <div class="field">
+              <label>Analiziraj do kola (vremeplov) <span class="muted" style="font-weight:400; font-size:11px">— prazno = cela baza</span></label>
+              <div class="row" style="gap:8px; align-items:center">
+                <input class="inp" type="number" x-model.number="gen.granica" placeholder="npr. 2025119" style="flex:1">
+                <button class="btn ghost sm" @click="gen.granica=null" x-show="gen.granica" title="Vrati na celu bazu">✕</button>
+              </div>
             </div>
             <div class="row">
               <div class="field"><label>Min. sredina</label><input class="inp" type="number" x-model.number="gen.min_sv" step="0.1"></div>

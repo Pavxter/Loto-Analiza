@@ -64,7 +64,8 @@ function app() {
            f_parni: false, parni: 3, f_vruci: false, vruci: 4, f_hladni: false, hladni: 1,
            f_uzastopni: false, uzastopni: 0, f_dekada: false, dekada_max: 3,
            strategija: 'favorizuj', pristrasnost: true, unikati: false,
-           diverzitet: false, max_slicnost: 4, radi: false, rezultati: [], rezime: '', razlicitost: null },
+           diverzitet: false, max_slicnost: 4, radi: false, rezultati: [], rezime: '', razlicitost: null,
+           granica: null },
     bektestovi: [], tiketi: [], noviTiket: '',
     istorija: [], unos: { kolo: null, datum: new Date().toISOString().slice(0, 10), brojevi: '' }, fajl: null, uvozZameni: false,
     prog: { tab: 'broj', ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
@@ -503,10 +504,12 @@ function app() {
         if (this.gen.koristiBazen && this.gen.bazenText.trim()) {
           bazen = this.gen.bazenText.split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x));
         }
-        const d = await jsend('/api/generator', 'POST', { period: this.period, bazen, filteri });
+        const granica = this.gen.granica || null;
+        const d = await jsend('/api/generator', 'POST', { period: this.period, bazen, filteri, granica });
         this.gen.rezultati = d.kombinacije;
         this.gen.razlicitost = d.razlicitost;
-        this.gen.rezime = `Validnih: ${d.ukupno_validnih} · posle diverziteta: ${d.posle_diverziteta} · prikazano ${d.kombinacije.length}`;
+        const doKola = d.granica ? ` · analiza do ${this.formatKolo(d.granica)} (${d.broj_kola} kola)` : '';
+        this.gen.rezime = `Validnih: ${d.ukupno_validnih} · posle diverziteta: ${d.posle_diverziteta} · prikazano ${d.kombinacije.length}${doKola}`;
         if (!d.kombinacije.length) this.toast('Nijedna kombinacija ne zadovoljava filtere.', 'warn');
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
       this.gen.radi = false;
@@ -517,6 +520,28 @@ function app() {
       this.gen.bazenText = bazen.join(', ');
       this.idi('generator');
       this.toast('Bazen prebačen u Generator.', 'ok');
+    },
+
+    // Vremeplov → Generator: generiši sa znanjem samo do granice (Faza 5)
+    generisiDoKola() {
+      this.gen.granica = this.ist.granica;
+      this.idi('generator');
+      this.toast(`Generator će analizirati samo do kola ${this.formatKolo(this.ist.granica)}.`, 'ok');
+    },
+
+    // BrojDetalj → skok na drugi tab sa istaknutim brojem (Faza 5)
+    skociNaBroj(broj, tab) {
+      this.idi(tab);
+      // istakni stubić broja u grafikonu ciljnog taba (indeks = broj - 1, brojevi 1..39)
+      this.$nextTick(() => setTimeout(() => {
+        const id = tab === 'statistika' ? 'st-freq' : 'rang-chart';
+        const g = window.echarts && echarts.getInstanceByDom(document.getElementById(id));
+        if (g) {
+          g.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: broj - 1 });
+          g.dispatchAction({ type: 'showTip', seriesIndex: 0, dataIndex: broj - 1 });
+        }
+      }, 350));
+      this.toast(`Broj ${broj} istaknut u tabu.`, 'ok');
     },
 
     async dodajTiketIz(brojevi) {

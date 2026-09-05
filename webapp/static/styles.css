@@ -186,6 +186,10 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .coll-head h3 { margin: 0; flex: 1; }
 .coll-head .caret { color: var(--text-dim); font-size: 13px; }
 
+/* Inline link za skok na drugi tab (integracija) */
+.link-sm { color: var(--accent); font-size: 12px; text-decoration: none; font-weight: 600; }
+.link-sm:hover { text-decoration: underline; }
+
 /* Toast */
 .toast-wrap { position: fixed; bottom: 22px; right: 22px; display: flex; flex-direction: column; gap: 10px; z-index: 100; }
 .toast {

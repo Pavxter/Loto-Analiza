@@ -43,10 +43,17 @@ def _osvezi_df():
         conn.close()
 
 
-def _analiza(period=0):
-    kljuc = ("analiza", period, _kes.get("verzija", 0))
+def _analiza(period=0, granica=None):
+    """Analiza za dati period; opciono samo nad kolima ≤ granica (Faza 5, vremeplov).
+
+    granica=None → cela baza (podrazumevano, ponašanje nepromenjeno).
+    """
+    kljuc = ("analiza", period, granica, _kes.get("verzija", 0))
     if kljuc not in _kes:
-        _kes[kljuc] = analitika.Analiza(_osvezi_df(), period_analize=period)
+        df = _osvezi_df()
+        if granica is not None:
+            df = df[df["kolo"] <= granica]
+        _kes[kljuc] = analitika.Analiza(df, period_analize=period)
     return _kes[kljuc]
 
 
@@ -118,11 +125,12 @@ class GeneratorZahtev(BaseModel):
     period: int = 0
     bazen: list[int] | None = None
     filteri: dict = {}
+    granica: int | None = None            # vremeplov: analiziraj samo do ovog kola (Faza 5)
 
 
 @app.post("/api/generator")
 def api_generator(z: GeneratorZahtev):
-    a = _analiza(z.period)
+    a = _analiza(z.period, z.granica)
     izvor = z.bazen if z.bazen else None
     if izvor is not None and len(set(izvor)) < konfig.BROJEVA_U_KOMBINACIJI:
         raise HTTPException(400, f"Bazen mora imati bar {konfig.BROJEVA_U_KOMBINACIJI} brojeva.")
@@ -131,6 +139,8 @@ def api_generator(z: GeneratorZahtev):
     rez["kombinacije"] = rez["kombinacije"][:200]
     # Panel „Različitost seta" (§8) — mereno nad prikazanim setom
     rez["razlicitost"] = razlicitost.razlicitost_seta([k["brojevi"] for k in rez["kombinacije"]])
+    rez["granica"] = z.granica
+    rez["broj_kola"] = int(len(a.loto_df))
     return rez
 
 
