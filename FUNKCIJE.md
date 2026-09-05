@@ -389,6 +389,9 @@ koje te zanimaju, pa u „Predikcija tada" prvo izračunaj predikciju a onda otk
 - Baza podataka je `loto_baza.db` (ista kao u desktop verziji).
 - Grafikoni zahtevaju internet (učitavaju se preko CDN-a).
 - Pokretanje: dupli klik na `Pokreni Loto.bat` ili `python pokreni.py`.
+- **Osvežavanje posle izmena:** statički fajlovi se serviraju sa `Cache-Control: no-cache`,
+  pa običan refresh (F5) uvek povuče najnoviju verziju — nema potrebe za `Ctrl`+`F5`.
+  Nepromenjeni fajlovi se i dalje serviraju brzo (HTTP 304, revalidacija preko ETag-a).
 
 ## Šta je izostavljeno iz v1 (moguće dodati kasnije)
 - **ML/VAE generator** (neuronska mreža) — izbačen jer za loto uči istu frekvenciju uz

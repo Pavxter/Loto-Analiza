@@ -18,6 +18,9 @@ Otvara se `http://127.0.0.1:8000`. Opcije: `python pokreni.py --port 9000 --bez-
 
 Za grafikone je potreban internet (ECharts + Alpine.js se učitavaju preko CDN-a).
 
+Statički fajlovi se serviraju sa `Cache-Control: no-cache`, pa posle izmena običan
+refresh (F5) uvek pokaže najnoviju verziju (nepromenjeni fajlovi → HTTP 304 preko ETag-a).
+
 ## Strane
 
 Redosledom kako se pojavljuju u aplikaciji (detaljan opis svake je u `FUNKCIJE.md`):
