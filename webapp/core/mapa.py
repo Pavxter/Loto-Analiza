@@ -15,8 +15,12 @@ Raspored je deterministički i trajan: promena RED_KRIVE ili DIMENZIJE znači
 regeneraciju svih pločica.
 
 Modul ne čita bazu i ne računa statistiku. Radi samo nad kombinacijama: indeks,
-koordinate, osobine (zbir, raspon, parni, dekade) i preklapanje uzastopnih
-kombinacija, kojim se boji putanja kroz vreme.
+koordinate, osobine (zbir, raspon, parni, dekade), preklapanje uzastopnih
+kombinacija (boja putanje) i dužine skokova po mapi (sekcija „Test").
+
+Izuzetak je sloj `ocena`: to je skor Generatora, koji zavisi od stanja baze.
+Modul ga računa samo iz gotovih parametara (`generator.parametri_skora`), pa ni
+tu ne dodiruje bazu.
 """
 
 from math import comb
@@ -46,7 +50,18 @@ OSOBINE = {
                "opseg": (0, BROJEVA)},
     "dekade": {"opis": "Koliko dekada kombinacija dodiruje", "tip": "diskretna",
                "opseg": (1, (MAX_BROJ - 1) // 10 + 1)},
+    # `ocena` je jedina osobina koja zavisi od baze (skor Generatora). Opseg joj
+    # nije unapred poznat nego se meri pri pečenju pločica i piše u meta.json.
+    "ocena": {"opis": "Ocena Generatora", "tip": "sekvencijalna",
+              "opseg": None, "iz_baze": True},
 }
+
+# Osobine koje se računaju samo iz same kombinacije (sve osim `ocena`).
+OSOBINE_SAME = [n for n, o in OSOBINE.items() if not o.get("iz_baze")]
+
+# Histogram dužina skokova (sekcija „Test"): koliko kanti i dokle idu. Gornja
+# granica je dijagonala kvadrata, jer dalji skok od nje ne postoji.
+BROJ_KANTI_SKOKOVA = 24
 
 # Seed kontrolnog (slučajnog) sloja. Fiksan je da bi se ista „lažna istorija"
 # uvek iscrtala isto i da bi poređenje sa stvarnim tačkama bilo ponovljivo.
@@ -233,6 +248,62 @@ def preklapanja_uzastopnih(kombinacije):
     return izlaz
 
 
+def ocena_niz(kombinacije, parametri):
+    """Skor Generatora za niz (N, 7) — vektorska verzija `generator.izracunaj_skor`.
+
+    Skor je zbir dva dela: član blizine proseka, koji zavisi samo od zbira
+    kombinacije, i zbir težina pojedinačnih brojeva (svežina + ritam). Zato se sve
+    svodi na tabelu od 39 težina i jednu formulu nad zbirom; `parametri` dolaze iz
+    `generator.parametri_skora(analiza)`, a test čuva da se dva puta ne raziđu.
+    """
+    k = np.asarray(kombinacije)
+    tezine = np.asarray(parametri["tezine"], dtype=np.float32)
+    if tezine.shape[0] != MAX_BROJ + 1:
+        raise ValueError(f"Tabela težina mora imati {MAX_BROJ + 1} mesta (indeks = broj).")
+    skor = tezine[k].sum(axis=1, dtype=np.float32)
+    std = float(parametri["std"])
+    if std > 0:
+        sredina = k.sum(axis=1, dtype=np.float32) / BROJEVA
+        udaljenost = np.abs(sredina - float(parametri["prosek"]))
+        skor += np.maximum(0.0, 100.0 * (1.0 - udaljenost / (2.0 * std)))
+    return skor
+
+
+# ----------------------------------------------------------------------------
+# Dužine skokova po mapi (sekcija „Test": stvarne tačke vs. kontrolne)
+# ----------------------------------------------------------------------------
+
+def duzine_skokova(x, y):
+    """Udaljenosti uzastopnih tačaka na mreži, u ćelijama (za n tačaka daje n-1)."""
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    if x.shape != y.shape:
+        raise ValueError("x i y moraju biti iste dužine.")
+    if x.size < 2:
+        return np.empty(0, dtype=np.float64)
+    return np.hypot(np.diff(x), np.diff(y))
+
+
+def ivice_skokova(broj_kanti=BROJ_KANTI_SKOKOVA):
+    """Zajedničke ivice kanti za oba niza — bez njih histogrami nisu uporedivi."""
+    return np.linspace(0.0, DIMENZIJA * np.sqrt(2.0), int(broj_kanti) + 1)
+
+
+def histogram_skokova(duzine, ivice=None):
+    """Raspodela dužina skokova: udeli po kantama, prosek i medijana."""
+    d = np.asarray(duzine, dtype=np.float64)
+    ivice = ivice_skokova() if ivice is None else np.asarray(ivice, dtype=np.float64)
+    brojaci, _ = np.histogram(d, bins=ivice)
+    n = int(brojaci.sum())
+    return {
+        "broj": n,
+        "brojaci": [int(v) for v in brojaci],
+        "udeli": [round(float(100.0 * v / n), 3) if n else 0.0 for v in brojaci],
+        "prosek": round(float(d.mean()), 1) if n else None,
+        "medijana": round(float(np.median(d)), 1) if n else None,
+    }
+
+
 def slucajni_rangovi(n, seed=SEED_KONTROLE):
     """n rangova izvučenih ravnomerno iz celog prostora (kontrolni sloj mape).
 
@@ -285,4 +356,6 @@ def osobina_niz(naziv, kombinacije):
         for i in range((MAX_BROJ - 1) // 10 + 1):
             broj += (dek == i).any(axis=1)
         return broj
+    if naziv == "ocena":
+        raise ValueError("Ocena zavisi od stanja baze — koristi ocena_niz(kombinacije, parametri).")
     raise ValueError(f"Nepoznata osobina: {naziv}")

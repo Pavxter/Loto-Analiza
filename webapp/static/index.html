@@ -400,7 +400,8 @@
             <p style="margin:6px 0 0">Mapa se ne crta iz sirovih podataka nego iz unapred ispečenih slika, koje ne idu u git.
               Pokreni jednom iz korena projekta:</p>
             <p class="mono" style="margin:8px 0 0">python -X utf8 generisi_mapu.py --sloj sve</p>
-            <p class="hint" style="margin:8px 0 0">Traje oko minut i zauzima oko 31 MB. Posle toga osveži stranu.</p>
+            <p class="hint" style="margin:8px 0 0">Traje oko minut i po i zauzima oko 46 MB. Posle toga osveži stranu.
+              Sloj „Ocena Generatora“ čita bazu, pa se peče za stanje u trenutku pokretanja.</p>
           </div>
         </template>
 
@@ -417,9 +418,9 @@
                 </select>
               </div>
               <div style="display:flex; align-items:center; gap:8px">
-                <span class="muted" style="font-size:12px" x-text="mapaSloj().min"></span>
+                <span class="muted" style="font-size:12px" x-text="mapaSkala(mapaSloj().min)"></span>
                 <span class="mapa-legenda" :style="'background: linear-gradient(90deg,' + mapa.info.skala_boja.join(',') + ')'"></span>
-                <span class="muted" style="font-size:12px" x-text="mapaSloj().max"></span>
+                <span class="muted" style="font-size:12px" x-text="mapaSkala(mapaSloj().max)"></span>
               </div>
               <div style="display:flex; align-items:center; gap:8px">
                 <span class="muted" style="font-size:12px">Tačke:</span>
@@ -559,11 +560,37 @@
               </div>
             </template>
 
+            <!-- Test: dužine skokova po mapi (§5.3) -->
+            <div class="card" style="margin-top:12px">
+              <div class="coll-head" @click="mapaTestToggle()">
+                <span class="caret" x-text="mapa.test.otvoren ? '▾' : '▸'"></span>
+                <h3>Test <span class="muted" style="font-weight:400; font-size:12px">— koliko su dugi skokovi sa kola na kolo, stvarno i kontrolno</span></h3>
+              </div>
+              <div x-show="mapa.test.otvoren" x-cloak style="margin-top:10px">
+                <template x-if="mapa.test.radi">
+                  <div class="center-load"><div class="spinner"></div>Računam…</div>
+                </template>
+                <template x-if="!mapa.test.radi && mapa.test.podaci">
+                  <div>
+                    <div id="mapa-skokovi" style="height:280px"></div>
+                    <p class="hint" style="margin:10px 0 0" x-text="mapaSkokoviRecenica()"></p>
+                    <div style="display:flex; align-items:center; gap:12px; margin-top:10px; flex-wrap:wrap">
+                      <span class="muted" style="font-size:12px"
+                            x-text="'Računato za ' + (mapa.test.granica ? ('kola do ' + formatKolo(mapa.test.granica)) : 'celu istoriju')"></span>
+                      <button class="btn ghost sm" x-show="mapaTestZastareo()" @click="mapaUcitajSkokove()">
+                        Preračunaj za tekuće vreme
+                      </button>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+
             <!-- Šta mapa jeste, a šta nije -->
             <div class="card" style="margin-top:12px">
               <p class="hint" style="margin:0">
                 Mapa prikazuje svih <span x-text="mapa.info.ukupno_kombinacija.toLocaleString('sr-RS')"></span> kombinacija igre 7/39, svaku kao jednu ćeliju.
-                Boja je osobina same kombinacije (<span x-text="mapaSloj().opis.toLowerCase()"></span>), ne verovatnoća i ne učestalost izvlačenja.
+                <span x-text="mapaRecenicaSloja()"></span>
                 Susedne ćelije su susedne po rednom broju, pa se razlikuju u poslednjim brojevima — mrlje i prelazi na mapi dolaze od tog redosleda, ne od izvlačenja.
               </p>
             </div>

@@ -108,7 +108,8 @@ function app() {
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
     mapa: { info: null, sloj: '', detalj: null, tiket: '', zum: 0, uklopljeno: false,
             prikaz: 'stvarno', stvarno: null, slucajno: null, seed: null, radiUzorak: false,
-            korak: 0, rep: 50, putanja: true, animira: false },
+            korak: 0, rep: 50, putanja: true, animira: false,
+            test: { otvoren: false, podaci: null, radi: false, granica: null } },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false } },
@@ -291,6 +292,25 @@ function app() {
       const prazan = { sloj: '', opis: '', min: 0, max: 0 };
       if (!this.mapa.info) return prazan;
       return this.mapa.info.slojevi.find(s => s.sloj === this.mapa.sloj) || prazan;
+    },
+
+    mapaSkala(v) {
+      // Opsezi osobina su celi brojevi, a ocena nije — legenda ne treba decimale.
+      return v == null ? '' : Math.round(v).toLocaleString('sr-RS');
+    },
+
+    mapaRecenicaSloja() {
+      const s = this.mapaSloj();
+      if (!s.sloj) return '';
+      if (!s.iz_baze) {
+        return `Boja je osobina same kombinacije (${s.opis.toLowerCase()}), `
+          + 'ne verovatnoća i ne učestalost izvlačenja.';
+      }
+      const strategija = s.strategija_svezine === 'favorizuj' ? '„favorizuj sveže"' : s.strategija_svezine;
+      return `Boja je ocena Generatora — jedini sloj koji zavisi od baze. Pločice su ispečene za `
+        + `stanje do kola ${this.formatKolo(s.granica)} (${(s.broj_kola || 0).toLocaleString('sr-RS')} kola), `
+        + `strategijom ${strategija} i bez pristrasnosti, i ne menjaju se pri unosu novog kola. `
+        + 'Ocena je pravilo po kom Generator bira, a ne verovatnoća: sve kombinacije imaju istu šansu.';
     },
 
     async ucitajMapu() {
@@ -727,6 +747,76 @@ function app() {
       }
       delovi.push(`Za slučajnu kombinaciju očekuje se ${p.teorija.ocekivano.toFixed(2)} zajedničkih brojeva (σ ${p.teorija.sigma.toFixed(2)}).`);
       return delovi.join(' ');
+    },
+
+    // ---------- sekcija „Test": dužine skokova po mapi ----------
+    mapaTestToggle() {
+      this.mapa.test.otvoren = !this.mapa.test.otvoren;
+      if (this.mapa.test.otvoren && !this.mapa.test.podaci) this.mapaUcitajSkokove();
+      else if (this.mapa.test.otvoren) this.$nextTick(() => this.crtajSkokove());
+    },
+
+    async mapaUcitajSkokove() {
+      const granica = this.mapaNaKrajuVremena() ? null : this.mapaTekuceKolo();
+      this.mapa.test.radi = true;
+      try {
+        this.mapa.test.podaci = await jget('/api/mapa/skokovi' + (granica ? `?granica=${granica}` : ''));
+        this.mapa.test.granica = granica;
+        this.$nextTick(() => this.crtajSkokove());
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      finally { this.mapa.test.radi = false; }
+    },
+
+    mapaTestZastareo() {
+      // Slajder je pomeren posle učitavanja: histogram više ne opisuje ono što se vidi.
+      if (!this.mapa.test.podaci) return false;
+      const sada = this.mapaNaKrajuVremena() ? null : this.mapaTekuceKolo();
+      return sada !== this.mapa.test.granica;
+    },
+
+    crtajSkokove(pokusaj = 0) {
+      const d = this.mapa.test.podaci;
+      if (!d) return;
+      // x-show otkriva sekciju tek u sledećem frejmu, pa platno ume da ima visinu 0
+      // baš u trenutku prvog crtanja; ECharts bi tada ostao prazan zauvek.
+      const el = document.getElementById('mapa-skokovi');
+      if (!el || !el.clientHeight || !el.clientWidth) {
+        if (this.mapa.test.otvoren && pokusaj < 40) setTimeout(() => this.crtajSkokove(pokusaj + 1), 40);
+        return;
+      }
+      crtaj('mapa-skokovi', {
+        ...bazaOpcija(), grid: { left: 48, right: 18, top: 30, bottom: 44 },
+        legend: { top: 2, textStyle: { color: BOJE.tekst, fontSize: 11 },
+                  data: ['stvarna kola', 'slučajno (kontrola)'] },
+        tooltip: { trigger: 'axis', backgroundColor: '#1c2330', borderColor: '#262d3a',
+          textStyle: { color: '#e6edf3' },
+          formatter: p => `skok oko ${Number(p[0].axisValue).toLocaleString('sr-RS')} ćelija<br>`
+            + p.map(x => `${x.marker}${x.seriesName}: ${x.value}%`).join('<br>') },
+        xAxis: { type: 'category', data: d.sredine, name: 'dužina skoka (ćelija)',
+          nameLocation: 'middle', nameGap: 30, axisLabel: { fontSize: 9, interval: 3 },
+          axisLine: { lineStyle: { color: BOJE.mreza } } },
+        yAxis: { type: 'value', axisLabel: { formatter: '{value}%' },
+          splitLine: { lineStyle: { color: BOJE.mreza } } },
+        series: [
+          { name: 'stvarna kola', type: 'bar', data: d.stvarno.udeli,
+            itemStyle: { color: BOJE.accent, borderRadius: [3, 3, 0, 0] } },
+          { name: 'slučajno (kontrola)', type: 'line', data: d.slucajno.udeli,
+            symbol: 'circle', symbolSize: 6, smooth: true,
+            lineStyle: { color: BOJE.vruc, width: 2 }, itemStyle: { color: BOJE.vruc } },
+        ],
+      });
+    },
+
+    mapaSkokoviRecenica() {
+      const d = this.mapa.test.podaci;
+      if (!d || !d.stvarno.broj) return '';
+      const br = v => Math.round(v).toLocaleString('sr-RS');
+      return `Prosečan skok je ${br(d.stvarno.prosek)} ćelija za stvarna kola i `
+        + `${br(d.slucajno.prosek)} za kontrolni set (medijane ${br(d.stvarno.medijana)} i `
+        + `${br(d.slucajno.medijana)}), na ${d.stvarno.broj.toLocaleString('sr-RS')} koraka. `
+        + 'Dužina skoka je druga mera razlike dva uzastopna kola, pa je ovo isti test kao na '
+        + 'strani „Različitost", samo u drugom obliku: dok se dve raspodele poklapaju, kola se '
+        + 'po mapi pomeraju isto kao slučajan izbor.';
     },
 
     mapaOtvoriKolo(kolo) {

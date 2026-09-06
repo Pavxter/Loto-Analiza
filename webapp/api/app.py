@@ -651,9 +651,17 @@ def _mapa_slojevi():
         if (meta.get("red_krive") != mapa.RED_KRIVE
                 or meta.get("dimenzija") != mapa.DIMENZIJA):
             continue    # stare pločice za drugi raspored — ne nudi ih
-        slojevi.append({"sloj": naziv, "opis": osobina["opis"], "tip": osobina["tip"],
-                        "min": meta["min"], "max": meta["max"],
-                        "generisano": meta.get("generisano")})
+        sloj = {"sloj": naziv, "opis": osobina["opis"], "tip": osobina["tip"],
+                "min": meta["min"], "max": meta["max"],
+                "iz_baze": bool(osobina.get("iz_baze")),
+                "generisano": meta.get("generisano")}
+        if sloj["iz_baze"]:
+            # `ocena` je pečena za jedno stanje baze; aplikacija to mora da kaže,
+            # jer se pločice ne osvežavaju pri unosu novog kola
+            sloj.update({"granica": meta.get("granica"),
+                         "broj_kola": meta.get("broj_kola"),
+                         "strategija_svezine": meta.get("strategija_svezine")})
+        slojevi.append(sloj)
     return slojevi
 
 
@@ -756,6 +764,44 @@ def api_mapa_komb(x: int, y: int):
         return _mapa_detalj(conn, d["brojevi"])
     finally:
         conn.close()
+
+
+@app.get("/api/mapa/skokovi")
+def api_mapa_skokovi(granica: int | None = None, seed: int = mapa.SEED_KONTROLE):
+    """Sekcija „Test": raspodela dužina skokova po mapi, stvarno vs. kontrolno.
+
+    Skok je udaljenost dve uzastopne tačke na mreži. Ovo nije nova statistika nego
+    isti test različitosti u drugom obliku: ako izvlačenja nisu slučajna, skokovi
+    stvarnih kola moraju izgledati drugačije od kontrolnih.
+    """
+    conn = baza.konekcija()
+    try:
+        izvucena = razlicitost.istorija_iz_conn(conn)
+    finally:
+        conn.close()
+    if granica is not None:
+        izvucena = [(kolo, br) for kolo, br in izvucena if kolo <= granica]
+
+    ivice = mapa.ivice_skokova()
+    rangovi = [mapa.rang(br) for _kolo, br in izvucena]
+    kontrolni = [int(r) for r in mapa.slucajni_rangovi(len(rangovi), seed)]
+
+    def _hist(niz):
+        if not niz:
+            return mapa.histogram_skokova([], ivice)
+        x, y = mapa.hilbert_xy(niz)
+        return mapa.histogram_skokova(mapa.duzine_skokova(x, y), ivice)
+
+    return {
+        "granica": granica,
+        "seed": int(seed),
+        "broj_kola": len(rangovi),
+        "dimenzija": mapa.DIMENZIJA,
+        "ivice": [round(float(v), 1) for v in ivice],
+        "sredine": [round(float((ivice[i] + ivice[i + 1]) / 2), 1) for i in range(len(ivice) - 1)],
+        "stvarno": _hist(rangovi),
+        "slucajno": _hist(kontrolni),
+    }
 
 
 @app.get("/api/mapa/rang")
