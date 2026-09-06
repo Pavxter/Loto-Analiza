@@ -440,6 +440,53 @@
               <div id="mapa-platno"></div>
             </div>
 
+            <!-- Vreme i putanja (Faza 4): slajder je isti pojam „granica" kao u Istraži istoriju -->
+            <div class="card" style="margin-top:12px">
+              <div style="display:flex; flex-wrap:wrap; align-items:center; gap:10px">
+                <span class="muted" style="font-size:12px">Vreme:</span>
+                <button class="btn ghost sm" @click="mapaPomeri(-1)" title="Korak nazad">◀</button>
+                <button class="btn sm" @click="mapaPusti()" x-text="mapa.animira ? '⏸ Pauza' : '▶ Pusti'"
+                        style="min-width:92px"></button>
+                <button class="btn ghost sm" @click="mapaPomeri(1)" title="Korak napred">▶</button>
+                <input type="range" min="0" :max="Math.max(0, mapaBrojKola() - 1)" step="1"
+                       x-model.number="mapa.korak" @input="mapaVreme()"
+                       style="flex:1; min-width:220px" title="Kolo do kog se prikazuje">
+                <span class="mono" style="font-size:12px"
+                      x-text="formatKolo(mapaTekuceKolo()) + '  ·  ' + (mapaKorak() + 1).toLocaleString('sr-RS') + ' / ' + mapaBrojKola().toLocaleString('sr-RS')"></span>
+                <button class="btn ghost sm" @click="mapaSveVreme()" :disabled="mapaNaKrajuVremena()">Do kraja</button>
+              </div>
+
+              <div style="display:flex; flex-wrap:wrap; align-items:center; gap:14px; margin-top:12px">
+                <label style="display:flex; align-items:center; gap:6px; font-size:12px" class="muted">
+                  <input type="checkbox" x-model="mapa.putanja" @change="mapaCrtajTacke()"> Putanja
+                </label>
+                <div style="display:flex; align-items:center; gap:8px" x-show="mapa.putanja">
+                  <span class="muted" style="font-size:12px">Rep:</span>
+                  <select x-model.number="mapa.rep" @change="mapaCrtajTacke()">
+                    <option :value="10">poslednjih 10</option>
+                    <option :value="50">poslednjih 50</option>
+                    <option :value="200">poslednjih 200</option>
+                    <option :value="0">sve</option>
+                  </select>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px" x-show="mapa.putanja">
+                  <span class="muted" style="font-size:12px">Deli sa prethodnim:</span>
+                  <template x-for="k in [0,1,2,3,4,5,6,7]" :key="k">
+                    <span style="display:flex; align-items:center; gap:3px">
+                      <span class="mapa-crtica" :style="'background:' + bojaPreklapanja(k)"></span>
+                      <span class="muted" style="font-size:11px" x-text="k"></span>
+                    </span>
+                  </template>
+                </div>
+              </div>
+
+              <p class="hint" style="margin:10px 0 0" x-show="mapa.putanja">
+                Boja segmenta je broj zajedničkih brojeva dva uzastopna kola — isti pojam kao na strani „Različitost".
+                Linija spaja kola po redu izvlačenja; ona pokazuje redosled u vremenu, ne kretanje kroz prostor.
+                Susedne kombinacije na mapi mogu biti izvučene godinama jedna od druge.
+              </p>
+            </div>
+
             <!-- Obavezni tekst o razmeri (§5.2) i legenda tačaka -->
             <div class="card" style="margin-top:12px; display:flex; flex-wrap:wrap; align-items:center; gap:14px">
               <div style="display:flex; align-items:center; gap:6px" x-show="mapa.prikaz!=='slucajno'">
@@ -491,9 +538,11 @@
                 <template x-if="mapa.detalj.preklapanje">
                   <p class="hint" style="margin:12px 0 0" x-text="mapaPreklapanjeRecenica()"></p>
                 </template>
-                <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap" x-show="mapaKoloZaOtvaranje()">
+                <div style="display:flex; gap:14px; margin-top:8px; flex-wrap:wrap" x-show="mapaKoloZaOtvaranje()">
                   <a href="#" class="link-sm" @click.prevent="mapaOtvoriKolo(mapaKoloZaOtvaranje())"
                      x-text="'Otvori kolo ' + formatKolo(mapaKoloZaOtvaranje()) + ' u Istraži istoriju →'"></a>
+                  <a href="#" class="link-sm" @click.prevent="mapaVremeNaKolo(mapaKoloZaOtvaranje())"
+                     x-show="mapa.detalj.izvucena.length">Pomeri vreme na ovo kolo</a>
                 </div>
                 <p class="hint" style="margin:8px 0 0" x-show="mapa.zum < mapa.info.max_zoom">
                   Na ovom zumu jedan piksel pokriva više kombinacija, pa je klik izabrao jednu iz tog bloka.

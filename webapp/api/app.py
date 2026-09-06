@@ -16,8 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija, mapa,
-                         razlicitost_teorija as teorija)
+                         prognoza, razlicitost, istorija, mapa)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -692,23 +691,20 @@ def api_mapa_info():
 def _tacke(rangovi, oznake):
     """Rangovi -> tačke sa ćelijom i preklapanjem sa prethodnom tačkom u nizu.
 
-    Preklapanje se računa istom funkcijom kao svuda u projektu (teorija.preklapanje_brojeva),
-    da stvarne i kontrolne tačke ne bi merile istu stvar na dva načina.
+    Preklapanje (boja segmenta putanje) računa `mapa.preklapanja_uzastopnih`, koja
+    ide na isti pojam kao strana „Različitost" — stvarne i kontrolne tačke se ne
+    mere na dva načina.
     """
     x, y = mapa.hilbert_xy(rangovi) if rangovi else ([], [])
-    tacke, prethodni = [], None
-    for i, r in enumerate(rangovi):
-        brojevi = mapa.unrang(r)
-        tacke.append({
-            "kolo": oznake[i],
-            "rang": int(r),
-            "x": int(x[i]),
-            "y": int(y[i]),
-            "preklapanje_sa_prethodnim": (None if prethodni is None
-                                          else teorija.preklapanje_brojeva(prethodni, brojevi)),
-        })
-        prethodni = brojevi
-    return tacke
+    kombinacije = [mapa.unrang(r) for r in rangovi]
+    preklapanja = mapa.preklapanja_uzastopnih(kombinacije)
+    return [{
+        "kolo": oznake[i],
+        "rang": int(r),
+        "x": int(x[i]),
+        "y": int(y[i]),
+        "preklapanje_sa_prethodnim": preklapanja[i],
+    } for i, r in enumerate(rangovi)]
 
 
 @app.get("/api/mapa/tacke")

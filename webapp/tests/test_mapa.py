@@ -1,4 +1,4 @@
-"""Testovi indeksiranja i rasporeda mape (plan_mapa_kombinacija.md, Faze 1 i 2).
+"""Testovi indeksiranja i rasporeda mape (plan_mapa_kombinacija.md, Faze 1-4).
 
 Pokriveni kriterijumi ove faze:
   - rang je zaista leksikografski, tj. jednak indeksu u itertools.combinations,
@@ -8,6 +8,8 @@ Pokriveni kriterijumi ove faze:
   - vektorske osobine daju isto što i osobine jedne kombinacije,
   - detalj kombinacije i detalj ćelije opisuju istu stvar iz dva pravca,
   - kontrolni (slučajni) set je ponovljiv, u opsegu i ravnomeran,
+  - preklapanje uzastopnih kombinacija (boja putanje) je isti pojam kao na
+    strani „Različitost", i za stvarne i za kontrolne tačke,
   - ako su pločice generisane, slažu se sa trenutnim konstantama.
 
 Pokretanje:  python -X utf8 -m webapp.tests.test_mapa
@@ -184,6 +186,37 @@ def test_slucajni_rangovi():
     print("test_slucajni_rangovi: OK")
 
 
+def test_preklapanja_putanje():
+    """Boja segmenta putanje mora biti isto preklapanje koje meri „Različitost".
+
+    Putanja na mapi nije nova statistika nego drugi prikaz postojećeg testa; ako
+    se ova dva pojma ikad raziđu, mapa bi sugerisala nešto što test ne pokazuje.
+    """
+    from webapp.core import razlicitost_teorija as T
+
+    niz = [mapa.unrang(int(r)) for r in _uzorak_rangova(300, seed=77)]
+    dobijeno = mapa.preklapanja_uzastopnih(niz)
+
+    assert len(dobijeno) == len(niz)
+    assert dobijeno[0] is None, "prva kombinacija nema prethodnu, pa ni preklapanje"
+    assert mapa.preklapanja_uzastopnih([]) == []
+
+    for i in range(1, len(niz)):
+        ocekivano = len(set(niz[i]) & set(niz[i - 1]))
+        assert dobijeno[i] == ocekivano, f"korak {i}: {dobijeno[i]} umesto {ocekivano}"
+        assert dobijeno[i] == T.preklapanje_brojeva(niz[i - 1], niz[i])
+        assert 0 <= dobijeno[i] <= mapa.BROJEVA
+
+    # kontrolni set je slučajan, pa mu prosek preklapanja mora biti blizu teorijskog
+    prosek = sum(dobijeno[1:]) / (len(dobijeno) - 1)
+    assert abs(prosek - T.ocekivano_preklapanje()) < 4 * T.sigma_preklapanja() / len(niz) ** 0.5
+
+    # redosled je bitan: obrnut niz daje obrnut niz preklapanja
+    obrnuto = mapa.preklapanja_uzastopnih(list(reversed(niz)))
+    assert obrnuto[1:] == list(reversed(dobijeno[1:]))
+    print("test_preklapanja_putanje: OK")
+
+
 def test_plocice_ako_postoje():
     """Ako su pločice generisane, moraju odgovarati trenutnim konstantama."""
     koren = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -241,6 +274,7 @@ def main():
     test_osobine_vektorski_isto()
     test_detalj_kombinacije_i_celije()
     test_slucajni_rangovi()
+    test_preklapanja_putanje()
     test_plocice_ako_postoje()
     print("\nSVI TESTOVI MAPE PROSLI [OK]")
 

@@ -218,3 +218,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
   border: 1px solid var(--border);
 }
 .mapa-tacka { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.mapa-crtica { display: inline-block; width: 14px; height: 4px; border-radius: 2px; }
+.card input[type="range"] { accent-color: var(--accent); height: 20px; }
+.leaflet-tooltip { background: var(--bg-elev2); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
+.leaflet-tooltip-top::before { border-top-color: var(--border); }

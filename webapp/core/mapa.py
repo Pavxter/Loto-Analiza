@@ -14,15 +14,16 @@ oko 8% krive prazno — na mapi je to providna oblast, ne podatak.
 Raspored je deterministički i trajan: promena RED_KRIVE ili DIMENZIJE znači
 regeneraciju svih pločica.
 
-Modul ne čita bazu i ne računa statistiku. Radi samo nad samom kombinacijom:
-indeks, koordinate i osobine (zbir, raspon, parni, dekade).
+Modul ne čita bazu i ne računa statistiku. Radi samo nad kombinacijama: indeks,
+koordinate, osobine (zbir, raspon, parni, dekade) i preklapanje uzastopnih
+kombinacija, kojim se boji putanja kroz vreme.
 """
 
 from math import comb
 
 import numpy as np
 
-from . import konfig
+from . import konfig, razlicitost_teorija as T
 
 MAX_BROJ = konfig.MAX_BROJ
 BROJEVA = konfig.BROJEVA_U_KOMBINACIJI
@@ -215,6 +216,21 @@ def osobine(komb):
         "parni": sum(1 for x in b if x % 2 == 0),
         "dekade": len({_dekada(x) for x in b}),
     }
+
+
+def preklapanja_uzastopnih(kombinacije):
+    """Koliko brojeva svaka kombinacija deli sa prethodnom u nizu (prva: None).
+
+    Ovo je boja segmenta putanje na mapi. Računa se istom funkcijom kao na strani
+    „Različitost", da isti pojam ne bi bio izmeren na dva načina: mapa je drugi
+    prikaz tog testa, ne nova statistika.
+    """
+    izlaz, prethodna = [], None
+    for komb in kombinacije:
+        b = proveri_kombinaciju(komb)
+        izlaz.append(None if prethodna is None else T.preklapanje_brojeva(prethodna, b))
+        prethodna = b
+    return izlaz
 
 
 def slucajni_rangovi(n, seed=SEED_KONTROLE):

@@ -7,7 +7,36 @@ const BOJE = {
 
 const grafikoni = {};   // id -> echarts instanca
 let mapaL = null, mapaSlojL = null, mapaOznakaL = null, mapaGranice = null;   // Leaflet (Mapa kombinacija)
-const mapaTackeL = { stvarno: null, slucajno: null };   // slojevi tačaka na mapi
+let mapaSadL = null, mapaTajmer = null;                 // prsten oko tekućeg kola i tajmer animacije
+let mapaPutCrtac = null;                                // zaseban canvas: putanja uvek ide ispod tačaka
+// Markeri i segmenti se prave jednom po setu; vremenski slajder samo menja koji
+// je opseg na mapi. Ponovno pravljenje 1.400 slojeva na svaki korak bi seklo animaciju.
+const mapaSetovi = { stvarno: null, slucajno: null };
+
+// Boja segmenta putanje = koliko brojeva kolo deli sa prethodnim (0..7), isti pojam
+// preklapanja kao na strani „Različitost". Gola linija se nikad ne crta.
+const BOJE_PREKLAPANJA = ['#2f6fd0', '#3fa0d8', '#3fc4b0', '#5fd07f', '#c9d24a', '#f0a83a', '#f2662a', '#e02020'];
+
+function bojaPreklapanja(k) {
+  return BOJE_PREKLAPANJA[Math.max(0, Math.min(BOJE_PREKLAPANJA.length - 1, k || 0))];
+}
+
+// Pomera prikazani opseg sloja na [lo, hi] dodajući i sklanjajući samo razliku.
+// st = { grupa, elem, lo, hi }; prazan opseg je hi < lo.
+function mapaOpseg(st, lo, hi) {
+  if (!st) return;
+  if (hi < lo) { lo = 0; hi = -1; }
+  if (st.hi < st.lo || lo > st.hi + 1 || hi < st.lo - 1) {   // nema dodira: lakše je sve skloniti
+    for (let i = st.lo; i <= st.hi; i++) st.grupa.removeLayer(st.elem[i]);
+    st.lo = lo; st.hi = lo - 1;
+  }
+  for (let i = st.lo; i < lo; i++) st.grupa.removeLayer(st.elem[i]);
+  for (let i = st.hi; i > hi; i--) st.grupa.removeLayer(st.elem[i]);
+  st.lo = Math.max(st.lo, lo); st.hi = Math.min(st.hi, hi);
+  for (let i = st.lo - 1; i >= lo; i--) st.grupa.addLayer(st.elem[i]);
+  for (let i = st.hi + 1; i <= hi; i++) st.grupa.addLayer(st.elem[i]);
+  st.lo = lo; st.hi = hi;
+}
 
 function bazaOpcija() {
   return {
@@ -78,7 +107,8 @@ function app() {
              ocekivano: 1.256, sigma: 0.9317, ucitano: false },
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
     mapa: { info: null, sloj: '', detalj: null, tiket: '', zum: 0, uklopljeno: false,
-            prikaz: 'stvarno', stvarno: null, slucajno: null, seed: null, radiUzorak: false },
+            prikaz: 'stvarno', stvarno: null, slucajno: null, seed: null, radiUzorak: false,
+            korak: 0, rep: 50, putanja: true, animira: false },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false } },
@@ -90,7 +120,11 @@ function app() {
       this.ucitajStranu();
     },
 
-    idi(id) { this.strana = id; this.ucitajStranu(); },
+    idi(id) {
+      if (this.strana === 'mapa' && id !== 'mapa') this.mapaStani();   // animacija ne sme da radi u pozadini
+      this.strana = id;
+      this.ucitajStranu();
+    },
 
     ucitajStranu() {
       const f = {
@@ -302,6 +336,10 @@ function app() {
           e.preventDefault();
           if (e.deltaY < 0) mapaL.zoomIn(1); else mapaL.zoomOut(1);
         }, { passive: false });
+        // Putanja u svom sloju iznad pločica, a ispod tačaka (overlayPane je 400).
+        mapaL.createPane('putanja');
+        mapaL.getPane('putanja').style.zIndex = 390;
+        mapaPutCrtac = L.canvas({ pane: 'putanja' });
         // Koordinate mape su pikseli najvišeg zuma, pa je (x, y) uvek ćelija kombinacije.
         mapaGranice = L.latLngBounds(mapaL.unproject([0, 0], MAXZ), mapaL.unproject([DIM, DIM], MAXZ));
         mapaL.setMaxBounds(mapaGranice.pad(0.1));
@@ -316,6 +354,7 @@ function app() {
       }
       if (novoPlatno) this.mapa.uklopljeno = false;
       this.mapaPostaviSloj();
+      if (novoPlatno || !mapaSetovi.stvarno) this.mapaGradiSetove();
       this.mapaCrtajTacke();
       this.mapaOsveziVelicinu();
     },
@@ -348,25 +387,29 @@ function app() {
         if (!this.mapa.stvarno) {
           const s = await jget('/api/mapa/tacke');
           this.mapa.stvarno = s.tacke;
+          this.mapa.korak = Math.max(0, s.tacke.length - 1);   // start: cela istorija
         }
         const k = await jget('/api/mapa/slucajno' + (seed === null ? '' : `?seed=${seed}`));
         this.mapa.slucajno = k.tacke;
         this.mapa.seed = k.seed;
-        this.mapaCrtajTacke();          // podaci mogu stići i pošto je mapa već gore
+        // podaci mogu stići i pošto je mapa već gore
+        if (mapaL) { this.mapaGradiSetove(); this.mapaCrtajTacke(); }
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },
 
     async mapaNoviUzorak() {
       // Isti broj tačaka, drugi seed — poenta je da slika svaki put izgleda isto tako.
       this.mapa.radiUzorak = true;
+      this.mapaStani();
       try {
         await this.mapaUcitajTacke(Math.floor(Math.random() * 1e9));
         if (this.mapa.prikaz === 'stvarno') this.mapa.prikaz = 'slucajno';
+        this.mapaStilSetova();
         this.mapaCrtajTacke();
       } finally { this.mapa.radiUzorak = false; }
     },
 
-    mapaPrikazi(prikaz) { this.mapa.prikaz = prikaz; this.mapaCrtajTacke(); },
+    mapaPrikazi(prikaz) { this.mapa.prikaz = prikaz; this.mapaStilSetova(); this.mapaCrtajTacke(); },
 
     mapaPoluprecnik() {
       // Na malom zumu tačke moraju biti sitne: 1.422 krupnih kružića prekriju mapu
@@ -377,21 +420,7 @@ function app() {
 
     mapaAzurirajTacke() {
       const r = this.mapaPoluprecnik();
-      Object.values(mapaTackeL).forEach(g => g && g.eachLayer(m => m.setRadius(r)));
-    },
-
-    mapaGrupaTacaka(niz, boja) {
-      const MAXZ = this.mapa.info.max_zoom;
-      return L.layerGroup(niz.map(t => {
-        // +0.5 da tačka stoji na sredini svoje ćelije, a ne u njenom uglu
-        const m = L.circleMarker(mapaL.unproject([t.x + 0.5, t.y + 0.5], MAXZ),
-          { radius: this.mapaPoluprecnik(), weight: 0, fillColor: boja, fillOpacity: 0.9 });
-        m.on('click', e => {
-          L.DomEvent.stop(e);                       // da klik ne ode i mapi ispod
-          this.mapaUcitajCeliju(`/api/mapa/komb?x=${t.x}&y=${t.y}`, false);
-        });
-        return m;
-      }));
+      Object.values(mapaSetovi).forEach(set => set && set.tacke.elem.forEach(m => m.setRadius(r)));
     },
 
     mapaBojaTacaka(ime) {
@@ -401,25 +430,208 @@ function app() {
       return ime === 'stvarno' ? BOJE.vruc : '#f2f6fb';
     },
 
-    mapaCrtajTacke() {
-      if (!mapaL) return;
-      const izvori = { stvarno: this.mapa.stvarno, slucajno: this.mapa.slucajno };
-      for (const ime of Object.keys(izvori)) {
-        const niz = izvori[ime], boja = this.mapaBojaTacaka(ime);
-        if (mapaTackeL[ime]) { mapaL.removeLayer(mapaTackeL[ime]); mapaTackeL[ime] = null; }
-        if ((this.mapa.prikaz === ime || this.mapa.prikaz === 'oba') && niz && niz.length) {
-          mapaTackeL[ime] = this.mapaGrupaTacaka(niz, boja).addTo(mapaL);
+    mapaCrtaSlucajne() {
+      // Putanja je i za stvarno i za slučajno obojena preklapanjem; kad su oba na
+      // mapi, isprekidana linija kaže samo KOJI je set, ne i nešto o podacima.
+      return this.mapa.prikaz === 'oba' ? '3,4' : null;
+    },
+
+    mapaGradiSetove() {
+      // Pravi sve markere i sve segmente za oba seta. Poziva se pri prvom crtanju,
+      // pri novom platnu i pri novom slučajnom uzorku — nikad na korak vremena.
+      if (!mapaL || !this.mapa.info) return;
+      const MAXZ = this.mapa.info.max_zoom;
+      for (const ime of ['stvarno', 'slucajno']) {
+        const stari = mapaSetovi[ime];
+        if (stari) { mapaL.removeLayer(stari.tacke.grupa); mapaL.removeLayer(stari.put.grupa); }
+        mapaSetovi[ime] = null;
+        const niz = this.mapa[ime];
+        if (!niz || !niz.length) continue;
+        const boja = this.mapaBojaTacaka(ime);
+        const crta = ime === 'slucajno' ? this.mapaCrtaSlucajne() : null;
+        const tacke = [], segmenti = [null];      // segment i spaja tačku i-1 sa tačkom i
+        let prethodna = null;
+        niz.forEach((t, i) => {
+          // +0.5 da tačka stoji na sredini svoje ćelije, a ne u njenom uglu
+          const p = mapaL.unproject([t.x + 0.5, t.y + 0.5], MAXZ);
+          const m = L.circleMarker(p, { radius: this.mapaPoluprecnik(), weight: 0,
+                                        fillColor: boja, fillOpacity: 0.9 });
+          m.on('click', e => {
+            L.DomEvent.stop(e);                   // da klik ne ode i mapi ispod
+            this.mapaKlikTacka(ime, i);
+          });
+          m.bindTooltip(this.mapaOpisTacke(ime, i), { direction: 'top', opacity: 0.95 });
+          tacke.push(m);
+          if (prethodna) {
+            segmenti.push(L.polyline([prethodna, p], {
+              color: bojaPreklapanja(t.preklapanje_sa_prethodnim),
+              weight: 1.6, opacity: 0.8, dashArray: crta, interactive: false,
+              pane: 'putanja', renderer: mapaPutCrtac,
+            }));
+          }
+          prethodna = p;
+        });
+        mapaSetovi[ime] = {
+          tacke: { grupa: L.layerGroup(), elem: tacke, lo: 0, hi: -1 },
+          put: { grupa: L.layerGroup(), elem: segmenti, lo: 1, hi: 0 },
+        };
+      }
+    },
+
+    mapaStilSetova() {
+      // Promena prikaza (Stvarno/Slučajno/Oba) menja samo boju, ne i geometriju.
+      const r = this.mapaPoluprecnik();
+      for (const ime of ['stvarno', 'slucajno']) {
+        const set = mapaSetovi[ime];
+        if (!set) continue;
+        const boja = this.mapaBojaTacaka(ime);
+        set.tacke.elem.forEach(m => m.setStyle({ fillColor: boja, radius: r }));
+        if (ime === 'slucajno') {
+          const crta = this.mapaCrtaSlucajne();
+          set.put.elem.forEach(l => l && l.setStyle({ dashArray: crta }));
         }
       }
+    },
+
+    mapaCrtajTacke() {
+      if (!mapaL || !this.mapa.info) return;
+      const MAXZ = this.mapa.info.max_zoom;
+      const korak = this.mapaKorak();
+      if (mapaSadL) { mapaL.removeLayer(mapaSadL); mapaSadL = null; }
+      const sada = [];
+      for (const ime of ['stvarno', 'slucajno']) {
+        const set = mapaSetovi[ime];
+        if (!set) continue;
+        if (this.mapa.prikaz !== ime && this.mapa.prikaz !== 'oba') {
+          mapaOpseg(set.tacke, 0, -1);
+          mapaOpseg(set.put, 1, 0);
+          mapaL.removeLayer(set.tacke.grupa);
+          mapaL.removeLayer(set.put.grupa);
+          continue;
+        }
+        if (!mapaL.hasLayer(set.put.grupa)) set.put.grupa.addTo(mapaL);      // putanja ide ispod tačaka
+        if (!mapaL.hasLayer(set.tacke.grupa)) set.tacke.grupa.addTo(mapaL);
+        const hi = Math.min(korak, set.tacke.elem.length - 1);
+        mapaOpseg(set.tacke, 0, hi);
+        const rep = Number(this.mapa.rep) || 0;                             // 0 = ceo put
+        if (this.mapa.putanja && hi >= 1) mapaOpseg(set.put, rep ? Math.max(1, hi - rep + 1) : 1, hi);
+        else mapaOpseg(set.put, 1, 0);
+        if (hi >= 0 && !this.mapaNaKrajuVremena()) {
+          const t = this.mapa[ime][hi];
+          sada.push(L.circleMarker(mapaL.unproject([t.x + 0.5, t.y + 0.5], MAXZ),
+            { radius: 7, color: '#f2f6fb', weight: 2, fill: false, interactive: false }));
+        }
+      }
+      if (sada.length) mapaSadL = L.layerGroup(sada).addTo(mapaL);
+    },
+
+    // ---------- vreme na mapi: isti pojam „granica" kao u Istraži istoriju ----------
+    mapaBrojKola() { return (this.mapa.stvarno || []).length; },
+
+    mapaKorak() {
+      const n = this.mapaBrojKola();
+      if (!n) return -1;
+      return Math.max(0, Math.min(Number(this.mapa.korak) || 0, n - 1));
+    },
+
+    mapaNaKrajuVremena() { return this.mapaKorak() >= this.mapaBrojKola() - 1; },
+
+    mapaTekuceKolo() {
+      const t = (this.mapa.stvarno || [])[this.mapaKorak()];
+      return t ? t.kolo : null;
+    },
+
+    mapaVreme() { this.mapaStani(); this.mapaCrtajTacke(); },
+
+    mapaPomeri(d) {
+      const n = this.mapaBrojKola();
+      if (!n) return;
+      this.mapaStani();
+      this.mapa.korak = Math.max(0, Math.min(this.mapaKorak() + d, n - 1));
+      this.mapaCrtajTacke();
+    },
+
+    mapaVremeNaKolo(kolo) {
+      const i = (this.mapa.stvarno || []).findIndex(t => t.kolo === kolo);
+      if (i < 0) return;
+      this.mapaStani();
+      this.mapa.korak = i;
+      this.mapaCrtajTacke();
+    },
+
+    mapaKorakAnimacije() {
+      // Cela istorija prođe za oko pola minuta bez obzira na to koliko ima kola.
+      return Math.max(1, Math.round(this.mapaBrojKola() / 400));
+    },
+
+    mapaPusti() {
+      if (mapaTajmer) { this.mapaStani(); return; }
+      const n = this.mapaBrojKola();
+      if (!n) return;
+      if (this.mapaNaKrajuVremena()) this.mapa.korak = 0;    // sa kraja kreni ispočetka
+      this.mapa.animira = true;
+      const d = this.mapaKorakAnimacije();
+      mapaTajmer = setInterval(() => {
+        if (this.strana !== 'mapa' || this.mapaNaKrajuVremena()) { this.mapaStani(); return; }
+        this.mapa.korak = Math.min(this.mapaKorak() + d, this.mapaBrojKola() - 1);
+        this.mapaCrtajTacke();
+      }, 70);
+      this.mapaCrtajTacke();
+    },
+
+    mapaStani() {
+      if (mapaTajmer) { clearInterval(mapaTajmer); mapaTajmer = null; }
+      this.mapa.animira = false;
+    },
+
+    mapaSveVreme() {
+      this.mapaStani();
+      this.mapa.korak = Math.max(0, this.mapaBrojKola() - 1);
+      this.mapaCrtajTacke();
+    },
+
+    mapaOpisTacke(ime, i) {
+      const t = this.mapa[ime][i];
+      const glava = t.kolo != null ? `kolo ${this.formatKolo(t.kolo)}` : `slučajna tačka ${i + 1}`;
+      if (t.preklapanje_sa_prethodnim == null) return glava + ' · prva u nizu';
+      return `${glava} · deli ${t.preklapanje_sa_prethodnim} od 7 sa prethodnom`;
+    },
+
+    async mapaKlikTacka(ime, i) {
+      const t = this.mapa[ime][i];
+      await this.mapaUcitajCeliju(`/api/mapa/komb?x=${t.x}&y=${t.y}`, false);
+    },
+
+    mapaZaboraviPodatke() {
+      // Novo kolo menja i broj tačaka i veličinu kontrolnog seta, pa se sve učitava
+      // ponovo pri sledećem otvaranju mape. Bez ovoga bi slajder ostao na starom broju kola.
+      this.mapaStani();
+      for (const ime of ['stvarno', 'slucajno']) {
+        const set = mapaSetovi[ime];
+        if (set && mapaL) { mapaL.removeLayer(set.tacke.grupa); mapaL.removeLayer(set.put.grupa); }
+        mapaSetovi[ime] = null;
+      }
+      if (mapaSadL && mapaL) { mapaL.removeLayer(mapaSadL); mapaSadL = null; }
+      this.mapa.info = null;
+      this.mapa.stvarno = null;
+      this.mapa.slucajno = null;
+      this.mapa.detalj = null;
+      this.mapa.korak = 0;
+      this.mapaOznaci();
+      if (this.strana === 'mapa') this.ucitajMapu();
     },
 
     mapaRecenicaRazmere() {
       if (!this.mapa.info || !this.mapa.stvarno) return '';
       const n = this.mapa.stvarno.length, uk = this.mapa.info.ukupno_kombinacija;
-      const procenat = (100 * n / uk).toFixed(3).replace('.', ',');
-      return `Prikazano je ${n.toLocaleString('sr-RS')} izvučenih od ${uk.toLocaleString('sr-RS')} `
-        + `mogućih kombinacija (${procenat}%). Tačke stoje onako kako teorija predviđa za slučajno `
-        + `izvlačenje; uključi „Slučajno" i uporedi dve slike.`;
+      const vid = this.mapaKorak() + 1;
+      const procenat = (100 * vid / uk).toFixed(3).replace('.', ',');
+      const dokle = vid < n
+        ? `sve što je izvučeno do kola ${this.formatKolo(this.mapaTekuceKolo())}, od ukupno ${n.toLocaleString('sr-RS')} izvučenih.`
+        : 'sve što je ikad izvučeno.';
+      return `Na mapi je ${vid.toLocaleString('sr-RS')} od ${uk.toLocaleString('sr-RS')} `
+        + `mogućih kombinacija (${procenat}%) — ${dokle} Tačke stoje onako kako teorija predviđa `
+        + `za slučajno izvlačenje; uključi „Slučajno" i uporedi dve slike.`;
     },
 
     async mapaKlik(e) {
@@ -1039,6 +1251,7 @@ function app() {
         const d = await jsend('/api/istorija', 'POST', { kolo: this.unos.kolo, datum: this.unos.datum, brojevi });
         this.toast(d.dodato ? `Kolo ${d.kolo} dodato. Provereno tiketa: ${d.provereno_tiketa}, bektestova: ${d.provereno_bektestova}, ocenjeno prognoza: ${d.ocenjeno_prognoza}.` : `Kolo već postoji; provere ažurirane.`, d.dodato ? 'ok' : 'warn');
         this.unos.brojevi = '';
+        this.mapaZaboraviPodatke();
         this.ucitajIstoriju();
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },
@@ -1057,6 +1270,7 @@ function app() {
         this.toast(poruka, 'ok');
         this.fajl = null; this.uvozZameni = false;
         const dd = await jget('/api/dashboard?period=0'); this.brojKola = dd.broj_kola;
+        this.mapaZaboraviPodatke();
         this.ucitajIstoriju();
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },
