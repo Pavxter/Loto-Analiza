@@ -383,15 +383,133 @@ koje te zanimaju, pa u „Predikcija tada" prvo izračunaj predikciju a onda otk
 
 ---
 
+## 11. Mapa kombinacija
+
+Ceo prostor igre kao jedna zumabilna slika: svih **15.380.937** kombinacija 7/39, svaka
+kao jedna ćelija, a 1.422 izvučena kola kao tačke na njoj.
+
+> **Svrha:** osećaj razmere. Ostale strane mere prošlost brojevima; ova pokazuje koliko
+> je prostor velik i koliko je izvučenih malo (0,009%). Nije nova analiza — jedini test
+> na strani je preformulacija testa različitosti.
+
+### Kako je prostor pretvoren u mapu
+
+| Pojam | Značenje |
+|---|---|
+| **Rang** | redni broj kombinacije, 0 … 15.380.936, po leksikografskom redosledu (1-2-3-4-5-6-7 je 0, 33-34-35-36-37-38-39 je poslednja). |
+| **Ćelija** | mesto na mreži 4096 × 4096 koje Hilbertova kriva reda 12 dodeljuje rangu. |
+| **Prazan deo** | mreža ima 16.777.216 ćelija, a kombinacija je 15.380.937; preostalih ~8% nema kombinaciju i providno je (stepenasta oblast gore desno). |
+
+Hilbertova kriva je izabrana zato što **susedni rangovi ostaju prostorno blizu**, pa mapa
+ima teksturu umesto šuma. Raspored je trajan: ista kombinacija uvek pada na isto
+mesto. Mapa **nije slika verovatnoće** — svaka ćelija ima potpuno istu šansu.
+
+### Slojevi (boja pozadine)
+
+Boja kodira osobinu, a ne identitet kombinacije:
+
+| Sloj | Šta boji | Opseg |
+|---|---|---|
+| **Zbir sedam brojeva** | zbir kombinacije | 28 – 252 |
+| **Razlika najvećeg i najmanjeg** | raspon | 6 – 38 |
+| **Koliko je parnih brojeva** | 0 – 7 | diskretno |
+| **Koliko dekada dodiruje** | 1 – 4 | diskretno |
+| **Ocena Generatora** | skor kojim Generator rangira kombinacije | izmereno 55 – 204 |
+
+**Ocena** je jedini sloj koji zavisi od baze: računa se iz svežih brojeva i ritma, pa se
+peče za stanje baze u trenutku pokretanja `generisi_mapu.py` (aplikacija ispod mape piše
+za koje kolo važi) i **ne menja se pri unosu novog kola**. Komponenta pristrasnosti je
+izostavljena jer zavisi od pozicije u izvlačenju, a kombinacije na mapi su sortirane.
+Ocena je pravilo po kom Generator bira, ne verovatnoća; sloj je koristan da se vidi
+**koliki deo prostora bodovanje uopšte razlikuje**.
+
+Legenda pored birača sloja pokazuje skalu (tamno = malo, svetlo = mnogo).
+
+### Zum i pločice
+
+Mapa se ne crta u browseru nego iz unapred ispečenih PNG pločica (256 × 256, zumovi 0–4).
+Na zumu 4 **jedan piksel je jedna kombinacija**; ispod toga je piksel prosek celog bloka
+(traka iznad mape stalno piše koliko). Dalje uvećanje je samo razvlačenje slike.
+Točak miša skroluje stranu, **`Ctrl` + točak zumira**; dugme „Cela mapa" vraća pogled.
+
+Pločice ne idu u git. Ako nisu generisane, tab pokazuje komandu:
+`python -X utf8 generisi_mapu.py --sloj sve` (oko minut i po, oko 46 MB).
+
+### Tačke: izvučeno i kontrola
+
+- **Stvarno** — 1.422 izvučene kombinacije kao tačke.
+- **Slučajno** — kontrolni set iste veličine, izvučen ravnomerno iz celog prostora sa
+  fiksnim seed-om (uvek ista slika). Dugme „Drugi slučajan uzorak" menja seed.
+- **Oba** — oba seta odjednom; tek tada su različite boje (izvučeno narandžasto, kontrola
+  bela). Kada se gleda jedan set, oba izgledaju **identično** — u tome je i poenta.
+
+Poluprečnik tačke raste sa zumom: krupne tačke na malom zumu bi lagale da je prostor pun.
+
+### Vreme i putanja
+
+- **Slajder** ide kroz kola hronološki; „vreme" je isti pojam **granice** kao na strani
+  „Istraži istoriju" — prikazuju se samo kola ≤ izabranog. Uz njega su korak nazad/napred,
+  **Pusti / Pauza** (cela istorija prođe za oko pola minuta) i „Do kraja".
+- **Putanja** spaja kola redom izvlačenja. **Boja segmenta = koliko brojeva to kolo deli
+  sa prethodnim (0–7)**, po istom pojmu preklapanja kao strana „Različitost"; legenda je
+  ispod slajdera. Gola linija se nikad ne crta, da ne bi sugerisala pravac koji ne postoji.
+- **Rep** bira koliko poslednjih segmenata se vidi (10 / 50 / 200 / sve).
+- Kontrolni set ima **svoju putanju po istim pravilima**; u prikazu „Oba" je isprekidana
+  samo da bi se znalo koji je koji.
+
+> Linija pokazuje **redosled u vremenu, ne kretanje kroz prostor**. Dve susedne ćelije na
+> mapi mogu biti izvučene godinama jedna od druge.
+
+### Klik i „Gde je moj tiket"
+
+Klik na ćeliju (ili na tačku) otvara panel: 7 brojeva, redni broj u prostoru, ćelija,
+da li je i kada izvučena, osobine, i rečenica o preklapanju sa istorijom (najveće
+poklapanje, poređenje sa μ = 1,256). Odatle vode **„Otvori kolo … u Istraži istoriju →"**
+i **„Pomeri vreme na ovo kolo"**. Prelaz mišem preko tačke pokazuje kolo i preklapanje.
+
+Polje **„Gde je moj tiket"** prima 7 brojeva i skoči na njihovu ćeliju uz pun zum; dugme
+**„Slučajna"** bira nasumičnu kombinaciju iz celog prostora. Na malom zumu jedan piksel
+pokriva više kombinacija, pa klik bira jednu iz tog bloka — zumiraj do kraja za tačnu.
+
+### Sekcija „Test" (sklopiva)
+
+Histogram **dužina skokova**: koliko je daleko na mapi svako kolo od prethodnog, za
+stvarna kola i za kontrolni set, po istim kantama. Dužina skoka je druga mera razlike dva
+uzastopna kola, pa je ovo **isti test različitosti u drugom obliku**, ne nova statistika.
+
+Nad tvojom bazom: prosečan skok **2.074** ćelije za stvarna kola i **1.982** za kontrolu
+(medijane 2.007 i 1.938), na 1.421 koraku — raspodele se poklapaju.
+
+### Šta mapa ne pokazuje
+
+- **Mrlje i prelazi u boji** dolaze od redosleda rangiranja (susedne ćelije se razlikuju
+  samo u poslednjim brojevima), ne od izvlačenja.
+- **Grozdovi tačaka** su očekivani i za čist slučaj; kontrolni sloj postoji baš zato da se
+  to vidi, umesto da se veruje utisku.
+- **Nijedan pravac** na mapi nije trend. Putanja je redosled u vremenu.
+- **Ocena** nije verovatnoća da će kombinacija izaći.
+
+**Kako koristiti:** izaberi sloj, klikni „Slučajno" pa „Stvarno" nekoliko puta i uporedi
+slike; pusti vreme da vidiš kako tačke skaču bez reda; nađi svoj tiket; na kraju otvori
+„Test" da vidiš isto to kao brojku.
+
+---
+
 ## Podešavanja i tehnički detalji
 
 - **Period analize** (gore desno) utiče na Dashboard, Statistiku i bodovanje generatora.
+  Strane „Istraži istoriju" i „Mapa kombinacija" ne koriste period nego granicu (vreme).
 - Baza podataka je `loto_baza.db` (ista kao u desktop verziji).
-- Grafikoni zahtevaju internet (učitavaju se preko CDN-a).
+- Grafikoni i mapa zahtevaju internet (ECharts, Alpine.js i Leaflet se učitavaju preko CDN-a).
+- **Pločice mape** se prave jednom, skriptom `python -X utf8 generisi_mapu.py --sloj sve`
+  (oko minut i po, oko 46 MB u `webapp/static/mapa/`). Ne idu u git. Sloj „Ocena
+  Generatora" čita bazu, pa se osvežava ponovnim pokretanjem (`--sloj ocena`).
 - Pokretanje: dupli klik na `Pokreni Loto.bat` ili `python pokreni.py`.
 - **Osvežavanje posle izmena:** statički fajlovi se serviraju sa `Cache-Control: no-cache`,
   pa običan refresh (F5) uvek povuče najnoviju verziju — nema potrebe za `Ctrl`+`F5`.
   Nepromenjeni fajlovi se i dalje serviraju brzo (HTTP 304, revalidacija preko ETag-a).
+  Pločice mape su izuzetak — keširaju se dugoročno jer se menjaju samo kad se ponovo
+  pokrene `generisi_mapu.py`.
 
 ## Šta je izostavljeno iz v1 (moguće dodati kasnije)
 - **ML/VAE generator** (neuronska mreža) — izbačen jer za loto uči istu frekvenciju uz

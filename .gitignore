@@ -30,3 +30,6 @@ venv/
 # Local files
 chat.txt
 gemini.md
+
+# Generisane plocice mape (pravi ih generisi_mapu.py; ~31 MB za sve slojeve)
+webapp/static/mapa/

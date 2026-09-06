@@ -5,3 +5,4 @@ python-multipart
 pandas
 scipy
 openpyxl
+pillow            # generisi_mapu.py: plocice za Mapu kombinacija

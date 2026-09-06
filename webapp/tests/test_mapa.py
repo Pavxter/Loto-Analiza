@@ -1,0 +1,392 @@
+"""Testovi indeksiranja i rasporeda mape (plan_mapa_kombinacija.md, Faze 1-5).
+
+Pokriveni kriterijumi ove faze:
+  - rang je zaista leksikografski, tj. jednak indeksu u itertools.combinations,
+  - rang <-> unrang je bijekcija (uzorak + obe ivice + odbijanje neispravnog),
+  - Hilbert je bijekcija i svi rangovi padaju unutar kvadrata 4096x4096,
+  - susedni rangovi su susedne ćelije (osobina zbog koje je kriva izabrana),
+  - vektorske osobine daju isto što i osobine jedne kombinacije,
+  - detalj kombinacije i detalj ćelije opisuju istu stvar iz dva pravca,
+  - kontrolni (slučajni) set je ponovljiv, u opsegu i ravnomeran,
+  - preklapanje uzastopnih kombinacija (boja putanje) je isti pojam kao na
+    strani „Različitost", i za stvarne i za kontrolne tačke,
+  - vektorska ocena daje isto što i generator.izracunaj_skor,
+  - dužine skokova i njihov histogram (sekcija „Test") mere ono što tvrde,
+  - ako su pločice generisane, slažu se sa trenutnim konstantama.
+
+Pokretanje:  python -X utf8 -m webapp.tests.test_mapa
+"""
+
+import itertools
+import json
+import os
+import sys
+
+import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from webapp.core import mapa  # noqa: E402
+
+UZORAK = 5000
+
+
+def _uzorak_rangova(n=UZORAK, seed=20260905):
+    """Nasumični rangovi po celom prostoru, uvek isti (fiksan seed)."""
+    r = np.random.default_rng(seed)
+    return r.integers(0, mapa.UKUPNO_KOMBINACIJA, size=n, dtype=np.int64)
+
+
+def test_rang_je_leksikografski():
+    """Rang mora biti tačno indeks u itertools.combinations (na tome stoji generator)."""
+    for i, komb in enumerate(itertools.islice(
+            itertools.combinations(range(1, mapa.MAX_BROJ + 1), mapa.BROJEVA), UZORAK)):
+        assert mapa.rang(komb) == i, f"rang{komb} = {mapa.rang(komb)}, očekivano {i}"
+        assert mapa.unrang(i) == komb, f"unrang({i}) = {mapa.unrang(i)}, očekivano {komb}"
+    print("test_rang_je_leksikografski: OK")
+
+
+def test_rang_unrang_bijekcija():
+    """rang(unrang(r)) == r na uzorku i na obe ivice prostora."""
+    prva = tuple(range(1, mapa.BROJEVA + 1))
+    poslednja = tuple(range(mapa.MAX_BROJ - mapa.BROJEVA + 1, mapa.MAX_BROJ + 1))
+    assert mapa.rang(prva) == 0
+    assert mapa.rang(poslednja) == mapa.UKUPNO_KOMBINACIJA - 1
+    assert mapa.unrang(0) == prva
+    assert mapa.unrang(mapa.UKUPNO_KOMBINACIJA - 1) == poslednja
+
+    for r in _uzorak_rangova():
+        komb = mapa.unrang(int(r))
+        assert list(komb) == sorted(komb) and len(set(komb)) == mapa.BROJEVA
+        assert mapa.rang(komb) == int(r)
+
+    # redosled unetih brojeva ne menja rang (kombinacija, ne varijacija)
+    izvlacenje = [23, 5, 39, 12, 7, 31, 18]
+    assert mapa.rang(izvlacenje) == mapa.rang(sorted(izvlacenje))
+    print("test_rang_unrang_bijekcija: OK")
+
+
+def test_odbija_neispravno():
+    """Loša kombinacija i rang van opsega dižu ValueError, ne vraćaju besmislicu."""
+    losi = [
+        [1, 2, 3, 4, 5, 6],                 # premalo brojeva
+        [1, 2, 3, 4, 5, 6, 7, 8],           # previše brojeva
+        [1, 2, 3, 4, 5, 6, 6],              # duplikat
+        [0, 1, 2, 3, 4, 5, 6],              # broj ispod 1
+        [1, 2, 3, 4, 5, 6, 40],             # broj iznad 39
+    ]
+    for komb in losi:
+        try:
+            mapa.rang(komb)
+        except ValueError:
+            continue
+        raise AssertionError(f"prihvaćena neispravna kombinacija: {komb}")
+
+    for r in (-1, mapa.UKUPNO_KOMBINACIJA):
+        try:
+            mapa.unrang(r)
+        except ValueError:
+            continue
+        raise AssertionError(f"prihvaćen rang van opsega: {r}")
+    print("test_odbija_neispravno: OK")
+
+
+def test_hilbert_bijekcija_i_granice():
+    """Svi rangovi padaju u kvadrat 4096x4096 i inverz vraća isti rang."""
+    d = np.arange(mapa.UKUPNO_KOMBINACIJA, dtype=np.int64)
+    x, y = mapa.hilbert_xy(d)
+    assert x.min() >= 0 and y.min() >= 0
+    assert x.max() < mapa.DIMENZIJA and y.max() < mapa.DIMENZIJA
+    # inverz nad svim rangovima ujedno dokazuje i da su ćelije jedinstvene:
+    # preslikavanje koje ima levi inverz ne može dve kombinacije da spoji u jednu ćeliju
+    assert np.array_equal(mapa.hilbert_d(x, y), d), "inverz Hilberta nije vratio isti rang"
+    print("test_hilbert_bijekcija_i_granice: OK")
+
+
+def test_hilbert_susedi():
+    """Susedni rangovi su susedne ćelije — zbog toga je kriva i izabrana."""
+    d = np.arange(mapa.DIMENZIJA * mapa.DIMENZIJA, dtype=np.int64)
+    x, y = mapa.hilbert_xy(d)
+    korak = np.abs(np.diff(x)) + np.abs(np.diff(y))
+    assert korak.max() == 1 and korak.min() == 1, "kriva pravi skok veći od jedne ćelije"
+    print("test_hilbert_susedi: OK")
+
+
+def test_prazan_deo_krive():
+    """Ćelije iza poslednje kombinacije nemaju rang (prazan deo mape)."""
+    prazno = mapa.UKUPNO_KOMBINACIJA
+    x, y = mapa.hilbert_xy(prazno)
+    assert mapa.rang_iz_koordinata(x, y) is None
+    assert mapa.kombinacija_na_koordinati(x, y) is None
+
+    ukupno_celija = mapa.DIMENZIJA * mapa.DIMENZIJA
+    assert ukupno_celija - mapa.UKUPNO_KOMBINACIJA == 1396279  # 4096^2 - C(39,7)
+
+    for r in _uzorak_rangova(200):
+        x, y = mapa.koordinate(int(r))
+        assert mapa.rang_iz_koordinata(x, y) == int(r)
+        assert mapa.kombinacija_na_koordinati(x, y) == mapa.unrang(int(r))
+    print("test_prazan_deo_krive: OK")
+
+
+def test_osobine_vektorski_isto():
+    """osobina_niz nad nizom daje isto što i osobine nad pojedinačnom kombinacijom."""
+    rangovi = _uzorak_rangova(2000)
+    kombinacije = np.array([mapa.unrang(int(r)) for r in rangovi], dtype=np.uint8)
+    pojedinacno = [mapa.osobine(k) for k in kombinacije]
+    for naziv in mapa.OSOBINE_SAME:          # `ocena` zavisi od baze i ima svoj test
+        opis = mapa.OSOBINE[naziv]
+        niz = mapa.osobina_niz(naziv, kombinacije)
+        ocekivano = np.array([o[naziv] for o in pojedinacno], dtype=np.int16)
+        assert np.array_equal(niz, ocekivano), f"osobina {naziv} se ne poklapa"
+        vmin, vmax = opis["opseg"]
+        assert niz.min() >= vmin and niz.max() <= vmax, f"osobina {naziv} van opsega"
+
+    # ivice opsega: najmanja i najveća kombinacija
+    assert mapa.osobine(mapa.unrang(0)) == {"zbir": 28, "raspon": 6, "parni": 3, "dekade": 1}
+    assert mapa.osobine(mapa.unrang(mapa.UKUPNO_KOMBINACIJA - 1)) == {
+        "zbir": 252, "raspon": 6, "parni": 3, "dekade": 1}
+    print("test_osobine_vektorski_isto: OK")
+
+
+def test_detalj_kombinacije_i_celije():
+    """Detalj kombinacije i detalj ćelije opisuju istu stvar iz dva pravca (Faza 2)."""
+    izvlacenje = [23, 5, 39, 12, 7, 31, 18]          # redosled izvlačenja, ne sortirano
+    d = mapa.detalj_kombinacije(izvlacenje)
+    assert d["brojevi"] == sorted(izvlacenje)
+    assert d["rang"] == mapa.rang(izvlacenje)
+    assert (d["x"], d["y"]) == mapa.koordinate(d["rang"])
+    assert d["osobine"] == mapa.osobine(izvlacenje)
+    assert mapa.detalj_celije(d["x"], d["y"]) == d
+
+    x, y = mapa.hilbert_xy(mapa.UKUPNO_KOMBINACIJA)  # prva ćelija iza poslednje kombinacije
+    prazna = mapa.detalj_celije(x, y)
+    assert prazna["brojevi"] is None and prazna["rang"] is None and prazna["osobine"] is None
+
+    for xy in [(-1, 0), (0, mapa.DIMENZIJA)]:
+        try:
+            mapa.detalj_celije(*xy)
+        except ValueError:
+            continue
+        raise AssertionError(f"prihvaćene koordinate van kvadrata: {xy}")
+    print("test_detalj_kombinacije_i_celije: OK")
+
+
+def test_slucajni_rangovi():
+    """Kontrolni sloj mora biti ponovljiv, u opsegu i iste veličine kao stvarni (Faza 3)."""
+    a = mapa.slucajni_rangovi(1422)
+    b = mapa.slucajni_rangovi(1422)
+    assert np.array_equal(a, b), "isti seed mora dati isti kontrolni set"
+    assert not np.array_equal(a, mapa.slucajni_rangovi(1422, seed=1)), "drugi seed = drugi set"
+    assert len(a) == 1422
+    assert a.min() >= 0 and a.max() < mapa.UKUPNO_KOMBINACIJA
+    assert len(mapa.slucajni_rangovi(0)) == 0
+
+    # ravnomeran izbor po rangu je ravnomeran izbor kombinacije: prosek zbira
+    # velikog uzorka mora biti blizu proseka celog prostora (7 * 40/2 = 140)
+    uzorak = np.array([mapa.unrang(int(r)) for r in mapa.slucajni_rangovi(3000, seed=11)])
+    assert abs(mapa.osobina_niz("zbir", uzorak).mean() - 140) < 2
+    print("test_slucajni_rangovi: OK")
+
+
+def test_preklapanja_putanje():
+    """Boja segmenta putanje mora biti isto preklapanje koje meri „Različitost".
+
+    Putanja na mapi nije nova statistika nego drugi prikaz postojećeg testa; ako
+    se ova dva pojma ikad raziđu, mapa bi sugerisala nešto što test ne pokazuje.
+    """
+    from webapp.core import razlicitost_teorija as T
+
+    niz = [mapa.unrang(int(r)) for r in _uzorak_rangova(300, seed=77)]
+    dobijeno = mapa.preklapanja_uzastopnih(niz)
+
+    assert len(dobijeno) == len(niz)
+    assert dobijeno[0] is None, "prva kombinacija nema prethodnu, pa ni preklapanje"
+    assert mapa.preklapanja_uzastopnih([]) == []
+
+    for i in range(1, len(niz)):
+        ocekivano = len(set(niz[i]) & set(niz[i - 1]))
+        assert dobijeno[i] == ocekivano, f"korak {i}: {dobijeno[i]} umesto {ocekivano}"
+        assert dobijeno[i] == T.preklapanje_brojeva(niz[i - 1], niz[i])
+        assert 0 <= dobijeno[i] <= mapa.BROJEVA
+
+    # kontrolni set je slučajan, pa mu prosek preklapanja mora biti blizu teorijskog
+    prosek = sum(dobijeno[1:]) / (len(dobijeno) - 1)
+    assert abs(prosek - T.ocekivano_preklapanje()) < 4 * T.sigma_preklapanja() / len(niz) ** 0.5
+
+    # redosled je bitan: obrnut niz daje obrnut niz preklapanja
+    obrnuto = mapa.preklapanja_uzastopnih(list(reversed(niz)))
+    assert obrnuto[1:] == list(reversed(dobijeno[1:]))
+    print("test_preklapanja_putanje: OK")
+
+
+class _LaznaAnaliza:
+    """Najmanji objekat koji `izracunaj_skor` traži — test ne dira bazu."""
+
+    def __init__(self, svezi, ritam, prosek=20.0, std=4.0):
+        import pandas as pd
+        self.globalni_prosek = prosek
+        self.globalna_std_dev = std
+        self.svezi_brojevi = set(svezi)
+        self.analiza_ponavljanja = pd.Series(ritam)
+        self.model_pristrasnosti = {}
+
+
+def test_ocena_vektorski_isto():
+    """`mapa.ocena_niz` mora dati isti skor kao `generator.izracunaj_skor`.
+
+    Sloj „ocena" je jedini koji zavisi od baze; peče se vektorski, a Generator ga
+    računa po jednoj kombinaciji. Ako se ta dva razidju, mapa bi bojila nešto što
+    Generator ne radi.
+    """
+    from webapp.core import generator
+
+    rng = np.random.default_rng(2026)
+    ritam = {b: float(rng.uniform(3, 12)) for b in range(1, mapa.MAX_BROJ + 1)}
+    slucajevi = [
+        _LaznaAnaliza(svezi=[3, 7, 12, 19, 24, 31, 38], ritam=ritam),
+        _LaznaAnaliza(svezi=[], ritam=ritam, std=0.0),                  # bez člana blizine
+        _LaznaAnaliza(svezi=range(1, 40), ritam={b: 0 for b in range(1, 40)}),  # bez ritma
+    ]
+    komb = [mapa.unrang(int(r)) for r in _uzorak_rangova(200, seed=808)]
+    niz = np.array(komb, dtype=np.uint8)
+
+    for analiza in slucajevi:
+        for strategija in ("favorizuj", "kaznjavaj", "ignorisi"):
+            p = generator.parametri_skora(analiza, strategija)
+            dobijeno = mapa.ocena_niz(niz, p)
+            for k, v in zip(komb, dobijeno):
+                ocekivano = generator.izracunaj_skor(k, analiza, strategija)
+                assert abs(float(v) - ocekivano) < 0.01, (
+                    f"{k}, {strategija}: {v} umesto {ocekivano}")
+
+    # tabela težina ima mesto i za indeks 0, koji se ne koristi
+    p = generator.parametri_skora(slucajevi[0])
+    assert len(p["tezine"]) == mapa.MAX_BROJ + 1 and p["tezine"][0] == 0.0
+    try:
+        mapa.ocena_niz(niz, {"prosek": 20.0, "std": 4.0, "tezine": [0.0] * 5})
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("prihvaćena tabela težina pogrešne dužine")
+
+    # `ocena` se namerno ne računa preko osobina koje ne znaju za bazu
+    try:
+        mapa.osobina_niz("ocena", niz)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("osobina_niz je izračunala ocenu bez parametara")
+    assert "ocena" not in mapa.OSOBINE_SAME
+    assert "ocena" not in mapa.osobine(komb[0])
+    print("test_ocena_vektorski_isto: OK")
+
+
+def test_skokovi():
+    """Dužine skokova i histogram (sekcija „Test") moraju meriti baš to."""
+    assert list(mapa.duzine_skokova([0, 3], [0, 4])) == [5.0]      # 3-4-5 trougao
+    assert len(mapa.duzine_skokova([1], [1])) == 0                  # jedna tačka: nema skoka
+    assert len(mapa.duzine_skokova([], [])) == 0
+    try:
+        mapa.duzine_skokova([0, 1], [0])
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("prihvaćeni x i y različite dužine")
+
+    ivice = mapa.ivice_skokova()
+    assert len(ivice) == mapa.BROJ_KANTI_SKOKOVA + 1
+    assert ivice[0] == 0.0
+    najduzi = mapa.DIMENZIJA * np.sqrt(2)
+    assert abs(ivice[-1] - najduzi) < 1e-6, "poslednja kanta mora ići do dijagonale"
+
+    # nijedan stvarni skok ne sme da ispadne iz kanti
+    x, y = mapa.hilbert_xy(mapa.slucajni_rangovi(2000, seed=5))
+    d = mapa.duzine_skokova(x, y)
+    h = mapa.histogram_skokova(d, ivice)
+    assert h["broj"] == len(d) == 1999, f"izgubljeni skokovi: {h['broj']} od {len(d)}"
+    assert abs(sum(h["udeli"]) - 100.0) < 0.01
+    assert abs(h["prosek"] - float(d.mean())) < 0.05
+    assert abs(h["medijana"] - float(np.median(d))) < 0.05
+    assert h["prosek"] > mapa.DIMENZIJA / 4, "slučajne tačke po celom kvadratu skaču daleko"
+
+    prazan = mapa.histogram_skokova([], ivice)
+    assert prazan["broj"] == 0 and prazan["prosek"] is None
+    print("test_skokovi: OK")
+
+
+def test_plocice_ako_postoje():
+    """Ako su pločice generisane, moraju odgovarati trenutnim konstantama."""
+    koren = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "static", "mapa")
+    slojevi = [s for s in mapa.OSOBINE
+               if os.path.isfile(os.path.join(koren, s, "meta.json"))]
+    if not slojevi:
+        print("test_plocice_ako_postoje: preskočeno (pločice nisu generisane)")
+        return
+
+    for sloj in slojevi:
+        with open(os.path.join(koren, sloj, "meta.json"), encoding="utf-8") as f:
+            meta = json.load(f)
+        assert meta["red_krive"] == mapa.RED_KRIVE, f"{sloj}: pločice su za drugi red krive"
+        assert meta["dimenzija"] == mapa.DIMENZIJA, f"{sloj}: pločice su za drugu dimenziju"
+        assert meta["broj_kombinacija"] == mapa.UKUPNO_KOMBINACIJA
+        if mapa.OSOBINE[sloj].get("iz_baze"):
+            for kljuc in ("granica", "broj_kola", "parametri"):
+                assert kljuc in meta, f"{sloj}: meta.json nema „{kljuc}“"
+            assert len(meta["parametri"]["tezine"]) == mapa.MAX_BROJ + 1
+        ocekivano = sum(4 ** z for z in range(mapa.MAX_ZOOM + 1))   # 341 za zumove 0..4
+        assert meta["broj_plocica"] == ocekivano, f"{sloj}: {meta['broj_plocica']} pločica"
+        for z in range(mapa.MAX_ZOOM + 1):
+            n = 2 ** z
+            put = os.path.join(koren, sloj, str(z), str(n - 1), f"{n - 1}.png")
+            assert os.path.isfile(put), f"nedostaje pločica {put}"
+        _proveri_piksele(koren, sloj, meta)
+    print(f"test_plocice_ako_postoje: OK ({', '.join(slojevi)})")
+
+
+def _proveri_piksele(koren, sloj, meta):
+    """Piksel na najvišem zumu mora nositi osobinu baš one kombinacije koja je tu.
+
+    Ovim se zatvara krug generator -> pločica -> klik na mapu: da su x i y
+    zamenjeni ili da je red pločica obrnut, ova provera bi pala.
+    """
+    from PIL import Image
+
+    for r in _uzorak_rangova(20, seed=4096):
+        r = int(r)
+        x, y = mapa.koordinate(r)
+        slika = Image.open(os.path.join(koren, sloj, str(mapa.MAX_ZOOM),
+                                        str(x // mapa.VELICINA_PLOCICE),
+                                        f"{y // mapa.VELICINA_PLOCICE}.png"))
+        indeks = slika.getpixel((x % mapa.VELICINA_PLOCICE, y % mapa.VELICINA_PLOCICE))
+        if sloj == "ocena":
+            # parametri su u meta.json baš zato da provera ne mora u bazu
+            komb = np.array([mapa.unrang(r)], dtype=np.uint8)
+            vrednost = float(mapa.ocena_niz(komb, meta["parametri"])[0])
+        else:
+            vrednost = mapa.osobine(mapa.unrang(r))[sloj]
+        ocekivano = 1 + round((vrednost - meta["min"]) / (meta["max"] - meta["min"]) * 254)
+        assert indeks == ocekivano, (f"{sloj}: piksel ({x},{y}) ima indeks {indeks}, "
+                                     f"a kombinacija {mapa.unrang(r)} traži {ocekivano}")
+
+
+def main():
+    test_rang_je_leksikografski()
+    test_rang_unrang_bijekcija()
+    test_odbija_neispravno()
+    test_hilbert_bijekcija_i_granice()
+    test_hilbert_susedi()
+    test_prazan_deo_krive()
+    test_osobine_vektorski_isto()
+    test_detalj_kombinacije_i_celije()
+    test_slucajni_rangovi()
+    test_preklapanja_putanje()
+    test_ocena_vektorski_isto()
+    test_skokovi()
+    test_plocice_ako_postoje()
+    print("\nSVI TESTOVI MAPE PROSLI [OK]")
+
+
+if __name__ == "__main__":
+    main()

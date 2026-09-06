@@ -5,7 +5,9 @@ Pokretanje:  python pokreni.py   (iz korena projekta)
 """
 
 import io
+import json
 import os
+import re
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -14,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija)
+                         prognoza, razlicitost, istorija, mapa)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -626,6 +628,200 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
 
 
 # ---------------------------------------------------------------------------
+# Mapa kombinacija (plan_mapa_kombinacija.md, Faza 2)
+# Pločice su statika (/mapa/{sloj}/{z}/{x}/{y}.png), ovde je samo ono što se
+# računa: šta je na ćeliji i gde je uneta kombinacija.
+# ---------------------------------------------------------------------------
+
+MAPA_DIR = os.path.join(STATIC_DIR, "mapa")
+
+
+def _mapa_slojevi():
+    """Slojevi za koje su pločice zaista generisane i slažu se sa rasporedom."""
+    slojevi = []
+    for naziv, osobina in mapa.OSOBINE.items():
+        put = os.path.join(MAPA_DIR, naziv, "meta.json")
+        if not os.path.isfile(put):
+            continue
+        try:
+            with open(put, encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if (meta.get("red_krive") != mapa.RED_KRIVE
+                or meta.get("dimenzija") != mapa.DIMENZIJA):
+            continue    # stare pločice za drugi raspored — ne nudi ih
+        sloj = {"sloj": naziv, "opis": osobina["opis"], "tip": osobina["tip"],
+                "min": meta["min"], "max": meta["max"],
+                "iz_baze": bool(osobina.get("iz_baze")),
+                "generisano": meta.get("generisano")}
+        if sloj["iz_baze"]:
+            # `ocena` je pečena za jedno stanje baze; aplikacija to mora da kaže,
+            # jer se pločice ne osvežavaju pri unosu novog kola
+            sloj.update({"granica": meta.get("granica"),
+                         "broj_kola": meta.get("broj_kola"),
+                         "strategija_svezine": meta.get("strategija_svezine")})
+        slojevi.append(sloj)
+    return slojevi
+
+
+def _mapa_detalj(conn, brojevi):
+    """Detalj jedne kombinacije: mesto na mapi, osobine i odnos prema izvučenim."""
+    d = mapa.detalj_kombinacije(brojevi)
+    sve_izvuceno = razlicitost.istorija_iz_conn(conn)
+    trazena = tuple(d["brojevi"])
+    d["izvucena"] = [kolo for kolo, br in sve_izvuceno if tuple(sorted(br)) == trazena]
+    d["preklapanje"] = (razlicitost.preklapanje_sa_istorijom(sve_izvuceno, d["brojevi"])
+                        if sve_izvuceno else None)
+    return d
+
+
+@app.get("/api/mapa/info")
+def api_mapa_info():
+    """Raspored, dostupni slojevi i skala boja — bootstrap taba."""
+    conn = baza.konekcija()
+    try:
+        broj_kola = conn.execute("SELECT COUNT(*) FROM istorijski_rezultati").fetchone()[0]
+    finally:
+        conn.close()
+    return {
+        "dimenzija": mapa.DIMENZIJA,
+        "velicina_plocice": mapa.VELICINA_PLOCICE,
+        "max_zoom": mapa.MAX_ZOOM,
+        "ukupno_kombinacija": mapa.UKUPNO_KOMBINACIJA,
+        "praznih_celija": mapa.DIMENZIJA * mapa.DIMENZIJA - mapa.UKUPNO_KOMBINACIJA,
+        "broj_kola": int(broj_kola),
+        "slojevi": _mapa_slojevi(),
+        "skala_boja": ["#%02x%02x%02x" % boja for boja in mapa.SKALA_BOJA],
+    }
+
+
+def _tacke(rangovi, oznake):
+    """Rangovi -> tačke sa ćelijom i preklapanjem sa prethodnom tačkom u nizu.
+
+    Preklapanje (boja segmenta putanje) računa `mapa.preklapanja_uzastopnih`, koja
+    ide na isti pojam kao strana „Različitost" — stvarne i kontrolne tačke se ne
+    mere na dva načina.
+    """
+    x, y = mapa.hilbert_xy(rangovi) if rangovi else ([], [])
+    kombinacije = [mapa.unrang(r) for r in rangovi]
+    preklapanja = mapa.preklapanja_uzastopnih(kombinacije)
+    return [{
+        "kolo": oznake[i],
+        "rang": int(r),
+        "x": int(x[i]),
+        "y": int(y[i]),
+        "preklapanje_sa_prethodnim": preklapanja[i],
+    } for i, r in enumerate(rangovi)]
+
+
+@app.get("/api/mapa/tacke")
+def api_mapa_tacke(granica: int | None = None):
+    """Izvučene kombinacije kao tačke na mapi, hronološki (granica=None → sve)."""
+    conn = baza.konekcija()
+    try:
+        izvucena = razlicitost.istorija_iz_conn(conn)
+    finally:
+        conn.close()
+    if granica is not None:
+        izvucena = [(kolo, br) for kolo, br in izvucena if kolo <= granica]
+    rangovi = [mapa.rang(br) for _kolo, br in izvucena]
+    return {"granica": granica, "broj": len(rangovi),
+            "tacke": _tacke(rangovi, [kolo for kolo, _br in izvucena])}
+
+
+@app.get("/api/mapa/slucajno")
+def api_mapa_slucajno(n: int | None = None, seed: int = mapa.SEED_KONTROLE):
+    """Kontrolni sloj: isto toliko slučajnih kombinacija, isti oblik odgovora.
+
+    Bez `n` uzima onoliko tačaka koliko ima izvučenih kola, da bi dve slike bile
+    uporedive po broju tačaka, a ne samo po rasporedu.
+    """
+    if n is None:
+        conn = baza.konekcija()
+        try:
+            n = conn.execute("SELECT COUNT(*) FROM istorijski_rezultati").fetchone()[0]
+        finally:
+            conn.close()
+    if not (0 <= n <= 20000):
+        raise HTTPException(400, "Broj tačaka mora biti između 0 i 20000.")
+    rangovi = [int(r) for r in mapa.slucajni_rangovi(n, seed)]
+    return {"seed": int(seed), "broj": len(rangovi),
+            "tacke": _tacke(rangovi, [None] * len(rangovi))}
+
+
+@app.get("/api/mapa/komb")
+def api_mapa_komb(x: int, y: int):
+    """Šta je na ćeliji (x, y): kombinacija, osobine i preklapanje sa izvučenim."""
+    try:
+        d = mapa.detalj_celije(x, y)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if d["brojevi"] is None:
+        return d            # prazan deo krive: nema kombinacije na toj ćeliji
+    conn = baza.konekcija()
+    try:
+        return _mapa_detalj(conn, d["brojevi"])
+    finally:
+        conn.close()
+
+
+@app.get("/api/mapa/skokovi")
+def api_mapa_skokovi(granica: int | None = None, seed: int = mapa.SEED_KONTROLE):
+    """Sekcija „Test": raspodela dužina skokova po mapi, stvarno vs. kontrolno.
+
+    Skok je udaljenost dve uzastopne tačke na mreži. Ovo nije nova statistika nego
+    isti test različitosti u drugom obliku: ako izvlačenja nisu slučajna, skokovi
+    stvarnih kola moraju izgledati drugačije od kontrolnih.
+    """
+    conn = baza.konekcija()
+    try:
+        izvucena = razlicitost.istorija_iz_conn(conn)
+    finally:
+        conn.close()
+    if granica is not None:
+        izvucena = [(kolo, br) for kolo, br in izvucena if kolo <= granica]
+
+    ivice = mapa.ivice_skokova()
+    rangovi = [mapa.rang(br) for _kolo, br in izvucena]
+    kontrolni = [int(r) for r in mapa.slucajni_rangovi(len(rangovi), seed)]
+
+    def _hist(niz):
+        if not niz:
+            return mapa.histogram_skokova([], ivice)
+        x, y = mapa.hilbert_xy(niz)
+        return mapa.histogram_skokova(mapa.duzine_skokova(x, y), ivice)
+
+    return {
+        "granica": granica,
+        "seed": int(seed),
+        "broj_kola": len(rangovi),
+        "dimenzija": mapa.DIMENZIJA,
+        "ivice": [round(float(v), 1) for v in ivice],
+        "sredine": [round(float((ivice[i] + ivice[i + 1]) / 2), 1) for i in range(len(ivice) - 1)],
+        "stvarno": _hist(rangovi),
+        "slucajno": _hist(kontrolni),
+    }
+
+
+@app.get("/api/mapa/rang")
+def api_mapa_rang(brojevi: str):
+    """„Gde je moj tiket": 7 brojeva -> rang, ćelija na mapi i isti detalj."""
+    delovi = [d for d in re.split(r"[^0-9]+", brojevi.strip()) if d]
+    try:
+        b = [int(d) for d in delovi]
+    except ValueError:
+        raise HTTPException(400, "Brojevi moraju biti celi brojevi.")
+    conn = baza.konekcija()
+    try:
+        return _mapa_detalj(conn, b)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # Statički frontend (mora biti poslednje da ne preuzme /api rute)
 # ---------------------------------------------------------------------------
 
@@ -636,7 +832,13 @@ class _NoCacheStatic(StaticFiles):
 
     def file_response(self, *args, **kwargs):
         resp = super().file_response(*args, **kwargs)
-        resp.headers["Cache-Control"] = "no-cache"
+        put = str(args[0]) if args else ""
+        if put.endswith(".png") and os.path.join("static", "mapa") in put:
+            # Pločice mape su nepromenljive dok se ne pokrene generisi_mapu.py;
+            # bez ovoga bi svako pomeranje mape slalo stotine revalidacija.
+            resp.headers["Cache-Control"] = "public, max-age=604800, immutable"
+        else:
+            resp.headers["Cache-Control"] = "no-cache"
         return resp
 
 

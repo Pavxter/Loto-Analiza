@@ -48,6 +48,41 @@ def izracunaj_skor(kombinacija, analiza, strategija_svezine="favorizuj", primeni
     return round(skor, 2)
 
 
+def parametri_skora(analiza, strategija_svezine="favorizuj"):
+    """Skor rastavljen na parametre: prosek, std i težina svakog broja 1..39.
+
+    `izracunaj_skor` (bez pristrasnosti) je zbir člana koji zavisi samo od zbira
+    kombinacije i zbira doprinosa pojedinačnih brojeva. Ova funkcija te doprinose
+    sabere unapred, pa `mapa.ocena_niz` može da oceni svih 15,4 miliona kombinacija
+    bez petlje. Pristrasnost se ne uzima: ona zavisi od pozicije u izvlačenju, a
+    kombinacije na mapi su sortirane, pa pozicija ne postoji.
+    """
+    tezine = [0.0] * (MAX_BROJ + 1)
+
+    for b in range(1, MAX_BROJ + 1):
+        if b in analiza.svezi_brojevi:
+            if strategija_svezine == "favorizuj":
+                tezine[b] += 10.0
+            elif strategija_svezine == "kaznjavaj":
+                tezine[b] -= 10.0
+
+    ap = analiza.analiza_ponavljanja
+    pozitivni = ap[ap > 0]
+    if len(ap) > 0 and len(pozitivni) > 0:
+        prosek_ritma = pozitivni.mean()
+        for b in range(1, MAX_BROJ + 1):
+            ritam = ap.get(b, prosek_ritma)
+            if abs(ritam - prosek_ritma) < 3:
+                tezine[b] += 5.0
+
+    return {
+        "prosek": float(analiza.globalni_prosek),
+        "std": float(analiza.globalna_std_dev),
+        "strategija_svezine": strategija_svezine,
+        "tezine": tezine,
+    }
+
+
 def primeni_filter_diverziteta(kandidati, max_slicnost, broj_kola_za_izbegavanje, loto_df):
     """Zadržava kombinacije koje se ne preklapaju previše međusobno i sa skorašnjim kolima."""
     if not kandidati:
