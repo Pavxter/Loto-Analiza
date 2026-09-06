@@ -16,10 +16,26 @@ python pokreni.py
 
 Otvara se `http://127.0.0.1:8000`. Opcije: `python pokreni.py --port 9000 --bez-otvaranja`.
 
-Za grafikone je potreban internet (ECharts + Alpine.js se učitavaju preko CDN-a).
+Za grafikone i mapu je potreban internet (ECharts, Alpine.js i Leaflet se učitavaju
+preko CDN-a).
 
 Statički fajlovi se serviraju sa `Cache-Control: no-cache`, pa posle izmena običan
 refresh (F5) uvek pokaže najnoviju verziju (nepromenjeni fajlovi → HTTP 304 preko ETag-a).
+Izuzetak su pločice mape: one se ne menjaju dok se ne pokrene `generisi_mapu.py`, pa se
+keširaju dugoročno da pomeranje mape ne bi slalo stotine revalidacija.
+
+### Pločice mape (jednokratno)
+
+Strana „Mapa kombinacija" se ne crta iz sirovih podataka nego iz unapred ispečenih
+slika, koje **ne idu u git** (`webapp/static/mapa/`). Pre prvog korišćenja:
+
+```bash
+python -X utf8 generisi_mapu.py --sloj sve
+```
+
+Traje oko minut i po i zauzima oko 46 MB. Dok pločice ne postoje, tab pokazuje uputstvo
+umesto mape; sve ostale strane rade normalno. Sloj „Ocena Generatora" čita bazu, pa se
+peče za stanje u tom trenutku — ponovi skriptu (`--sloj ocena`) kad želiš da ga osvežiš.
 
 ## Strane
 
@@ -29,18 +45,21 @@ Redosledom kako se pojavljuju u aplikaciji (detaljan opis svake je u `FUNKCIJE.m
 2. **Istraži istoriju** — vremeplov kroz kola: bira se bilo koje odigrano kolo i vidi
    tačno ono što je sistem znao „tada" (bez curenja budućnosti) — detalj broja, sažetak
    perioda, istorijska različitost/rangiranje i „predikcija tada" naspram stvarnog ishoda.
-3. **Statistika** — frekvencija, srednje vrednosti, trend, ritam, uzastopni, dekade,
+3. **Mapa kombinacija** — ceo prostor od 15.380.937 kombinacija kao zumabilna mapa:
+   izvučena kola kao tačke, njihov hronološki redosled kao putanja obojena preklapanjem,
+   uz obavezni kontrolni (slučajni) sloj, vremenski slajder i „gde je moj tiket".
+4. **Statistika** — frekvencija, srednje vrednosti, trend, ritam, uzastopni, dekade,
    poziciona heatmapa i hi-kvadrat test.
-4. **Različitost** — koliko se izvučene kombinacije preklapaju vs. teorijska slučajnost
+5. **Različitost** — koliko se izvučene kombinacije preklapaju vs. teorijska slučajnost
    (rekordi, uzastopna/svi parovi, profil vs. sadržaj, ko-okurencija).
-5. **Rangiranje** — brojevi rangirani metodom Frekvencija / Bajes / Hibrid.
-6. **Prognoza** — statistički eksperiment: predviđanje jednog broja i cele kombinacije
+6. **Rangiranje** — brojevi rangirani metodom Frekvencija / Bajes / Hibrid.
+7. **Prognoza** — statistički eksperiment: predviđanje jednog broja i cele kombinacije
    za sledeće kolo (7 metoda + kontrola, uživo i retro-bektest, testovi značajnosti).
-7. **Generator** — kombinacije po filterima (par/nepar, vrući/hladni, sredina, uzastopni,
+8. **Generator** — kombinacije po filterima (par/nepar, vrući/hladni, sredina, uzastopni,
    dekade, diverzitet) uz bodovanje; opcioni „vremeplov" (analiza do zadatog kola).
-8. **Bektest** — uspešnost sačuvanih strategija (rezultat, indeks promašaja/iznenađenja).
-9. **Moji tiketi** — evidencija odigranih tiketa i njihovih pogodaka.
-10. **Podaci** — unos novog kola (auto-provera tiketa, bektesta i prognoza) + uvoz CSV/Excel.
+9. **Bektest** — uspešnost sačuvanih strategija (rezultat, indeks promašaja/iznenađenja).
+10. **Moji tiketi** — evidencija odigranih tiketa i njihovih pogodaka.
+11. **Podaci** — unos novog kola (auto-provera tiketa, bektesta i prognoza) + uvoz CSV/Excel.
 
 ## Arhitektura
 
@@ -59,10 +78,13 @@ webapp/
     prediktori_komb.py     # kombinacijski prediktori (7 brojeva po metodu)
     prognoza.py            # uživo/retro prognoza, evaluacija, prognoza_u_tacki (vremeplov)
     istorija.py            # „Istraži istoriju": sečenje po granica/prozor + prosleđivanje
+    mapa.py                # „Mapa kombinacija": rang/unrang, Hilbert, osobine, skokovi
   api/app.py             # FastAPI endpointi (JSON)
   static/                # frontend (index.html, app.js, styles.css)
-  tests/                 # smoke + invarijant testovi (core, razlicitost, prognoza, istorija)
+    mapa/                  # generisane pločice mape (van git-a; pravi ih generisi_mapu.py)
+  tests/                 # smoke + invarijant testovi (core, razlicitost, prognoza, istorija, mapa)
 pokreni.py               # pokretač servera
+generisi_mapu.py         # jednokratno pečenje pločica mape
 migracija_baze.py        # jednokratno smanjenje baze (57 MB -> ~0.2 MB)
 ```
 
@@ -74,14 +96,18 @@ CSV/Excel mora imati kolone: `kolo, datum, b1, b2, b3, b4, b5, b6, b7`.
 
 ## Testovi
 
-Četiri modula (svi se pokreću sa `-X utf8` radi ćiriličnih/latiničnih ispisa):
+Pet modula (svi se pokreću sa `-X utf8` radi ćiriličnih/latiničnih ispisa):
 
 ```bash
 python -X utf8 -m webapp.tests.test_core         # analitika, rangiranje, generator, bektest
 python -X utf8 -m webapp.tests.test_razlicitost  # teorija i analize preklapanja
 python -X utf8 -m webapp.tests.test_prognoza     # bez curenja, determinizam, ekvivalencija, brzina
 python -X utf8 -m webapp.tests.test_istorija     # granica/prozor, vremeplov == retro, anti-curenje
+python -X utf8 -m webapp.tests.test_mapa         # rang↔unrang, Hilbert, ocena == Generator, pločice
 ```
+
+`test_mapa` traje oko pola minuta; ako pločice nisu generisane, provera pločica se
+preskoči, a ostalo se izvrši.
 
 ## Šta je izmenjeno u odnosu na desktop v10.6
 
@@ -98,3 +124,7 @@ python -X utf8 -m webapp.tests.test_istorija     # granica/prozor, vremeplov == 
 - **Istraži istoriju (vremeplov)** — interaktivno putovanje kroz kola sa garancijom da
   se nikad ne koriste podaci posle izabrane granice; „predikcija tada" je bit-identična
   retro-bektestu (pokriveno testom). Generator dobija opcioni parametar granice.
+- **Mapa kombinacija** — ceo prostor igre kao jedna zumabilna slika (Hilbertova kriva
+  reda 12 nad leksikografskim rangom), sa izvučenim kolima kao tačkama i putanjom kroz
+  vreme. Svaki sloj ima kontrolni slučajni parnjak, jer je poruka strane upravo to da se
+  dve slike ne razlikuju.
