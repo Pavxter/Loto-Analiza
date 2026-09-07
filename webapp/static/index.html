@@ -969,7 +969,7 @@
 
         <div class="card" style="margin-top:16px">
           <h3>Rezultati po metodu <span class="tag" :class="prog.izvor==='uzivo'?'ok':'warn'" x-text="prog.izvor==='uzivo'?'uživo':'retro'"></span></h3>
-          <p class="hint" title="Zbog 7 paralelnih metoda prag značajnosti je 0,05/7 ≈ 0,007 (Bonferroni korekcija) — inače bi slučajni ekstremi lako „odskakali".">
+          <p class="hint" title="Zbog više paralelnih metoda prag značajnosti je 0,05 podeljeno brojem metoda (Bonferroni korekcija) — inače bi slučajni ekstremi lako „odskakali".">
             Prag značajnosti: p &lt; <span x-text="prog.prag"></span> (Bonferroni za <span x-text="prog.brojMetoda"></span> metoda — zašto ne 0,05? hover ↑)
           </p>
           <table class="tbl">
@@ -1214,6 +1214,186 @@
       </section>
 
       <!-- ============ PODACI ============ -->
+      <!-- ============ SINTEZA ============ -->
+      <section x-show="strana==='sinteza'">
+        <template x-if="loading && !sin.podaci"><div class="center-load"><div class="spinner"></div>Učitavam…</div></template>
+        <template x-if="sin.podaci">
+          <div>
+            <div class="notice" :class="sin.podaci.znacajnih ? 'warn' : ''" style="margin-bottom:16px">
+              <span>⚖️</span>
+              <span>
+                <b x-text="sin.podaci.globalno"></b><br>
+                <span class="muted">Isti sud za sve: isti retro-bektest, ista kontrola, jedna Bonferroni korekcija
+                preko svih <span x-text="sin.podaci.broj_redova"></span> redova.</span>
+              </span>
+            </div>
+
+            <div class="card">
+              <div class="row" style="justify-content:space-between; align-items:center">
+                <div>
+                  <h3>Jedan broj <span class="tag neutralan" x-text="'n = ' + sin.podaci.n_jedan_broj + ' kola'"></span></h3>
+                  <p class="hint">Pogodak = predloženi broj je među 7 izvučenih. Očekivano pod slučajnošću: <span x-text="sinBroj(sin.podaci.baseline_udeo, 2)"></span>%.</p>
+                </div>
+                <div class="row" style="align-items:center; gap:10px">
+                  <div class="seg">
+                    <button :class="{active: sin.izvor==='retro'}" @click="sin.izvor='retro'; ucitajSintezu()">Retro</button>
+                    <button :class="{active: sin.izvor==='uzivo'}" @click="sin.izvor='uzivo'; ucitajSintezu()">Uživo</button>
+                  </div>
+                  <button class="btn sm" @click="sinOsvezi()" :disabled="sin.radi"><span x-show="sin.radi" class="spinner"></span> Osveži retro-bektest</button>
+                </div>
+              </div>
+              <table class="tbl">
+                <thead><tr><th>Metod</th><th>Pogodaka</th><th>Očekivano</th><th>z</th><th>p</th><th>p korigovano</th><th>Zaključak</th></tr></thead>
+                <tbody>
+                  <template x-for="r in sin.podaci.redovi.jedan_broj" :key="r.metod">
+                    <tr @click="sinOtvoriRed(r)" style="cursor:pointer"
+                        :class="sin.detaljRed && sin.detaljRed.metod === r.metod ? 'izabran' : ''">
+                      <td :title="r.opis">
+                        <span x-text="r.naziv"></span>
+                        <span class="tag neutralan" x-show="r.kontrola" style="margin-left:6px">kontrola</span>
+                      </td>
+                      <td class="num" x-text="r.rezultat != null ? r.rezultat : '—'"></td>
+                      <td class="num muted" x-text="r.ocekivano != null ? sinBroj(r.ocekivano, 1) : '—'"></td>
+                      <td class="num mono" x-text="r.z != null ? sinBroj(r.z, 2) : '—'"></td>
+                      <td class="num mono" x-text="sinP(r.p)"></td>
+                      <td class="num mono" x-text="sinP(r.p_korig)"></td>
+                      <td><span class="tag" :class="sinKlasa(r)" x-text="r.napomena || r.zakljucak"></span></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card" style="margin-top:16px">
+              <h3>Kombinacija <span class="tag neutralan" x-text="'n = ' + sin.podaci.n_kombinacija + ' kola'"></span></h3>
+              <p class="hint">Rezultat = prosečno preklapanje predložene sedmorke sa izvučenom. Očekivano pod slučajnošću: μ = <span x-text="sinBroj(sin.podaci.ocekivano_preklapanje)"></span>.</p>
+              <table class="tbl">
+                <thead><tr><th>Metod</th><th>Prosek preklapanja</th><th>μ</th><th>z</th><th>p</th><th>p korigovano</th><th>Zaključak</th></tr></thead>
+                <tbody>
+                  <template x-for="r in sin.podaci.redovi.kombinacija" :key="r.metod">
+                    <tr @click="sinOtvoriRed(r)" style="cursor:pointer"
+                        :class="sin.detaljRed && sin.detaljRed.metod === r.metod ? 'izabran' : ''">
+                      <td :title="r.opis">
+                        <span x-text="r.naziv"></span>
+                        <span class="tag neutralan" x-show="r.kontrola" style="margin-left:6px">kontrola</span>
+                      </td>
+                      <td class="num mono" x-text="sinBroj(r.rezultat)"></td>
+                      <td class="num muted mono" x-text="sinBroj(r.ocekivano)"></td>
+                      <td class="num mono" x-text="r.z != null ? sinBroj(r.z, 2) : '—'"></td>
+                      <td class="num mono" x-text="sinP(r.p)"></td>
+                      <td class="num mono" x-text="sinP(r.p_korig)"></td>
+                      <td><span class="tag" :class="sinKlasa(r)" x-text="r.napomena || r.zakljucak"></span></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card" style="margin-top:16px" x-show="sin.podaci.redovi.test.length">
+              <h3>Testovi slučajnosti</h3>
+              <p class="hint">Mere samu istoriju, ne prognozu — zato ne zavise od izbora „retro / uživo".
+              Ulaze u istu Bonferroni korekciju kao metodi. Očekivana vrednost hi-kvadrata je upravo df.</p>
+              <table class="tbl">
+                <thead><tr><th>Test</th><th>Statistika</th><th>Očekivano (df)</th><th>p</th><th>p korigovano</th><th>Zaključak</th></tr></thead>
+                <tbody>
+                  <template x-for="r in sin.podaci.redovi.test" :key="r.metod">
+                    <tr @click="sinOtvoriRed(r)" style="cursor:pointer"
+                        :class="sin.detaljRed && sin.detaljRed.metod === r.metod ? 'izabran' : ''">
+                      <td :title="r.opis" x-text="r.naziv"></td>
+                      <td class="num mono" x-text="r.jedinica + ' = ' + sinBroj(r.rezultat, 2)"></td>
+                      <td class="num muted mono" x-text="r.ocekivano != null ? r.ocekivano : '—'"></td>
+                      <td class="num mono" x-text="sinP(r.p)"></td>
+                      <td class="num mono" x-text="sinP(r.p_korig)"></td>
+                      <td><span class="tag" :class="sinKlasa(r)" x-text="r.napomena || r.zakljucak"></span></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="card" style="margin-top:16px" x-show="sin.detaljRed" x-cloak>
+              <div class="row" style="justify-content:space-between; align-items:center">
+                <div>
+                  <h3><span x-text="sin.detaljRed ? sin.detaljRed.naziv : ''"></span>
+                    <span class="tag neutralan" x-text="sin.detalj ? (sin.detalj.tip === 'test' ? 'test' : sin.detalj.jedinica) : ''"></span></h3>
+                  <p class="hint" x-text="sin.detaljRed ? sin.detaljRed.opis : ''"></p>
+                </div>
+                <div class="row" style="align-items:center; gap:8px">
+                  <button class="btn ghost sm" @click="sinVodiNa()" x-show="sin.detalj"
+                          x-text="sin.detalj && sin.detalj.vodi_na === 'prognoza' ? 'Otvori u Prognozi' : 'Otvori u Različitosti'"></button>
+                  <button class="btn ghost sm" @click="sinZatvoriDetalj()">Zatvori</button>
+                </div>
+              </div>
+              <template x-if="sin.detaljRadi"><div class="center-load"><div class="spinner"></div>Učitavam…</div></template>
+              <div id="sin-detalj-chart" class="chart lg" x-show="sin.detalj"></div>
+              <p class="muted" style="font-size:12px; margin-bottom:0" x-show="sin.detalj && sin.detalj.tip !== 'test'">
+                Krivulja je kumulativna kroz vreme; osenčeni pojas je 95% interval oko očekivanja pod slučajnošću.
+                Linija koja ostaje u pojasu je nerazlučiva od slučajnog izbora.
+              </p>
+              <p class="muted" style="font-size:12px; margin-bottom:0" x-show="sin.detalj && sin.detalj.tip === 'test'">
+                Stubići su izmereno, isprekidana linija je teorijsko očekivanje. Hi-kvadrat u tabeli meri
+                koliko se ta dva razilaze.
+              </p>
+            </div>
+
+            <div class="card" style="margin-top:16px" x-show="sin.podaci.ansambl_ima_red">
+              <div class="coll-head" @click="sinToggle('ansambl')">
+                <span class="caret" x-text="sin.otvori.ansambl ? '▾' : '▸'"></span>
+                <h3 x-text="sin.podaci.ansambl_odstupa ? 'Ansambl odstupa — proveriti curenje' : 'Zašto ansambl nije bolji od delova'"></h3>
+              </div>
+              <div x-show="sin.otvori.ansambl" x-cloak style="margin-top:10px">
+                <template x-if="!sin.podaci.ansambl_odstupa">
+                  <p class="muted">Kombinovanje metoda pomaže kad svaki nosi malo signala. Ovde svaki metod
+                  pojedinačno pogađa <b x-text="sinBroj(sin.podaci.baseline_udeo, 2) + '%'"></b> kola, koliko i
+                  slučajan izbor. Zbir šest nula je nula. Ansambl je prošao isti test kao ostali — njegov red je
+                  u tabeli iznad, bez ikakvog posebnog tretmana.</p>
+                </template>
+                <template x-if="sin.podaci.ansambl_odstupa">
+                  <p class="muted">Ansambl je značajan i posle korekcije. Pre bilo kakvog zaključka proveriti
+                  curenje budućnosti: težine smeju da se uče isključivo na kolima pre onih koja se ocenjuju.
+                  Tek kad se to isključi, nalaz vredi ponavljati.</p>
+                </template>
+                <p class="muted">Težine se uče jednom, na prvom delu istorije, i ne menjaju se na kolima koja se
+                ocenjuju. Šest komponenti: frekvencija, Bajes, hibrid, ritam, svežina, parovi.</p>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px">
+              <div class="coll-head" @click="sinToggle('kako')">
+                <span class="caret" x-text="sin.otvori.kako ? '▾' : '▸'"></span>
+                <h3>Kako čitati ovu tabelu</h3>
+              </div>
+              <div x-show="sin.otvori.kako" x-cloak style="margin-top:10px">
+                <p class="muted">Svaki red je jedan eksperiment sa istim pitanjem: da li se rezultat razlikuje od onoga
+                što daje čista slučajnost. Kolona <b>p</b> je verovatnoća da bi slučajnost dala bar ovoliko odstupanje.
+                Pošto se pita <span x-text="sin.podaci.broj_redova"></span> puta odjednom, p se množi brojem redova
+                (Bonferroni) i tek <b>p korigovano</b> odlučuje.</p>
+                <p class="muted">Bez korekcije bi se očekivalo <b x-text="sinBroj(sin.podaci.ocekivano_laznih, 2)"></b>
+                lažno pozitivnih redova. Zato red koji „odskoči“ bez korekcije sam po sebi ne znači ništa.</p>
+                <p class="muted">Kontrolni redovi su čista slučajnost po konstrukciji. Stoje u istoj tabeli i po istim
+                pravilima — ako se metod ne razlikuje od kontrole, nema šta da pokaže.</p>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:16px">
+              <div class="coll-head" @click="sinToggle('metod')">
+                <span class="caret" x-text="sin.otvori.metod ? '▾' : '▸'"></span>
+                <h3>Metodologija</h3>
+              </div>
+              <div x-show="sin.otvori.metod" x-cloak style="margin-top:10px">
+                <p class="muted"><b>Walk-forward.</b> Prognoza za kolo N koristi isključivo kola strogo pre N.
+                Retro-bektest to garantuje konstrukcijom: prvo predviđa, pa tek onda dodaje kolo u stanje.</p>
+                <p class="muted"><b>Jedna evaluacija.</b> Brojevi u ovoj tabeli su isti oni sa taba Prognoza —
+                Sinteza ih ne računa ponovo, samo ih pakuje i koriguje zajedno.</p>
+                <p class="muted"><b>Kontrola.</b> „Nasumični“ metodi nisu fusnota nego red u tabeli i ulaze u korekciju.</p>
+                <p class="muted"><b>Izvor.</b> „Retro“ je bektest nad celom istorijom (period fiksiran na 100 kola);
+                „uživo“ su stvarno zaključane prognoze i ima ih mnogo manje.</p>
+              </div>
+            </div>
+          </div>
+        </template>
+      </section>
+
       <section x-show="strana==='podaci'">
         <div class="grid g-2">
           <div class="card">

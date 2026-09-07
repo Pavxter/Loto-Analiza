@@ -202,7 +202,7 @@ kolo i brojeve, klik „Sačuvaj kolo" — sve analize i provere se osveže auto
 ## 8. Prognoza
 
 Statistički eksperiment: predviđanje **jednog broja** (1–39) za sledeće kolo, sa
-sedam paralelnih metoda i kontrolnom grupom.
+osam paralelnih metoda i kontrolnom grupom.
 
 > **Svrha:** ovo NIJE proricanje. Meri se da li ijedan metod pogađa statistički
 > značajno više od nasumične osnovne linije **17,95%** (verovatnoća da nasumično
@@ -217,6 +217,7 @@ sedam paralelnih metoda i kontrolnom grupom.
 | **Hibridni** | Najviši hibridni skor (80% Bajes + 20% povezanost). |
 | **Ritam koji kasni** | Najveći odnos D/R — broj koji najviše „kasni" za svojim ritmom. |
 | **Najsvežiji** | Prvi izvučen broj iz poslednjeg kola. |
+| **Ansambl** | Težinski zbir ocena šest komponenti; težine naučene samo na ranijim kolima (vidi §12). |
 | **Nasumični (kontrola)** | Nasumičan broj, seedovan brojem kola. Referenca — ako i on „odskoči", greška je u sistemu. |
 
 ### Kako radi
@@ -233,15 +234,15 @@ sedam paralelnih metoda i kontrolnom grupom.
   osenčana zona = 95% pojas pouzdanosti (sužava se sa brojem kola). Linija unutar
   zone = nerazlučivo od slučajnosti.
 - **Tabela:** za svaki metod n, pogoci, uspešnost, p-vrednost (dvostrani binomni test)
-  i zaključak. Prag je pooštren Bonferroni korekcijom (0,05 / 7 ≈ **0,007**) jer se
-  7 metoda testira paralelno.
+  i zaključak. Prag je pooštren Bonferroni korekcijom (0,05 podeljeno brojem metoda,
+  trenutno ≈ **0,006**) jer se sve metode testiraju paralelno.
 - Ako metod „odskače": najverovatniji uzroci su greška u podacima, curenje budućnosti
   ili slučajnost uprkos korekciji — **proveriti pre bilo kakvog zaključka**.
 
-### Rezultat retro-bektesta nad tvojom bazom (1.358 ocenjenih kola)
-Svih 7 metoda završilo je između 16,6% i 18,5% — statistički nerazlučivo od
-slučajnosti (svi p ≫ 0,007). Kontrolna grupa (18,19%) je čak nadmašila Bajesa.
-Upravo to teorija i predviđa za poštenu igru.
+### Rezultat retro-bektesta nad tvojom bazom (1.372 ocenjena kola)
+Sve metode su završile u uskom pojasu oko 17,95% — statistički nerazlučivo od
+slučajnosti. Kontrolna grupa je nadmašila i Bajesa i ansambl. Upravo to teorija i
+predviđa za poštenu igru; ceo pregled je na strani **Sinteza** (§12).
 
 ### Tab „Kombinacija" — predviđanje 7 brojeva
 
@@ -255,6 +256,7 @@ predloženih brojeva se poklopi (0–7).
 | **Top-7 Bajes / hibrid** | Vrh Bajesove, odnosno hibridne rang-liste. |
 | **Top-7 po ritmu** | 7 brojeva sa najvećim odnosom kašnjenja i ritma (D/R). |
 | **Ko-okurencijski** | Pohlepno bira brojeve koji najčešće izlaze zajedno (jedini algoritamski nov). |
+| **Ansambl (7)** | Top-7 po istom težinskom zbiru koji koristi jednobrojni ansambl (§12). |
 | **Nasumični (kontrola)** | 7 nasumičnih brojeva (seed = kolo·2). Referenca za poređenje. |
 
 - **Osnovna linija:** ako su izvlačenja slučajna, svaka kombinacija ima isto očekivano
@@ -266,14 +268,15 @@ predloženih brojeva se poklopi (0–7).
   drugačiji **oblik** raspodele — i to je nalaz.
 - **Tabela:** prosek preklapanja, najbolje postignuto, p-vrednost (z-test proseka;
   „—" za n < 30) i zaključak. Prag je Bonferroni preko **svih** metoda strane
-  (jednobrojni + kombinacijski = isti eksperiment): 0,05 / 14 ≈ **0,0036**.
+  (jednobrojni + kombinacijski = isti eksperiment): 0,05 podeljeno njihovim ukupnim
+  brojem, trenutno ≈ **0,003**.
 - **„+ tiket":** dugme na kartici predloga dodaje kombinaciju u „Moje tikete" da se
   može stvarno pratiti.
 
-**Rezultat nad tvojom bazom (1.359 ocenjenih kola, retro):** svih 7 metoda ima prosek
-u rasponu 1,25–1,32, svi statistički nerazlučivi od μ = 1,256 (svi p ≫ 0,0036).
-Kontrolna grupa ima najviši prosek (1,32) — čist šum, i Bonferroni ga ispravno ne
-proglašava odskačućim. Poštena igra, kako teorija i predviđa.
+**Rezultat nad tvojom bazom (1.372 ocenjena kola, retro):** sve metode imaju prosek u
+rasponu 1,25–1,32, svi statistički nerazlučivi od μ = 1,256. Kontrolna grupa ima najviši
+prosek (1,32) — čist šum, i Bonferroni ga ispravno ne proglašava odskačućim. Poštena
+igra, kako teorija i predviđa.
 
 ---
 
@@ -495,10 +498,119 @@ slike; pusti vreme da vidiš kako tačke skaču bez reda; nađi svoj tiket; na k
 
 ---
 
+## 12. Sinteza
+
+Jedno mesto gde **svi metodi prolaze isti sud**: isti retro-bektest, ista kontrola, ista
+korekcija. Umesto deset tabela na raznim stranama, jedna tabela i jedna rečenica.
+
+> **Svrha:** odgovoriti na pitanje koje nijedna pojedinačna strana ne može — od svih
+> metoda koje aplikacija ima, koliko ih zaista odstupa od slučajnosti kad se sve mere
+> zajedno? Strana ne uvodi nov način predviđanja niti novu evaluaciju.
+
+### Kako se čita
+
+Svaki red je jedan eksperiment sa istim pitanjem: razlikuje li se rezultat od onoga što
+daje čista slučajnost.
+
+| Kolona | Značenje |
+|---|---|
+| **Rezultat** | Pogodaka (jedan broj), prosečno preklapanje (kombinacija) ili vrednost statistike (test). |
+| **Očekivano** | Iz teorije, nikad iz podataka: n·7/39, μ = 1,256, odnosno broj stepeni slobode. |
+| **z** | Koliko standardnih devijacija odstupanja i u kom smeru. |
+| **p** | Verovatnoća da bi slučajnost dala bar ovoliko odstupanje — **sama po sebi ne znači ništa**. |
+| **p korigovano** | p pomnoženo brojem redova (Bonferroni). **Jedino ova kolona odlučuje.** |
+| **Zaključak** | Tačno jedan od tri ishoda (vidi dole). |
+
+### Zašto korekcija
+
+Kad se isto pitanje postavi 22 puta odjednom, oko jedan red će „odskočiti" i bez ikakvog
+signala — 22 × 0,05 ≈ 1,1 lažno pozitivan. Zato se p množi brojem redova i tek onda
+poredi sa 5%. Rečenica na vrhu strane kaže i koliko je redova i koliko bi ih se očekivalo
+lažno pozitivnih bez korekcije.
+
+Najbolji primer je u samoj tabeli: kontrolna kombinacija (`k_random`) ima p ≈ 0,011, što
+bi bez korekcije izgledalo „značajno". Posle korekcije je ≈ 0,24 — čisti šum, kao što i
+mora biti, jer je taj metod po konstrukciji nasumičan.
+
+### Tri ishoda zaključka
+
+| Uslov | Tekst |
+|---|---|
+| p korigovano ≥ 0,05 | **≈ slučajnost** |
+| p korigovano < 0,05, metod nije kontrola | **odstupa — proveriti** (jedina crvena oznaka u aplikaciji) |
+| p korigovano < 0,05, metod je kontrola | **kontrola odstupa — lažno pozitivan** |
+
+Nema četvrtog ishoda i nema nijanse. Red bez dovoljno podataka nosi napomenu, ne ocenu.
+
+### Kontrola je red, ne fusnota
+
+`random` i `k_random` stoje u istoj tabeli, u istim kolonama, i ulaze u istu korekciju.
+Poenta strane je upravo to da se metod ne razlikuje od kontrole. Ako bi kontrola bila
+sklonjena „jer nije pravi metod", tabela bi izgubila jedinu referencu koju ima.
+
+### Ansambl
+
+Ansambl kombinuje šest ocena koje metodi ionako koriste — frekvencija, Bajes, hibrid,
+ritam, svežina, parovi — u jedan težinski zbir. Šest težina, bez ijedne ML biblioteke.
+
+- Težine se uče **jednom**, na prvom delu istorije (kola 100–400), i važe za sva kasnija
+  kola. Nijedno kolo koje se ocenjuje ne učestvuje u učenju sopstvenih težina.
+- Dok istorija ne dosegne 400 kola, sve komponente imaju istu težinu — nema još šta da se
+  nauči.
+- U registru je kao svaki drugi prediktor (`Ansambl` i `Ansambl (7)`), pa se u Sintezi
+  pojavljuje bez ikakvog posebnog tretmana.
+
+Rezultat nad bazom: ansambl pogađa 242 od 1.372 kola, očekivano 246,3 — dakle **ispod**
+slučajnosti, p korigovano = 1,00. To je i očekivano: kombinovanje pomaže kad svaki deo
+nosi malo signala, a ovde svaki deo daje tačno 17,95%, koliko i nasumičan izbor.
+Sekcija „Zašto ansambl nije bolji od delova" objašnjava to na strani; ako ansambl ikad
+padne ispod praga, taj tekst se sam sklanja i traži proveru curenja.
+
+### Testovi slučajnosti
+
+Ovi redovi mere **samu istoriju**, ne prognozu, pa ne zavise od izbora „retro / uživo".
+
+| Test | Šta pita | Teorijsko očekivanje |
+|---|---|---|
+| **Frekvencija brojeva** | izlazi li svih 39 podjednako često | n·7/39 po broju, df = 38 |
+| **Rang — uniformnost** | gomilaju li se kombinacije u nekom delu prostora | n/50 po korpi, df = 49 |
+| **Rang — rastojanja** | skače li rang uzastopnih kola kao slučajan | trougaona raspodela, prosek M/3 |
+| **Rang — autokorelacija** | pamti li rang prethodnih pet kola | nula na svakom pomaku (Ljung–Box, df = 5) |
+| **Najmanji izvučeni broj** | zašto su rangovi mahom mali | P(min=k) = C(39−k,6)/C(39,7) |
+| **Preklapanje uzastopnih kola** | koliko brojeva kolo deli sa prethodnim | hipergeometrijska raspodela |
+
+**Rang** je leksikografski redni broj kombinacije (isti pojam kao na Mapi): jedan ceo broj
+koji nosi celu sedmorku. Zato ovi testovi prvi put mere kombinaciju kao celinu, a ne
+brojeve pojedinačno.
+
+Red „najmanji izvučeni broj" postoji da objasni zašto rangovi izgledaju mali: rang raste
+sa najmanjim brojem u kombinaciji, a mali minimum je jednostavno mnogo verovatniji. Nije
+reč o tome da mašina „voli male brojeve".
+
+### Detalj reda
+
+Klik na bilo koji red otvara panel ispod tabele:
+
+- **prediktor** → kumulativna krivulja kroz vreme sa 95% pojasom oko očekivanja; linija
+  koja ostaje u pojasu je nerazlučiva od slučajnog izbora;
+- **test** → histogram izmerenog uz isprekidanu liniju teorije.
+
+Dugme vodi na Prognozu odnosno Različitost, gde je isti podatak u punom kontekstu —
+grafikoni se ne dupliraju.
+
+### Rezultat nad tvojom bazom
+
+Od 22 metoda i testova, **nijedan ne odstupa** od slučajnosti na 5% posle korekcije.
+Kontrola stoji u istom redu sa Bajesom i ansamblom, i ništa ih ne razdvaja.
+
+---
+
 ## Podešavanja i tehnički detalji
 
 - **Period analize** (gore desno) utiče na Dashboard, Statistiku i bodovanje generatora.
   Strane „Istraži istoriju" i „Mapa kombinacija" ne koriste period nego granicu (vreme).
+  Strana „Sinteza" ne koristi ni jedno ni drugo: retro-bektest ima fiksiran period od 100
+  kola, a testovi slučajnosti uvek mere celu istoriju.
 - Baza podataka je `loto_baza.db` (ista kao u desktop verziji).
 - Grafikoni i mapa zahtevaju internet (ECharts, Alpine.js i Leaflet se učitavaju preko CDN-a).
 - **Pločice mape** se prave jednom, skriptom `python -X utf8 generisi_mapu.py --sloj sve`

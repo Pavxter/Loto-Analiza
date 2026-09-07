@@ -15,7 +15,8 @@ Garancije (identične jednobrojnim, testira se u tests/test_prognoza.py):
 import random as _random
 
 from . import konfig
-from .prediktori import (_prozor, _frekvencija_i_poslednji, _bajes_skorovi, _povezanost)
+from .prediktori import (_prozor, _frekvencija_i_poslednji, _bajes_skorovi, _povezanost,
+                         skor_ansambla)
 
 MAX_BROJ = konfig.MAX_BROJ
 K = konfig.BROJEVA_U_KOMBINACIJI
@@ -164,6 +165,18 @@ def k_cooc(istorija, period, ciljno_kolo=None):
     return _cooc_iz_matrice(parovi, count)
 
 
+def k_ensemble(istorija, period, ciljno_kolo=None):
+    """Top-7 po ansamblu — ista ocena i iste težine kao jednobrojni `ensemble`.
+
+    Registar je sve što ansambl treba: nema posebnog tretmana ni ovde ni u UI-ju.
+    """
+    skor, _tezine = skor_ansambla(istorija, period)
+    if skor is None:
+        return None
+    rang = sorted(range(1, MAX_BROJ + 1), key=lambda b: (-skor[b], b))
+    return _sedam(rang)
+
+
 def k_random(istorija, period, ciljno_kolo=None):
     """Kontrolna grupa: 7 nasumičnih jedinstvenih brojeva, seed = kolo*2
     (različit od jednobrojnog random prediktora da ne dele slučajnost)."""
@@ -179,5 +192,6 @@ PREDIKTORI_KOMB = {
     "k_hybrid7": ("Top-7 hibrid",   k_hybrid7, "Vrh hibridne rang-liste (80% Bajes + 20% povezanost)."),
     "k_rhythm7": ("Top-7 po ritmu", k_rhythm7, "7 brojeva sa najvećim odnosom kašnjenja i ritma (D/R)."),
     "k_cooc":    ("Ko-okurencijski", k_cooc,   "Pohlepno bira brojeve koji najčešće izlaze zajedno."),
+    "k_ensemble": ("Ansambl (7)",    k_ensemble, "Top-7 po težinskom zbiru ocena šest komponenti; iste težine kao jednobrojni ansambl."),
     "k_random":  ("Nasumični (kontrola)", k_random, "Kontrolna grupa: 7 nasumičnih brojeva (seed = kolo·2)."),
 }

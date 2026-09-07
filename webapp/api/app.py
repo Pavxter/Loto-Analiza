@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija, mapa)
+                         prognoza, razlicitost, istorija, mapa, sinteza)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -625,6 +625,73 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
         "obrisano": obrisano,
         "backup": os.path.basename(backup_putanja) if backup_putanja else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Sinteza (PLAN_SINTEZA.md) — svi metodi i testovi u istoj tabeli, ista korekcija.
+# Ne računa nijednu novu evaluaciju: čita rezultate retro-bektesta i testove.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/sinteza")
+def api_sinteza(izvor: str = "retro", period: int = 0):
+    """Svi redovi Sinteze + globalna rečenica. `izvor`: 'retro' ili 'uzivo'.
+
+    Keširano po izvoru; keš pada na svaku promenu podataka (isti `_invalidiraj`
+    kao ostale strane), pa i pri unosu kola i pri ponovnom retro-bektestu.
+    """
+    if izvor not in ("retro", "uzivo"):
+        raise HTTPException(400, "Izvor mora biti 'retro' ili 'uzivo'.")
+    kljuc = ("sinteza", izvor, period, _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        conn = baza.konekcija()
+        try:
+            _kes[kljuc] = sinteza.sakupi(conn, izvor, period)
+        finally:
+            conn.close()
+    return _kes[kljuc]
+
+
+@app.get("/api/sinteza/metod/{metod}")
+def api_sinteza_metod(metod: str, izvor: str = "retro"):
+    """Detalj jednog reda: krivulja kroz vreme ili histogram testa."""
+    if izvor not in ("retro", "uzivo"):
+        raise HTTPException(400, "Izvor mora biti 'retro' ili 'uzivo'.")
+    kljuc = ("sinteza_metod", metod, izvor, _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        conn = baza.konekcija()
+        try:
+            rezultat = sinteza.detalj_metoda(conn, metod, izvor)
+        finally:
+            conn.close()
+        if rezultat is None:
+            raise HTTPException(404, f"Nepoznat red Sinteze: {metod}")
+        _kes[kljuc] = rezultat
+    return _kes[kljuc]
+
+
+@app.get("/api/sinteza/rang")
+def api_sinteza_rang():
+    """Četiri testa nad rangom kombinacije + frekvencija brojeva, sa histogramima."""
+    conn = baza.konekcija()
+    try:
+        istorija = razlicitost.istorija_iz_conn(conn)
+        if len(istorija) < 2:
+            raise HTTPException(400, "Premalo kola za testove ranga.")
+        return razlicitost.analize_ranga(istorija)
+    finally:
+        conn.close()
+
+
+@app.post("/api/sinteza/osvezi")
+def api_sinteza_osvezi():
+    """Ponovo pokreće retro-bektest (eksplicitno — traje nekoliko sekundi)."""
+    conn = baza.konekcija()
+    try:
+        rezultat = prognoza.retro_bektest(conn)
+    finally:
+        conn.close()
+    _invalidiraj()
+    return rezultat
 
 
 # ---------------------------------------------------------------------------

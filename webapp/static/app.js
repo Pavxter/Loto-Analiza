@@ -81,6 +81,7 @@ function app() {
       { id: 'generator', naziv: 'Generator', ico: '⚙️', opis: 'Generiši kombinacije po filterima i bodovanju', period: true },
       { id: 'bektest', naziv: 'Bektest', ico: '🧪', opis: 'Uspešnost sačuvanih strategija', period: false },
       { id: 'tiketi', naziv: 'Moji tiketi', ico: '🎟️', opis: 'Evidencija odigranih tiketa', period: false },
+      { id: 'sinteza', naziv: 'Sinteza', ico: '⚖️', opis: 'Svi metodi i testovi pod istim sudom — jedna tabela, jedna korekcija', period: false },
       { id: 'podaci', naziv: 'Podaci', ico: '🗄️', opis: 'Unos kola i uvoz istorije', period: false },
     ],
     strana: 'dashboard',
@@ -101,15 +102,18 @@ function app() {
     bektestovi: [], tiketi: [], noviTiket: '',
     istorija: [], unos: { kolo: null, datum: new Date().toISOString().slice(0, 10), brojevi: '' }, fajl: null, uvozZameni: false,
     prog: { tab: 'broj', ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
-            filterMetod: '', prag: 0.007, brojMetoda: 7, radi: false },
+            filterMetod: '', prag: 0.00625, brojMetoda: 8, radi: false },
     progK: { ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
-             filterMetod: '', histMetod: '', hist: null, prag: 0.0036, brojMetoda: 14,
+             filterMetod: '', histMetod: '', hist: null, prag: 0.00313, brojMetoda: 16,
              ocekivano: 1.256, sigma: 0.9317, ucitano: false },
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
     mapa: { info: null, sloj: '', detalj: null, tiket: '', zum: 0, uklopljeno: false,
             prikaz: 'stvarno', stvarno: null, slucajno: null, seed: null, radiUzorak: false,
             korak: 0, rep: 50, putanja: true, animira: false,
             test: { otvoren: false, podaci: null, radi: false, granica: null } },
+    sin: { podaci: null, izvor: 'retro', radi: false, ucitano: false,
+           detalj: null, detaljRed: null, detaljRadi: false,
+           otvori: { ansambl: false, kako: false, metod: false } },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false } },
@@ -137,6 +141,7 @@ function app() {
         rangiranje: () => this.ucitajRang(),
         prognoza: () => this.ucitajPrognozu(),
         generator: () => {},
+        sinteza: () => this.ucitajSintezu(),
         bektest: () => this.ucitajBektest(),
         tiketi: () => this.ucitajTikete(),
         podaci: () => this.ucitajIstoriju(),
@@ -1315,6 +1320,138 @@ function app() {
       try {
         this.progK.istorija = await jget(`/api/prognoza/komb/istorija?izvor=${this.progK.izvor}&metod=${this.progK.filterMetod}&limit=50`);
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    // ---------- SINTEZA ----------
+    // Strana ne racuna nista sama: sve dolazi iz jednog /api/sinteza poziva, a
+    // Bonferroni je vec primenjen na serveru preko SVIH redova.
+
+    async ucitajSintezu() {
+      this.loading = !this.sin.podaci;
+      try {
+        this.sin.podaci = await jget(`/api/sinteza?izvor=${this.sin.izvor}`);
+        this.sin.ucitano = true;
+        this.sinZatvoriDetalj();
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.loading = false;
+    },
+
+    async sinOsvezi() {
+      this.sin.radi = true;
+      try {
+        const r = await jsend('/api/sinteza/osvezi', 'POST');
+        this.toast(`Retro-bektest: ${r.kola_ocenjeno} kola za ${r.trajanje_s} s.`, 'ok');
+        await this.ucitajSintezu();
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.sin.radi = false;
+    },
+
+    sinToggle(sekcija) { this.sin.otvori[sekcija] = !this.sin.otvori[sekcija]; },
+
+    // Klik na red otvara panel; ponovni klik na isti red ga zatvara.
+    async sinOtvoriRed(r) {
+      if (this.sin.detaljRed && this.sin.detaljRed.metod === r.metod) {
+        this.sin.detaljRed = null; this.sin.detalj = null; return;
+      }
+      this.sin.detaljRed = r;
+      this.sin.detalj = null;
+      this.sin.detaljRadi = true;
+      try {
+        this.sin.detalj = await jget(`/api/sinteza/metod/${r.metod}?izvor=${this.sin.izvor}`);
+        this.$nextTick(() => this.crtajSinDetalj());
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.sin.detaljRadi = false;
+    },
+
+    sinZatvoriDetalj() { this.sin.detaljRed = null; this.sin.detalj = null; },
+
+    // Panel ne pravi nov grafikon nego crta iste serije koje već postoje na
+    // tabu Prognoza (krivulja + pojas) odnosno histogram testa.
+    crtajSinDetalj() {
+      const d = this.sin.detalj;
+      if (!d) return;
+      if (d.tip === 'test') {
+        crtaj('sin-detalj-chart', {
+          ...bazaOpcija(),
+          tooltip: { trigger: 'axis' },
+          legend: { top: 4, textStyle: { color: '#9aa7b5', fontSize: 11 } },
+          grid: { left: 52, right: 18, top: 40, bottom: 46 },
+          xAxis: { type: 'category', data: d.histogram.oznake, name: d.osa, nameLocation: 'middle',
+                   nameGap: 28, axisLine: { lineStyle: { color: BOJE.mreza } },
+                   axisLabel: { fontSize: 9 } },
+          yAxis: { type: 'value', splitLine: { lineStyle: { color: BOJE.mreza } } },
+          series: [
+            { name: 'posmatrano', type: 'bar', data: d.histogram.posmatrano,
+              itemStyle: { color: BOJE.accent } },
+            { name: 'teorija', type: 'line', data: d.histogram.ocekivano, symbol: 'none',
+              lineStyle: { color: '#9aa7b5', type: 'dashed', width: 1.5 } },
+          ],
+        });
+        return;
+      }
+      const x = Array.from({ length: d.serija.length }, (_, i) => i + 1);
+      const procenti = d.tip === 'jedan_broj';
+      crtaj('sin-detalj-chart', {
+        ...bazaOpcija(),
+        // Pomocne serije pojasa ostaju van legende — inace bi trik sa stackovanjem
+        // procurio u UI kao dve besmislene stavke.
+        legend: { top: 4, textStyle: { color: '#9aa7b5', fontSize: 11 },
+                  data: ['očekivano pod slučajnošću', d.naziv] },
+        grid: { left: 52, right: 18, top: 40, bottom: 46 },
+        xAxis: { type: 'category', data: x, name: 'ocenjeno kola', nameLocation: 'middle',
+                 nameGap: 28, axisLine: { lineStyle: { color: BOJE.mreza } },
+                 axisLabel: { fontSize: 9 } },
+        // Prvih nekoliko kola imaju ogroman pojas; bez gornje granice bi spljostili
+        // ceo grafik. Ista granica kao na tabu Prognoza.
+        yAxis: { type: 'value', max: procenti ? 60 : undefined,
+                 axisLabel: procenti ? { formatter: '{value}%' } : {},
+                 splitLine: { lineStyle: { color: BOJE.mreza } } },
+        series: [
+          { name: 'pojas-donja', type: 'line', data: d.pojas_donja.slice(0, x.length), stack: 'pojas',
+            symbol: 'none', lineStyle: { opacity: 0 }, silent: true, tooltip: { show: false } },
+          { name: 'pojas 95%', type: 'line',
+            data: d.pojas_gornja.slice(0, x.length).map((v, i) => v - d.pojas_donja[i]),
+            stack: 'pojas', symbol: 'none', lineStyle: { opacity: 0 },
+            areaStyle: { color: 'rgba(154,167,181,.10)' }, silent: true, tooltip: { show: false } },
+          { name: 'očekivano pod slučajnošću', type: 'line', symbol: 'none',
+            data: x.map(() => d.baseline),
+            lineStyle: { color: '#9aa7b5', type: 'dashed', width: 1.5 } },
+          { name: d.naziv, type: 'line', data: d.serija, symbol: 'none',
+            lineStyle: { color: BOJE.accent, width: 2 } },
+        ],
+      });
+    },
+
+    sinVodiNa() {
+      const d = this.sin.detalj;
+      if (!d) return;
+      if (d.vodi_na === 'prognoza') {
+        this.prog.izvor = this.sin.izvor;
+        this.progK.izvor = this.sin.izvor;
+        this.prog.tab = d.tip === 'kombinacija' ? 'komb' : 'broj';
+        this.idi('prognoza');
+        if (this.prog.tab === 'komb') this.ucitajPrognozuKomb();
+      } else {
+        this.idi('razlicitost');
+      }
+    },
+
+    // Jedini istaknuti slucaj je metod koji odstupa; kontrola koja odstupa je
+    // ocekivan lazno pozitivan nalaz i nosi neutralnu oznaku.
+    sinKlasa(r) {
+      if (r.zakljucak === 'odstupa — proveriti') return 'err';
+      return 'neutralan';
+    },
+
+    sinBroj(v, decimala = 3) {
+      if (v == null) return '—';
+      return Number(v).toFixed(decimala).replace('.', ',');
+    },
+
+    sinP(v) {
+      if (v == null) return '—';
+      if (v > 0 && v < 0.0001) return '< 0,0001';
+      return Number(v).toFixed(4).replace('.', ',');
     },
 
     // ---------- BEKTEST ----------

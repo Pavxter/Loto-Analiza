@@ -59,7 +59,10 @@ Redosledom kako se pojavljuju u aplikaciji (detaljan opis svake je u `FUNKCIJE.m
    dekade, diverzitet) uz bodovanje; opcioni „vremeplov" (analiza do zadatog kola).
 9. **Bektest** — uspešnost sačuvanih strategija (rezultat, indeks promašaja/iznenađenja).
 10. **Moji tiketi** — evidencija odigranih tiketa i njihovih pogodaka.
-11. **Podaci** — unos novog kola (auto-provera tiketa, bektesta i prognoza) + uvoz CSV/Excel.
+11. **Sinteza** — svi metodi i testovi u jednoj tabeli, mereni istim alatom: jedan
+    retro-bektest, kontrola kao ravnopravan red, jedna Bonferroni korekcija preko svih
+    redova i jedna rečenica zaključka na vrhu.
+12. **Podaci** — unos novog kola (auto-provera tiketa, bektesta i prognoza) + uvoz CSV/Excel.
 
 ## Arhitektura
 
@@ -74,15 +77,16 @@ webapp/
     bektest.py             # indeksi + "dodaj kolo i proveri sve"
     razlicitost_teorija.py # hipergeometrijska teorija preklapanja + bitmaske i testovi
     razlicitost.py         # analize preklapanja izvučenih kombinacija
-    prediktori.py          # 7 jednobrojnih prediktora (čiste funkcije, bez curenja)
+    prediktori.py          # jednobrojni prediktori + ansambl (čiste funkcije, bez curenja)
     prediktori_komb.py     # kombinacijski prediktori (7 brojeva po metodu)
+    sinteza.py             # „Sinteza": Eksperiment, sakupljanje svih redova, Bonferroni, zaključak
     prognoza.py            # uživo/retro prognoza, evaluacija, prognoza_u_tacki (vremeplov)
     istorija.py            # „Istraži istoriju": sečenje po granica/prozor + prosleđivanje
     mapa.py                # „Mapa kombinacija": rang/unrang, Hilbert, osobine, skokovi
   api/app.py             # FastAPI endpointi (JSON)
   static/                # frontend (index.html, app.js, styles.css)
     mapa/                  # generisane pločice mape (van git-a; pravi ih generisi_mapu.py)
-  tests/                 # smoke + invarijant testovi (core, razlicitost, prognoza, istorija, mapa)
+  tests/                 # smoke + invarijant testovi (core, razlicitost, prognoza, istorija, mapa, sinteza)
 pokreni.py               # pokretač servera
 generisi_mapu.py         # jednokratno pečenje pločica mape
 migracija_baze.py        # jednokratno smanjenje baze (57 MB -> ~0.2 MB)
@@ -96,7 +100,7 @@ CSV/Excel mora imati kolone: `kolo, datum, b1, b2, b3, b4, b5, b6, b7`.
 
 ## Testovi
 
-Pet modula (svi se pokreću sa `-X utf8` radi ćiriličnih/latiničnih ispisa):
+Šest modula (svi se pokreću sa `-X utf8` radi ćiriličnih/latiničnih ispisa):
 
 ```bash
 python -X utf8 -m webapp.tests.test_core         # analitika, rangiranje, generator, bektest
@@ -104,6 +108,7 @@ python -X utf8 -m webapp.tests.test_razlicitost  # teorija i analize preklapanja
 python -X utf8 -m webapp.tests.test_prognoza     # bez curenja, determinizam, ekvivalencija, brzina
 python -X utf8 -m webapp.tests.test_istorija     # granica/prozor, vremeplov == retro, anti-curenje
 python -X utf8 -m webapp.tests.test_mapa         # rang↔unrang, Hilbert, ocena == Generator, pločice
+python -X utf8 -m webapp.tests.test_sinteza      # Bonferroni, ansambl bez curenja, rang na sintetici
 ```
 
 `test_mapa` traje oko pola minuta; ako pločice nisu generisane, provera pločica se
@@ -128,3 +133,8 @@ preskoči, a ostalo se izvrši.
   reda 12 nad leksikografskim rangom), sa izvučenim kolima kao tačkama i putanjom kroz
   vreme. Svaki sloj ima kontrolni slučajni parnjak, jer je poruka strane upravo to da se
   dve slike ne razlikuju.
+- **Sinteza** — zajednički sud za sve metode: jedan `Eksperiment` po redu, jedna
+  Bonferroni korekcija preko svih redova (kontrola i testovi uključeni) i tri moguća
+  zaključka. Uz nju su došla i dva dodatka: **ansambl** (težinski zbir šest komponenti,
+  registrovan kao svaki drugi prediktor) i **četiri testa nad rangom kombinacije**, koji
+  prvi put mere celu sedmorku kao jedan broj.

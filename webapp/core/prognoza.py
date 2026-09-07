@@ -373,6 +373,8 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
     for korak, (kolo, brojevi) in enumerate(istorija):
         if korak >= min_start:
             dobitni = set(brojevi)
+            # Istorija STROGO PRE kola N — jedini ulaz svih čistih prediktora.
+            pre = istorija[:korak]
             predlozi = {
                 "hot": stanje.hot(),
                 "cold": stanje.cold(),
@@ -382,6 +384,11 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
                 "fresh": stanje.fresh(),
                 "random": _rnd.Random(kolo).randint(1, MAX_BROJ),
             }
+            # Metodi koje inkrementalno stanje ne ogleda (npr. ansambl) računaju se
+            # čistom funkcijom nad istim isečkom — sporije, ali bez druge implementacije.
+            for metod, (_n, fn, _o) in PREDIKTORI.items():
+                if metod not in predlozi:
+                    predlozi[metod] = fn(pre, retro_period, ciljno_kolo=kolo)
             for metod, broj in predlozi.items():
                 if broj is None:
                     continue
@@ -389,7 +396,6 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
                                1 if broj in dobitni else 0, sada))
             # Kombinacijski prediktori: čiste funkcije nad istorijom STROGO PRE N
             # (isti obrazac kao test bez-curenja; garantuje da matrica ne vidi ciljno kolo).
-            pre = istorija[:korak]
             dob_maska = T.maska(brojevi)
             for metod, (_n, fn, _o) in PREDIKTORI_KOMB.items():
                 komb = fn(pre, retro_period, ciljno_kolo=kolo)
@@ -421,6 +427,14 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
 # Statistika i serije za grafikon
 # ----------------------------------------------------------------------------
 
+def _z_udela(k, n, p0=BASELINE):
+    """z za udeo pogodaka: (k/n − p0) / sqrt(p0(1−p0)/n). Prati isti binomni test,
+    samo daje smer i veličinu odstupanja (p ostaje tačan binomni)."""
+    if n <= 0:
+        return None
+    return (k / n - p0) / (p0 * (1 - p0) / n) ** 0.5
+
+
 def statistika(conn, izvor="uzivo"):
     """Po metodu: n, k, uspešnost, dvostrani binomni test, zaključak (PLAN §7.3)."""
     rezultat = []
@@ -432,10 +446,13 @@ def statistika(conn, izvor="uzivo"):
         k = sum(r["pogodak"] for r in redovi)
         stavka = {"metod": metod, "naziv": naziv, "opis": opis, "n": n, "k": k,
                   "uspesnost": round(100 * k / n, 2) if n else None,
-                  "ocekivano": round(100 * BASELINE, 2), "p": None, "zakljucak": "—"}
+                  "ocekivano": round(100 * BASELINE, 2), "p": None, "p_tacno": None,
+                  "z": None, "zakljucak": "—"}
         if n > 0:
             p = binomtest(k, n, BASELINE, alternative="two-sided").pvalue
             stavka["p"] = round(float(p), 5)
+            stavka["p_tacno"] = float(p)     # bez zaokruživanja — Sinteza množi sa brojem redova
+            stavka["z"] = round(_z_udela(k, n), 4)
             if p < PRAG:
                 stavka["zakljucak"] = "Odskače (proveriti!)"
             else:
@@ -498,10 +515,12 @@ def statistika_komb(conn, izvor="uzivo"):
         stavka = {"metod": metod, "naziv": naziv, "opis": opis, "n": n,
                   "prosek": round(prosek, 3) if prosek is not None else None,
                   "ocekivano": round(MU_PREKL, 3), "maks": maks, "maks_kolo": maks_kolo,
-                  "p": None, "zakljucak": "—"}
+                  "p": None, "p_tacno": None, "z": None, "zakljucak": "—"}
         if n >= 30:
-            _z, p = T.z_test_proseka(prosek, n)
+            z, p = T.z_test_proseka(prosek, n)
             stavka["p"] = round(p, 5)
+            stavka["p_tacno"] = float(p)
+            stavka["z"] = round(z, 4)
             stavka["zakljucak"] = "Odskače (proveriti!)" if p < PRAG_KOMB else "Nerazlučivo od slučajnosti"
         elif n > 0:
             stavka["zakljucak"] = "Premalo podataka (n < 30)"
