@@ -969,7 +969,7 @@
 
         <div class="card" style="margin-top:16px">
           <h3>Rezultati po metodu <span class="tag" :class="prog.izvor==='uzivo'?'ok':'warn'" x-text="prog.izvor==='uzivo'?'uživo':'retro'"></span></h3>
-          <p class="hint" title="Zbog 7 paralelnih metoda prag značajnosti je 0,05/7 ≈ 0,007 (Bonferroni korekcija) — inače bi slučajni ekstremi lako „odskakali".">
+          <p class="hint" title="Zbog više paralelnih metoda prag značajnosti je 0,05 podeljeno brojem metoda (Bonferroni korekcija) — inače bi slučajni ekstremi lako „odskakali".">
             Prag značajnosti: p &lt; <span x-text="prog.prag"></span> (Bonferroni za <span x-text="prog.brojMetoda"></span> metoda — zašto ne 0,05? hover ↑)
           </p>
           <table class="tbl">
