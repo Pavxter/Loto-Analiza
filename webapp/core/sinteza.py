@@ -25,6 +25,10 @@ ALFA = 0.05
 # Metodi koji su po konstrukciji čista slučajnost — referenca, ne kandidat.
 KONTROLE = {"random", "k_random"}
 
+# Ansambl je običan red u tabeli; izdvojen je samo zato što od njegovog ishoda
+# zavisi koji se objašnjavajući tekst prikazuje (PLAN §5.4).
+ANSAMBLI = {"ensemble", "k_ensemble"}
+
 # Tri ishoda zaključka (PLAN §5.3) i jedna oznaka za red bez p-vrednosti.
 SLUCAJNOST = "≈ slučajnost"
 ODSTUPA = "odstupa — proveriti"
@@ -189,6 +193,7 @@ def sakupi(conn, izvor="retro", period=0):
     ocekivano_laznih = round(n_redova * ALFA, 2)
 
     kontrole = [r for r in redovi if r.kontrola and r.p_korig is not None]
+    ansambli = [r for r in redovi if r.metod in ANSAMBLI and r.p_korig is not None]
     return {
         "izvor": izvor,
         "broj_redova": n_redova,
@@ -197,6 +202,10 @@ def sakupi(conn, izvor="retro", period=0):
         "ocekivano_laznih": ocekivano_laznih,
         "globalno": _globalna_recenica(n_redova, znacajnih, ocekivano_laznih),
         "kontrola_odstupa": any(r.p_korig < ALFA for r in kontrole),
+        # Ako ansambl ikad odstupi, tekst „zašto nije bolji" se ne prikazuje nego
+        # se traži provera curenja — plan to izričito zahteva (§5.4).
+        "ansambl_ima_red": bool(ansambli),
+        "ansambl_odstupa": any(r.p_korig < ALFA for r in ansambli),
         "redovi": {t: [r.kao_dict() for r in redovi if r.tip == t] for t in TIPOVI},
         "n_jedan_broj": max((r.n for r in redovi if r.tip == "jedan_broj"), default=0),
         "n_kombinacija": max((r.n for r in redovi if r.tip == "kombinacija"), default=0),

@@ -1307,6 +1307,28 @@
               </table>
             </div>
 
+            <div class="card" style="margin-top:16px" x-show="sin.podaci.ansambl_ima_red">
+              <div class="coll-head" @click="sinToggle('ansambl')">
+                <span class="caret" x-text="sin.otvori.ansambl ? '▾' : '▸'"></span>
+                <h3 x-text="sin.podaci.ansambl_odstupa ? 'Ansambl odstupa — proveriti curenje' : 'Zašto ansambl nije bolji od delova'"></h3>
+              </div>
+              <div x-show="sin.otvori.ansambl" x-cloak style="margin-top:10px">
+                <template x-if="!sin.podaci.ansambl_odstupa">
+                  <p class="muted">Kombinovanje metoda pomaže kad svaki nosi malo signala. Ovde svaki metod
+                  pojedinačno pogađa <b x-text="sinBroj(sin.podaci.baseline_udeo, 2) + '%'"></b> kola, koliko i
+                  slučajan izbor. Zbir šest nula je nula. Ansambl je prošao isti test kao ostali — njegov red je
+                  u tabeli iznad, bez ikakvog posebnog tretmana.</p>
+                </template>
+                <template x-if="sin.podaci.ansambl_odstupa">
+                  <p class="muted">Ansambl je značajan i posle korekcije. Pre bilo kakvog zaključka proveriti
+                  curenje budućnosti: težine smeju da se uče isključivo na kolima pre onih koja se ocenjuju.
+                  Tek kad se to isključi, nalaz vredi ponavljati.</p>
+                </template>
+                <p class="muted">Težine se uče jednom, na prvom delu istorije, i ne menjaju se na kolima koja se
+                ocenjuju. Šest komponenti: frekvencija, Bajes, hibrid, ritam, svežina, parovi.</p>
+              </div>
+            </div>
+
             <div class="card" style="margin-top:16px">
               <div class="coll-head" @click="sinToggle('kako')">
                 <span class="caret" x-text="sin.otvori.kako ? '▾' : '▸'"></span>

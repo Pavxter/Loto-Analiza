@@ -112,7 +112,7 @@ function app() {
             korak: 0, rep: 50, putanja: true, animira: false,
             test: { otvoren: false, podaci: null, radi: false, granica: null } },
     sin: { podaci: null, izvor: 'retro', radi: false, ucitano: false,
-           otvori: { kako: false, metod: false } },
+           otvori: { ansambl: false, kako: false, metod: false } },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false } },

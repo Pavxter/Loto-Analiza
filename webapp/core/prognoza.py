@@ -373,6 +373,8 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
     for korak, (kolo, brojevi) in enumerate(istorija):
         if korak >= min_start:
             dobitni = set(brojevi)
+            # Istorija STROGO PRE kola N — jedini ulaz svih čistih prediktora.
+            pre = istorija[:korak]
             predlozi = {
                 "hot": stanje.hot(),
                 "cold": stanje.cold(),
@@ -382,6 +384,11 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
                 "fresh": stanje.fresh(),
                 "random": _rnd.Random(kolo).randint(1, MAX_BROJ),
             }
+            # Metodi koje inkrementalno stanje ne ogleda (npr. ansambl) računaju se
+            # čistom funkcijom nad istim isečkom — sporije, ali bez druge implementacije.
+            for metod, (_n, fn, _o) in PREDIKTORI.items():
+                if metod not in predlozi:
+                    predlozi[metod] = fn(pre, retro_period, ciljno_kolo=kolo)
             for metod, broj in predlozi.items():
                 if broj is None:
                     continue
@@ -389,7 +396,6 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
                                1 if broj in dobitni else 0, sada))
             # Kombinacijski prediktori: čiste funkcije nad istorijom STROGO PRE N
             # (isti obrazac kao test bez-curenja; garantuje da matrica ne vidi ciljno kolo).
-            pre = istorija[:korak]
             dob_maska = T.maska(brojevi)
             for metod, (_n, fn, _o) in PREDIKTORI_KOMB.items():
                 komb = fn(pre, retro_period, ciljno_kolo=kolo)
