@@ -16,7 +16,7 @@ zaključak to kaže eksplicitno.
 
 from dataclasses import asdict, dataclass, field
 
-from . import prognoza, razlicitost
+from . import konfig, prognoza, razlicitost
 from .prediktori import PREDIKTORI
 from .prediktori_komb import PREDIKTORI_KOMB
 
@@ -209,6 +209,91 @@ def redovi_testovi(conn, period=0):
         detalj=uzastopna,
     ))
     return redovi
+
+
+# ----------------------------------------------------------------------------
+# Detalj jednog reda (PLAN §5.2) — ništa se ne crta dvaput
+# ----------------------------------------------------------------------------
+# Prediktorski red pokazuje krivulju kroz vreme sa pojasom oko očekivanja; oba
+# dolaze iz `prognoza.serije` / `prognoza.serije_komb`, istih serija koje crta tab
+# Prognoza. Test pokazuje svoj histogram iz `razlicitost.analize_ranga`. Panel
+# nigde ne računa novu statistiku — samo bira šta da prikaže i kuda vodi dalje.
+
+
+def _histogram(oznake, posmatrano, ocekivano):
+    return {"oznake": [str(o) for o in oznake],
+            "posmatrano": [float(x) for x in posmatrano],
+            "ocekivano": [round(float(x), 3) for x in ocekivano]}
+
+
+def _detalj_testa(metod, analize, uzastopna):
+    """Histogram testa u zajedničkom obliku (oznake / posmatrano / očekivano)."""
+    if metod == "frekvencija_brojeva":
+        t = analize["frekvencija"]
+        ocek = t["n"] * konfig.BROJEVA_U_KOMBINACIJI / konfig.MAX_BROJ
+        return _histogram(range(1, konfig.MAX_BROJ + 1), t["brojaci"],
+                          [ocek] * konfig.MAX_BROJ), "Broj"
+    if metod == "rang_uniformnost":
+        t = analize["uniformnost"]
+        n_korpi = len(t["brojaci"])
+        return _histogram(range(1, n_korpi + 1), t["brojaci"],
+                          [t["ocekivano_po_korpi"]] * n_korpi), "Korpa ranga"
+    if metod == "rang_rastojanja":
+        t = analize["rastojanja"]
+        n_korpi = len(t["brojaci"])
+        ocek = t["n"] / n_korpi if n_korpi else 0
+        return _histogram(range(1, n_korpi + 1), t["brojaci"],
+                          [ocek] * n_korpi), "Korpa rastojanja (jednako verovatne)"
+    if metod == "rang_autokorelacija":
+        t = analize["autokorelacija"]
+        return _histogram(range(1, len(t["r"]) + 1), t["r"],
+                          [0.0] * len(t["r"])), "Pomak"
+    if metod == "najmanji_broj":
+        t = analize["najmanji_broj"]
+        return _histogram([c["oznaka"] for c in t["kategorije"]],
+                          [c["posmatrano"] for c in t["kategorije"]],
+                          [c["ocekivano"] for c in t["kategorije"]]), "Najmanji broj"
+    if metod == "preklapanje_uzastopnih":
+        return _histogram([c["oznaka"] for c in uzastopna["kategorije"]],
+                          [c["posmatrano"] for c in uzastopna["kategorije"]],
+                          [c["ocekivano"] for c in uzastopna["kategorije"]]), "Preklapanje"
+    return None, ""
+
+
+def detalj_metoda(conn, metod, izvor="retro"):
+    """Podaci za panel jednog reda: krivulja ili histogram, plus kuda vodi dalje."""
+    if metod in PREDIKTORI:
+        serije = prognoza.serije(conn, izvor)
+        return {"metod": metod, "naziv": PREDIKTORI[metod][0], "tip": "jedan_broj",
+                "opis": PREDIKTORI[metod][2],
+                "serija": serije["serije"].get(metod, []),
+                "pojas_donja": serije["pojas_donja"], "pojas_gornja": serije["pojas_gornja"],
+                "baseline": serije["baseline"], "jedinica": "% pogodaka",
+                "vodi_na": "prognoza"}
+    if metod in PREDIKTORI_KOMB:
+        serije = prognoza.serije_komb(conn, izvor)
+        return {"metod": metod, "naziv": PREDIKTORI_KOMB[metod][0], "tip": "kombinacija",
+                "opis": PREDIKTORI_KOMB[metod][2],
+                "serija": serije["serije"].get(metod, []),
+                "pojas_donja": serije["pojas_donja"], "pojas_gornja": serije["pojas_gornja"],
+                "baseline": serije["baseline"], "jedinica": "prosečno preklapanje",
+                "vodi_na": "prognoza"}
+
+    istorija = razlicitost.istorija_iz_conn(conn)
+    if len(istorija) < 2:
+        return None
+    analize = razlicitost.analize_ranga(istorija)
+    uzastopna = razlicitost.analiza_uzastopna(istorija, 0)["test"]
+    histogram, osa = _detalj_testa(metod, analize, uzastopna)
+    if histogram is None:
+        return None
+    naziv = (TESTOVI[metod][0] if metod in TESTOVI else "Preklapanje uzastopnih kola")
+    detalj = {"metod": metod, "naziv": naziv, "tip": "test", "histogram": histogram,
+              "osa": osa, "vodi_na": "razlicitost"}
+    if metod == "rang_autokorelacija":
+        # Pojedinačni z po pomaku ostaju vidljivi iako je test jedan (Ljung–Box).
+        detalj["z_po_pomaku"] = analize["autokorelacija"]["z"]
+    return detalj
 
 
 # ----------------------------------------------------------------------------

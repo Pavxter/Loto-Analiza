@@ -634,14 +634,39 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
 
 @app.get("/api/sinteza")
 def api_sinteza(izvor: str = "retro", period: int = 0):
-    """Svi redovi Sinteze + globalna rečenica. `izvor`: 'retro' ili 'uzivo'."""
+    """Svi redovi Sinteze + globalna rečenica. `izvor`: 'retro' ili 'uzivo'.
+
+    Keširano po izvoru; keš pada na svaku promenu podataka (isti `_invalidiraj`
+    kao ostale strane), pa i pri unosu kola i pri ponovnom retro-bektestu.
+    """
     if izvor not in ("retro", "uzivo"):
         raise HTTPException(400, "Izvor mora biti 'retro' ili 'uzivo'.")
-    conn = baza.konekcija()
-    try:
-        return sinteza.sakupi(conn, izvor, period)
-    finally:
-        conn.close()
+    kljuc = ("sinteza", izvor, period, _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        conn = baza.konekcija()
+        try:
+            _kes[kljuc] = sinteza.sakupi(conn, izvor, period)
+        finally:
+            conn.close()
+    return _kes[kljuc]
+
+
+@app.get("/api/sinteza/metod/{metod}")
+def api_sinteza_metod(metod: str, izvor: str = "retro"):
+    """Detalj jednog reda: krivulja kroz vreme ili histogram testa."""
+    if izvor not in ("retro", "uzivo"):
+        raise HTTPException(400, "Izvor mora biti 'retro' ili 'uzivo'.")
+    kljuc = ("sinteza_metod", metod, izvor, _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        conn = baza.konekcija()
+        try:
+            rezultat = sinteza.detalj_metoda(conn, metod, izvor)
+        finally:
+            conn.close()
+        if rezultat is None:
+            raise HTTPException(404, f"Nepoznat red Sinteze: {metod}")
+        _kes[kljuc] = rezultat
+    return _kes[kljuc]
 
 
 @app.get("/api/sinteza/rang")
