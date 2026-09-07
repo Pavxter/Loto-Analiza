@@ -161,6 +161,8 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .tag.neutralan { background: var(--neutralan-bg); color: var(--text-dim); }
 .tag.ok { background: #17311f; color: #7fe0a3; }
 .tag.warn { background: #33290f; color: #f2c96b; }
+/* Jedina crvena oznaka u aplikaciji: red Sinteze koji odstupa i posle korekcije. */
+.tag.err { background: #3a1616; color: #ff9c9c; }
 
 /* Forms */
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }

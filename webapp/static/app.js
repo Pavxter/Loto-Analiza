@@ -81,6 +81,7 @@ function app() {
       { id: 'generator', naziv: 'Generator', ico: '⚙️', opis: 'Generiši kombinacije po filterima i bodovanju', period: true },
       { id: 'bektest', naziv: 'Bektest', ico: '🧪', opis: 'Uspešnost sačuvanih strategija', period: false },
       { id: 'tiketi', naziv: 'Moji tiketi', ico: '🎟️', opis: 'Evidencija odigranih tiketa', period: false },
+      { id: 'sinteza', naziv: 'Sinteza', ico: '⚖️', opis: 'Svi metodi i testovi pod istim sudom — jedna tabela, jedna korekcija', period: false },
       { id: 'podaci', naziv: 'Podaci', ico: '🗄️', opis: 'Unos kola i uvoz istorije', period: false },
     ],
     strana: 'dashboard',
@@ -110,6 +111,8 @@ function app() {
             prikaz: 'stvarno', stvarno: null, slucajno: null, seed: null, radiUzorak: false,
             korak: 0, rep: 50, putanja: true, animira: false,
             test: { otvoren: false, podaci: null, radi: false, granica: null } },
+    sin: { podaci: null, izvor: 'retro', radi: false, ucitano: false,
+           otvori: { kako: false, metod: false } },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false } },
@@ -137,6 +140,7 @@ function app() {
         rangiranje: () => this.ucitajRang(),
         prognoza: () => this.ucitajPrognozu(),
         generator: () => {},
+        sinteza: () => this.ucitajSintezu(),
         bektest: () => this.ucitajBektest(),
         tiketi: () => this.ucitajTikete(),
         podaci: () => this.ucitajIstoriju(),
@@ -1315,6 +1319,49 @@ function app() {
       try {
         this.progK.istorija = await jget(`/api/prognoza/komb/istorija?izvor=${this.progK.izvor}&metod=${this.progK.filterMetod}&limit=50`);
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    // ---------- SINTEZA ----------
+    // Strana ne racuna nista sama: sve dolazi iz jednog /api/sinteza poziva, a
+    // Bonferroni je vec primenjen na serveru preko SVIH redova.
+
+    async ucitajSintezu() {
+      this.loading = !this.sin.podaci;
+      try {
+        this.sin.podaci = await jget(`/api/sinteza?izvor=${this.sin.izvor}`);
+        this.sin.ucitano = true;
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.loading = false;
+    },
+
+    async sinOsvezi() {
+      this.sin.radi = true;
+      try {
+        const r = await jsend('/api/sinteza/osvezi', 'POST');
+        this.toast(`Retro-bektest: ${r.kola_ocenjeno} kola za ${r.trajanje_s} s.`, 'ok');
+        await this.ucitajSintezu();
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.sin.radi = false;
+    },
+
+    sinToggle(sekcija) { this.sin.otvori[sekcija] = !this.sin.otvori[sekcija]; },
+
+    // Jedini istaknuti slucaj je metod koji odstupa; kontrola koja odstupa je
+    // ocekivan lazno pozitivan nalaz i nosi neutralnu oznaku.
+    sinKlasa(r) {
+      if (r.zakljucak === 'odstupa — proveriti') return 'err';
+      return 'neutralan';
+    },
+
+    sinBroj(v, decimala = 3) {
+      if (v == null) return '—';
+      return Number(v).toFixed(decimala).replace('.', ',');
+    },
+
+    sinP(v) {
+      if (v == null) return '—';
+      if (v > 0 && v < 0.0001) return '< 0,0001';
+      return Number(v).toFixed(4).replace('.', ',');
     },
 
     // ---------- BEKTEST ----------
