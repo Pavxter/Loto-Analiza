@@ -644,6 +644,19 @@ def api_sinteza(izvor: str = "retro", period: int = 0):
         conn.close()
 
 
+@app.get("/api/sinteza/rang")
+def api_sinteza_rang():
+    """Četiri testa nad rangom kombinacije + frekvencija brojeva, sa histogramima."""
+    conn = baza.konekcija()
+    try:
+        istorija = razlicitost.istorija_iz_conn(conn)
+        if len(istorija) < 2:
+            raise HTTPException(400, "Premalo kola za testove ranga.")
+        return razlicitost.analize_ranga(istorija)
+    finally:
+        conn.close()
+
+
 @app.post("/api/sinteza/osvezi")
 def api_sinteza_osvezi():
     """Ponovo pokreće retro-bektest (eksplicitno — traje nekoliko sekundi)."""

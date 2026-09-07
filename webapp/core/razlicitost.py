@@ -433,6 +433,141 @@ def preklapanje_sa_istorijom(istorija_pre, cilj_brojevi, poslednjih=None):
 
 
 # ----------------------------------------------------------------------------
+# Testovi ranga kombinacije (PLAN_SINTEZA §2.3)
+# ----------------------------------------------------------------------------
+# Rang je leksikografski redni broj kombinacije — jedan ceo broj koji nosi celu
+# kombinaciju. To dopušta testove na nivou cele sedmorke koje aplikacija do sada
+# nije imala: gomilaju li se izvučene kombinacije u nekom delu prostora, prate li
+# se kroz vreme, i zašto rangovi izgledaju „mali“.
+#
+# Svi rezultati idu u Sintezu kao redovi tipa „test" i ulaze u istu Bonferroni
+# korekciju kao prediktori. Očekivanja su izvedena u razlicitost_teorija, ne ovde.
+
+BROJ_KORPI_RANGA = 50      # histogram uniformnosti (PLAN: 50 korpi, df = 49)
+BROJ_KORPI_RASTOJANJA = 10  # jednako verovatne korpe pod trougaonom raspodelom
+POMACI_AUTOKORELACIJE = 5   # pomaci 1..5, spojeni u jedan Ljung–Box test
+
+
+def rangovi_istorije(istorija):
+    """Leksikografski rang svakog izvučenog kola (isti `mapa.rang` kao Mapa)."""
+    from . import mapa
+    return [mapa.rang(brojevi) for _kolo, brojevi in istorija]
+
+
+def test_rang_uniformnost(rangovi, broj_korpi=BROJ_KORPI_RANGA):
+    """Gomilaju li se izvučene kombinacije u nekom delu prostora rangova."""
+    n = len(rangovi)
+    sirina = T.UKUPNO_KOMBINACIJA / broj_korpi
+    brojaci = [0] * broj_korpi
+    for r in rangovi:
+        i = min(int(r / sirina), broj_korpi - 1)
+        brojaci[i] += 1
+    ocek = T.ocekivano_po_korpi(n, broj_korpi)
+    rezultat = T.hi_kvadrat_opsti(brojaci, [ocek] * broj_korpi)
+    rezultat["n"] = n
+    rezultat["brojaci"] = brojaci
+    rezultat["ocekivano_po_korpi"] = round(ocek, 3)
+    return rezultat
+
+
+def test_rang_rastojanja(rangovi, broj_korpi=BROJ_KORPI_RASTOJANJA):
+    """Rastojanja uzastopnih rangova protiv trougaone raspodele (prosek M/3).
+
+    Korpe su jednako verovatne pod nultom hipotezom (ivice su kvantili), pa su sva
+    očekivanja jednaka n/korpi i nijedna ćelija nije premala.
+    """
+    d = [abs(rangovi[i + 1] - rangovi[i]) for i in range(len(rangovi) - 1)]
+    n = len(d)
+    ivice = [T.kvantil_rastojanja(i / broj_korpi) for i in range(1, broj_korpi)]
+    brojaci = [0] * broj_korpi
+    for x in d:
+        i = 0
+        while i < len(ivice) and x > ivice[i]:
+            i += 1
+        brojaci[i] += 1
+    ocek = n / broj_korpi if broj_korpi else 0
+    rezultat = T.hi_kvadrat_opsti(brojaci, [ocek] * broj_korpi)
+    rezultat["n"] = n
+    rezultat["brojaci"] = brojaci
+    rezultat["prosek"] = (sum(d) / n) if n else None
+    rezultat["ocekivan_prosek"] = T.ocekivano_rastojanje()
+    rezultat["ivice"] = [round(x, 1) for x in ivice]
+    return rezultat
+
+
+def test_rang_autokorelacija(rangovi, pomaka=POMACI_AUTOKORELACIJE):
+    """Pamti li rang prethodna kola — pomaci 1..5 spojeni u jedan Ljung–Box test."""
+    n = len(rangovi)
+    korelacije = [T.autokorelacija(rangovi, k) for k in range(1, pomaka + 1)]
+    rezultat = T.ljung_box(korelacije, n)
+    rezultat["n"] = n
+    rezultat["r"] = [round(r, 5) for r in korelacije]
+    return rezultat
+
+
+def test_najmanji_broj(istorija, min_ocekivano=5.0):
+    """Raspodela najmanjeg izvučenog broja: P(min=k) = C(N−k, K−1)/C(N,K).
+
+    Ovaj test postoji da objasni zašto se rangovi gomilaju u malim vrednostima:
+    mali minimum je jednostavno mnogo verovatniji od velikog, a rang raste sa
+    minimumom. Nije reč o tome da mašina „voli male brojeve".
+    """
+    n = len(istorija)
+    maks_k = MAX_BROJ - K + 1
+    brojaci = {k: 0 for k in range(1, maks_k + 1)}
+    for _kolo, brojevi in istorija:
+        brojaci[min(brojevi)] += 1
+
+    # Rep se spaja dok očekivanje ne padne ispod praga primenljivosti hi-kvadrata.
+    kategorije = []
+    k = 1
+    while k <= maks_k:
+        ocek = n * T.p_min_broj(k)
+        if ocek < min_ocekivano:
+            break
+        kategorije.append({"oznaka": str(k), "posmatrano": brojaci[k], "ocekivano": ocek})
+        k += 1
+    rep_obs = sum(brojaci[j] for j in range(k, maks_k + 1))
+    rep_ocek = n * sum(T.p_min_broj(j) for j in range(k, maks_k + 1))
+    if rep_ocek > 0:
+        kategorije.append({"oznaka": f"{k}+", "posmatrano": rep_obs, "ocekivano": rep_ocek})
+
+    rezultat = T.hi_kvadrat_opsti([c["posmatrano"] for c in kategorije],
+                                  [c["ocekivano"] for c in kategorije])
+    rezultat["n"] = n
+    rezultat["kategorije"] = [{"oznaka": c["oznaka"], "posmatrano": c["posmatrano"],
+                               "ocekivano": round(c["ocekivano"], 2)} for c in kategorije]
+    return rezultat
+
+
+def test_frekvencija_brojeva(istorija):
+    """Ravnomernost 39 brojeva nad celom istorijom (očekivano n·K/N po broju)."""
+    n = len(istorija)
+    brojaci = [0] * MAX_BROJ
+    for _kolo, brojevi in istorija:
+        for b in brojevi:
+            brojaci[b - 1] += 1
+    rezultat = T.hi_kvadrat_frekvencije(brojaci, n)
+    rezultat["n"] = n
+    rezultat["brojaci"] = brojaci
+    return rezultat
+
+
+def analize_ranga(istorija):
+    """Sva četiri testa nad rangom + frekvencija brojeva, u jednom prolazu."""
+    rangovi = rangovi_istorije(istorija)
+    return {
+        "broj_kola": len(istorija),
+        "ukupno_kombinacija": T.UKUPNO_KOMBINACIJA,
+        "frekvencija": test_frekvencija_brojeva(istorija),
+        "uniformnost": test_rang_uniformnost(rangovi),
+        "rastojanja": test_rang_rastojanja(rangovi),
+        "autokorelacija": test_rang_autokorelacija(rangovi),
+        "najmanji_broj": test_najmanji_broj(istorija),
+    }
+
+
+# ----------------------------------------------------------------------------
 # Objedinjeni izlaz za stranu
 # ----------------------------------------------------------------------------
 

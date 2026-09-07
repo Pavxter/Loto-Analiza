@@ -1289,15 +1289,16 @@
 
             <div class="card" style="margin-top:16px" x-show="sin.podaci.redovi.test.length">
               <h3>Testovi slučajnosti</h3>
-              <p class="hint">Mere samu istoriju, ne prognozu. Ulaze u istu korekciju kao metodi.</p>
+              <p class="hint">Mere samu istoriju, ne prognozu — zato ne zavise od izbora „retro / uživo".
+              Ulaze u istu Bonferroni korekciju kao metodi. Očekivana vrednost hi-kvadrata je upravo df.</p>
               <table class="tbl">
-                <thead><tr><th>Test</th><th>Statistika</th><th>Očekivano</th><th>p</th><th>p korigovano</th><th>Zaključak</th></tr></thead>
+                <thead><tr><th>Test</th><th>Statistika</th><th>Očekivano (df)</th><th>p</th><th>p korigovano</th><th>Zaključak</th></tr></thead>
                 <tbody>
                   <template x-for="r in sin.podaci.redovi.test" :key="r.metod">
                     <tr>
                       <td :title="r.opis" x-text="r.naziv"></td>
                       <td class="num mono" x-text="r.jedinica + ' = ' + sinBroj(r.rezultat, 2)"></td>
-                      <td class="num muted mono" x-text="r.ocekivano != null ? sinBroj(r.ocekivano, 2) : '—'"></td>
+                      <td class="num muted mono" x-text="r.ocekivano != null ? r.ocekivano : '—'"></td>
                       <td class="num mono" x-text="sinP(r.p)"></td>
                       <td class="num mono" x-text="sinP(r.p_korig)"></td>
                       <td><span class="tag" :class="sinKlasa(r)" x-text="r.napomena || r.zakljucak"></span></td>

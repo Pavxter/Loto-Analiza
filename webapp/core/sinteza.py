@@ -16,7 +16,7 @@ zaključak to kaže eksplicitno.
 
 from dataclasses import asdict, dataclass, field
 
-from . import prognoza
+from . import prognoza, razlicitost
 from .prediktori import PREDIKTORI
 from .prediktori_komb import PREDIKTORI_KOMB
 
@@ -154,9 +154,61 @@ def redovi_kombinacija(conn, izvor="retro"):
     return redovi
 
 
+# Testovi slučajnosti: id -> (naziv, ključ u analize_ranga, jedinica, opis).
+# Svi mere samu istoriju, ne prognozu, pa ne zavise od izvora evaluacije.
+TESTOVI = {
+    "frekvencija_brojeva": (
+        "Frekvencija brojeva", "frekvencija", "χ²",
+        "Izlazi li svih 39 brojeva podjednako često (očekivano n·7/39 po broju)."),
+    "rang_uniformnost": (
+        "Rang — uniformnost", "uniformnost", "χ²",
+        "Gomilaju li se izvučene kombinacije u nekom delu prostora rangova (50 korpi)."),
+    "rang_rastojanja": (
+        "Rang — rastojanja", "rastojanja", "χ²",
+        "Rastojanje uzastopnih rangova protiv trougaone raspodele (prosek M/3)."),
+    "rang_autokorelacija": (
+        "Rang — autokorelacija", "autokorelacija", "Q",
+        "Pamti li rang prethodnih pet kola (Ljung–Box preko pomaka 1–5)."),
+    "najmanji_broj": (
+        "Najmanji izvučeni broj", "najmanji_broj", "χ²",
+        "P(min=k) = C(39−k,6)/C(39,7) — objašnjava zašto su rangovi mahom mali."),
+}
+
+
 def redovi_testovi(conn, period=0):
-    """Testovi slučajnosti nad samom istorijom (Faza 3: rang i najmanji broj)."""
-    return []
+    """Testovi slučajnosti nad samom istorijom (PLAN §2.3).
+
+    Uvek mere celu istoriju: `period` sužava prognozu, ne pitanje da li su
+    izvlačenja slučajna. Rezultat svakog testa je statistika sa poznatim brojem
+    stepeni slobode, pa je „očekivano" upravo df (srednja vrednost hi-kvadrata).
+    """
+    istorija = razlicitost.istorija_iz_conn(conn)
+    if len(istorija) < 2:
+        return []
+    analize = razlicitost.analize_ranga(istorija)
+    uzastopna = razlicitost.analiza_uzastopna(istorija, 0)["test"]
+
+    redovi = []
+    for metod, (naziv, kljuc, jedinica, opis) in TESTOVI.items():
+        t = analize[kljuc]
+        statistika = t.get("chi2", t.get("Q"))
+        redovi.append(Eksperiment(
+            metod=metod, naziv=naziv, tip="test", n=t.get("n", len(istorija)),
+            rezultat=statistika, ocekivano=t["df"], jedinica=jedinica,
+            p=t.get("p_tacno"), opis=opis,
+            napomena="" if t.get("p_tacno") is not None else "premalo podataka za test",
+            detalj=t,
+        ))
+
+    redovi.append(Eksperiment(
+        metod="preklapanje_uzastopnih", naziv="Preklapanje uzastopnih kola",
+        tip="test", n=uzastopna["n"], rezultat=uzastopna["chi2"],
+        ocekivano=uzastopna["df"], jedinica="χ²", p=uzastopna.get("p_tacno"),
+        opis="Koliko brojeva kolo deli sa prethodnim, protiv hipergeometrijske raspodele.",
+        napomena="" if uzastopna.get("p_tacno") is not None else "premalo podataka za test",
+        detalj=uzastopna,
+    ))
+    return redovi
 
 
 # ----------------------------------------------------------------------------
