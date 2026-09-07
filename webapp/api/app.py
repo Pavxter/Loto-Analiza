@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija, mapa)
+                         prognoza, razlicitost, istorija, mapa, sinteza)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -625,6 +625,35 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
         "obrisano": obrisano,
         "backup": os.path.basename(backup_putanja) if backup_putanja else None,
     }
+
+
+# ---------------------------------------------------------------------------
+# Sinteza (PLAN_SINTEZA.md) — svi metodi i testovi u istoj tabeli, ista korekcija.
+# Ne računa nijednu novu evaluaciju: čita rezultate retro-bektesta i testove.
+# ---------------------------------------------------------------------------
+
+@app.get("/api/sinteza")
+def api_sinteza(izvor: str = "retro", period: int = 0):
+    """Svi redovi Sinteze + globalna rečenica. `izvor`: 'retro' ili 'uzivo'."""
+    if izvor not in ("retro", "uzivo"):
+        raise HTTPException(400, "Izvor mora biti 'retro' ili 'uzivo'.")
+    conn = baza.konekcija()
+    try:
+        return sinteza.sakupi(conn, izvor, period)
+    finally:
+        conn.close()
+
+
+@app.post("/api/sinteza/osvezi")
+def api_sinteza_osvezi():
+    """Ponovo pokreće retro-bektest (eksplicitno — traje nekoliko sekundi)."""
+    conn = baza.konekcija()
+    try:
+        rezultat = prognoza.retro_bektest(conn)
+    finally:
+        conn.close()
+    _invalidiraj()
+    return rezultat
 
 
 # ---------------------------------------------------------------------------

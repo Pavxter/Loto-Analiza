@@ -421,6 +421,14 @@ def retro_bektest(conn, retro_period=RETRO_PERIOD, min_start=MIN_START):
 # Statistika i serije za grafikon
 # ----------------------------------------------------------------------------
 
+def _z_udela(k, n, p0=BASELINE):
+    """z za udeo pogodaka: (k/n − p0) / sqrt(p0(1−p0)/n). Prati isti binomni test,
+    samo daje smer i veličinu odstupanja (p ostaje tačan binomni)."""
+    if n <= 0:
+        return None
+    return (k / n - p0) / (p0 * (1 - p0) / n) ** 0.5
+
+
 def statistika(conn, izvor="uzivo"):
     """Po metodu: n, k, uspešnost, dvostrani binomni test, zaključak (PLAN §7.3)."""
     rezultat = []
@@ -432,10 +440,13 @@ def statistika(conn, izvor="uzivo"):
         k = sum(r["pogodak"] for r in redovi)
         stavka = {"metod": metod, "naziv": naziv, "opis": opis, "n": n, "k": k,
                   "uspesnost": round(100 * k / n, 2) if n else None,
-                  "ocekivano": round(100 * BASELINE, 2), "p": None, "zakljucak": "—"}
+                  "ocekivano": round(100 * BASELINE, 2), "p": None, "p_tacno": None,
+                  "z": None, "zakljucak": "—"}
         if n > 0:
             p = binomtest(k, n, BASELINE, alternative="two-sided").pvalue
             stavka["p"] = round(float(p), 5)
+            stavka["p_tacno"] = float(p)     # bez zaokruživanja — Sinteza množi sa brojem redova
+            stavka["z"] = round(_z_udela(k, n), 4)
             if p < PRAG:
                 stavka["zakljucak"] = "Odskače (proveriti!)"
             else:
@@ -498,10 +509,12 @@ def statistika_komb(conn, izvor="uzivo"):
         stavka = {"metod": metod, "naziv": naziv, "opis": opis, "n": n,
                   "prosek": round(prosek, 3) if prosek is not None else None,
                   "ocekivano": round(MU_PREKL, 3), "maks": maks, "maks_kolo": maks_kolo,
-                  "p": None, "zakljucak": "—"}
+                  "p": None, "p_tacno": None, "z": None, "zakljucak": "—"}
         if n >= 30:
-            _z, p = T.z_test_proseka(prosek, n)
+            z, p = T.z_test_proseka(prosek, n)
             stavka["p"] = round(p, 5)
+            stavka["p_tacno"] = float(p)
+            stavka["z"] = round(z, 4)
             stavka["zakljucak"] = "Odskače (proveriti!)" if p < PRAG_KOMB else "Nerazlučivo od slučajnosti"
         elif n > 0:
             stavka["zakljucak"] = "Premalo podataka (n < 30)"
