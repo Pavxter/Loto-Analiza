@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija, mapa, sinteza)
+                         prognoza, razlicitost, istorija, mapa, sinteza, sekvencijalni)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -688,6 +688,61 @@ def api_sinteza_osvezi():
     conn = baza.konekcija()
     try:
         rezultat = prognoza.retro_bektest(conn)
+    finally:
+        conn.close()
+    _invalidiraj()
+    return rezultat
+
+
+# ---------------------------------------------------------------------------
+# Sekvencijalni prediktor (PLAN_SEKVENCIJALNI_PREDIKTOR §4)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/sekv/stanje")
+def api_sekv_stanje():
+    """Trenutne težine eksperata, K, pojas, predlog za sledeće kolo, broj kola."""
+    kljuc = ("sekv_stanje", _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        conn = baza.konekcija()
+        try:
+            _kes[kljuc] = sekvencijalni.stanje_api(conn)
+        finally:
+            conn.close()
+    return _kes[kljuc]
+
+
+@app.get("/api/sekv/istorija")
+def api_sekv_istorija():
+    """K_t kroz vreme sa pojasom, plus K po ekspertu i težine kroz vreme."""
+    kljuc = ("sekv_istorija", _kes.get("verzija", 0))
+    if kljuc not in _kes:
+        conn = baza.konekcija()
+        try:
+            _kes[kljuc] = sekvencijalni.istorija_api(conn)
+        finally:
+            conn.close()
+    return _kes[kljuc]
+
+
+@app.get("/api/sekv/korak")
+def api_sekv_korak(granica: int):
+    """Vremeplov: šta je model predložio za prvo kolo posle granice i šta se desilo."""
+    conn = baza.konekcija()
+    try:
+        rezultat = sekvencijalni.korak_api(conn, granica)
+    finally:
+        conn.close()
+    if rezultat is None:
+        raise HTTPException(404, "Sekvencijalno stanje nije rekonstruisano.")
+    return rezultat
+
+
+@app.post("/api/sekv/rekonstruisi")
+def api_sekv_rekonstruisi():
+    """Ponovo prolazi celu istoriju od nule (traje nekoliko sekundi)."""
+    conn = baza.konekcija()
+    try:
+        rezultat = sekvencijalni.rekonstruisi(conn)
     finally:
         conn.close()
     _invalidiraj()

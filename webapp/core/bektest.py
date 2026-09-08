@@ -208,12 +208,18 @@ def dodaj_kolo_i_proveri(conn, kolo, datum, brojevi):
     from . import prognoza
     ocenjeno_prognoza = prognoza.oceni_prognoze(conn, kolo, dobitni_set)
 
+    # 4) Sekvencijalni model uči iz kola (PLAN_SEKVENCIJALNI §6, Faza 4.4). Jedan
+    #    korak nad sačuvanim stanjem; pun prolaz samo ako je prošlost izmenjena.
+    from . import sekvencijalni
+    sekv = sekvencijalni.azuriraj_posle_kola(conn, kolo) if uspeh else {"nacin": "preskoceno"}
+
     return {
         "dodato": uspeh,
         "kolo": kolo,
         "provereno_tiketa": provereno_tiketa,
         "provereno_bektestova": provereno_bektestova,
         "ocenjeno_prognoza": ocenjeno_prognoza,
+        "sekv": sekv,
     }
 
 
