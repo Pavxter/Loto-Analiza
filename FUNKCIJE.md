@@ -631,6 +631,22 @@ sa `exp(−η · gubitak)` i normalizuju. Ko manje greši, dobija više težine.
 ekspert se nikad ne izbacuje: ako ništa ne radi, težina se sliva na njega, i to je ugrađena
 granica preučavanja.
 
+Dva pravila drže mešavinu poštenom.
+
+**Nijedan ekspert ne umire.** Sam Hedge tera težinu izgubljenog eksperta ka nuli i tamo je
+ostavlja, pa bi učenje bilo jednosmerno: ekspert koji ponovo počne da pogađa ne bi imao
+odakle da se vrati. Zato se posle svakog kola jedan procenat ukupne težine ravnomerno
+preraspodeli na sve (fixed-share), čime nastaje pod od 0,09%. Ispod tog poda niko ne pada,
+a ko počne da pogađa penje se odatle. Težine se drže u log-prostoru, pa nema potkoračenja
+ni na hiljadama kola.
+
+**Svi govore istim tonom.** Svaki ekspert ulazi u mešavinu kao (1 − λ)·uniformni +
+λ·njegova raspodela, sa istim λ = 0,3 za sve. Bez toga koliko brzo ekspert gubi težinu
+zavisi od toga koliko je „glasan", a glasnoća omotanih eksperata dolazi iz temperature
+softmaksa, koja je proizvoljno izabrana. Sa istim λ najveće moguće odstupanje od 7/39 je
+isto za svakog, pa težine mere sadržaj tvrdnje, ne njen ton. Cena je što eksperti prelaza
+postaju tiši nego što bi im brojači dozvoljavali; to je ista mera za sve.
+
 ### Kako se čita koeficijent
 
 K je odnos kumulativnog log-gubitka mešavine i log-gubitka uniformnog modela.
@@ -675,16 +691,17 @@ Bonferroni korekciju kao i sve ostalo.
 
 ### Rezultat nad tvojom bazom
 
-Posle 1.372 ocenjena kola K je **1,000038** uz pojas 0,999934 – 1,000119, dakle unutar
-pojasa. Težina uniformnog eksperta je 22%, a četiri eksperta prelaza dele ostatak, jer se
-pod slučajnošću i oni svode na uniformnu raspodelu. Šest frekvencijskih eksperata je palo
-na nulu. Procene eksperata prelaza stoje na svojim teorijskim vrednostima: stopa povratka
-0,1805 naspram 0,1795, očekivano preklapanje 1,277 naspram 1,256.
+Posle 1.372 ocenjena kola K je **1,000068** uz pojas 0,999925 – 1,000162, dakle unutar
+pojasa. Sve težine leže između 8,4% i 9,6%, oko 1/11 = 9,1%: nijedan ekspert se ne izdvaja,
+što je i jedini ispravan ishod kad nema šta da se nauči. Procene eksperata prelaza stoje na
+svojim teorijskim vrednostima: stopa povratka 0,1805 naspram 0,1795, očekivano preklapanje
+1,277 naspram 1,256.
 
 To nije mana modela nego osobina podataka, i to se dokazuje testom: na sintetičkoj istoriji
-gde jedan broj izlazi 30% češće K padne na 0,994 i izađe ispod pojasa, a na istoriji gde
-svako kolo zadržava tri broja iz prethodnog K padne na 0,960 i najveću težinu dobija
-ekspert prelaza preklapanja. Model bi prepoznao signal kad bi ga bilo.
+gde jedan broj izlazi 30% češće K padne na 0,998 i izađe ispod pojasa, a frekvencijski
+eksperti se popnu na 13%. Na istoriji gde svako kolo zadržava tri broja iz prethodnog K
+padne na 0,989 i najveću težinu dobija ekspert prelaza preklapanja. Model bi prepoznao
+signal kad bi ga bilo.
 
 ---
 

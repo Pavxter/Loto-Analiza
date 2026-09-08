@@ -148,4 +148,6 @@ preskoči, a ostalo se izvrši.
   pomera težine prema sopstvenoj grešci. Uz predlog uvek stoji **K**, odnos njegovog
   log-gubitka i log-gubitka uniformnog modela: K = 1 znači da model ne zna više od
   slučajnosti. Uniformni ekspert se nikad ne izbacuje iz mešavine, pa je preučavanje
-  ograničeno konstrukcijom. Unos kola pomera K jednim korakom, bez ponovnog prolaza.
+  ograničeno konstrukcijom. Težine idu u log-prostoru uz fixed-share korak, pa nijedan
+  ekspert ne pada na nulu i može da se vrati; svi ulaze sa istim λ, pa težine mere sadržaj
+  tvrdnje a ne njenu glasnoću. Unos kola pomera K jednim korakom, bez ponovnog prolaza.
