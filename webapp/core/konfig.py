@@ -29,6 +29,18 @@ SEKV_MIN_START = 50          # preskoči prva kola; jednak prognoza.MIN_START
 SNAGA_PRIORA_PRELAZA = 50    # pseudo-posmatranja koja drže eksperte prelaza na teoriji
                              # dok stvarni brojači ne skupe dovoljno podataka (§2.2)
 
+# --- Korak izbora sedmorke (PLAN_KORAK_IZBORA §2.4) ---
+# Prag iznad kog raspon verovatnoća prestaje da bude šum. NIJE izabran po osećaju:
+# model je pušten na pet uniformnih sintetičkih istorija od po 1.500 kola (čista
+# slučajnost, ništa za naučiti) i uzet je 95. percentil izmerenog `raspon_udeo`.
+# Ispod praga raspon je ono što šum sam po sebi proizvodi, pa model nema
+# preferenciju. Postupak je zapisan u test_raspon_p_mix_na_sintetici; vrednost se
+# menja samo ponovnim merenjem, sa novim datumom.
+PRAG_RASPONA = 0.0814        # 95. percentil na 7.250 koraka čistog šuma
+                             # (semena 17/23/31/47/59), izmereno 2026-09-08.
+                             # Za poređenje: medijana šuma je 0,0597, a raspon
+                             # izmeren na kolu 2026072 je 0,057 — ispod medijane.
+
 # --- Putanje ---
 # Koren projekta je roditelj foldera 'webapp'
 KOREN_PROJEKTA = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

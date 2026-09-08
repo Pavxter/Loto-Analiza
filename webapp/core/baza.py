@@ -110,6 +110,12 @@ def postavi_bazu(putanja=None):
         conn.commit()
         _dodaj_kolone_ako_nema(c, "sekv_stanje", {
             "gubitak_eksperta": "TEXT",   # gubitak svakog eksperta u tom kolu (§5.2)
+            # Mere ravnoće raspodele (PLAN_KORAK_IZBORA §2.3). NULL u starim redovima
+            # dok se ne pokrene ponovni prolaz — UI ih tada prikazuje kao „—".
+            "p_min": "REAL",              # najmanja verovatnoća u p_mix tog koraka
+            "p_max": "REAL",              # najveća verovatnoća u p_mix tog koraka
+            "raspon_udeo": "REAL",        # (p_max − p_min) / (7/39)
+            "zazor_udeo": "REAL",         # (p 7. kandidata − p 8. kandidata) / (7/39)
         })
         conn.commit()
         _prognoze_broj_nullable(c)   # migracija starih baza gde je broj bio NOT NULL
@@ -363,7 +369,8 @@ def obrisi_retro_prognoze(conn):
 # ----------------------------------------------------------------------------
 
 _SEKV_KOLONE = ("kolo, redni, predlog, preklapanje, gubitak, gubitak_unif, k, ocekivano, "
-                "pojas_donja, pojas_gornja, sigma, tezine, k_eksperti, gubitak_eksperta, kreirano")
+                "pojas_donja, pojas_gornja, sigma, tezine, k_eksperti, gubitak_eksperta, "
+                "p_min, p_max, raspon_udeo, zazor_udeo, kreirano")
 
 
 def sekv_obrisi(conn):
@@ -377,7 +384,7 @@ def sekv_upisi(conn, redovi):
     """Upisuje redove stanja; redosled vrednosti prati _SEKV_KOLONE."""
     conn.executemany(
         f"INSERT OR REPLACE INTO sekv_stanje ({_SEKV_KOLONE}) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", redovi)
+        "VALUES (" + ", ".join("?" * len(_SEKV_KOLONE.split(", "))) + ")", redovi)
     conn.commit()
     return len(redovi)
 

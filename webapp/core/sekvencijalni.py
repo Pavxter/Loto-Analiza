@@ -44,6 +44,7 @@ LAMBDA = konfig.LAMBDA_OSTRINE
 FORMAT_STANJA = 2            # verzija serijalizacije; starije stanje se odbacuje
 PERIOD = konfig.SEKV_PERIOD                # isti prozor kao retro-bektest
 MIN_START = konfig.SEKV_MIN_START          # pre ovoga nema dovoljno istorije
+PRAG_RASPONA = konfig.PRAG_RASPONA         # granica šuma za raspon p_mix (§2.4)
 
 UNIFORMNI = "uniformni"
 BROJEVI = tuple(range(1, MAX_BROJ + 1))
@@ -147,6 +148,31 @@ def predlog_iz(p):
     """7 brojeva sa najvećim p; tie-break manji broj. Uvek sortirano rastuće."""
     rang = sorted(BROJEVI, key=lambda b: (-p[b], b))
     return tuple(sorted(rang[:K_BROJEVA]))
+
+
+def izracunaj_ravnocu(p):
+    """Koliko je raspodela ravna — mere koje idu uz svaki predlog (PLAN_KORAK_IZBORA §2.3).
+
+    `raspon` je razlika najveće i najmanje verovatnoće, `zazor` razlika 7. i 8.
+    kandidata — koliko je izbor sedmorke uopšte bio izbor. Obe se izražavaju i kao
+    udeo baseline-a 7/39, jer je apsolutna vrednost od 0,0004 nečitljiva sama za
+    sebe, a 0,24% od baseline-a odmah kaže da razlike praktično nema.
+
+    Merenje, ne ocena: prag iznad kog raspon prestaje da bude šum je PRAG_RASPONA
+    u konfig.py, izveden iz sintetike (§2.4).
+    """
+    opadajuce = sorted((p[b] for b in BROJEVI), reverse=True)
+    p_max, p_min = opadajuce[0], opadajuce[-1]
+    raspon = p_max - p_min
+    zazor = opadajuce[K_BROJEVA - 1] - opadajuce[K_BROJEVA]
+    return {"p_min": p_min, "p_max": p_max,
+            "raspon": raspon, "raspon_udeo": raspon / BASELINE,
+            "zazor": zazor, "zazor_udeo": zazor / BASELINE}
+
+
+def bez_preferencije(raspon_udeo, prag=PRAG_RASPONA):
+    """True kad je raspon unutar onoga što daje čist šum — model nema preferenciju."""
+    return raspon_udeo is None or raspon_udeo <= prag
 
 
 # ----------------------------------------------------------------------------
@@ -403,10 +429,12 @@ def _korak(m, istorija, i, period, min_start):
         return None
     p, po_ekspertu, predlog = m.predvidi(_prozor_pre(istorija, i, period))
     dobitni = {int(b) for b in brojevi}
+    ravnoca = izracunaj_ravnocu(p)
     korak = m.uci(p, po_ekspertu, dobitni)
     stanje = m.stanje()
     return {"kolo": kolo, "redni": i, "predlog": predlog,
             "preklapanje": T.preklapanje_brojeva(predlog, dobitni),
+            "ravnoca": ravnoca,
             "gubitak": korak["gubitak"],
             "gubitak_unif": korak["gubitak_eksperta"][UNIFORMNI],
             "gubitak_eksperta": korak["gubitak_eksperta"],
@@ -497,11 +525,13 @@ def predlog_za(istorija, period=PERIOD, min_start=MIN_START):
 # ----------------------------------------------------------------------------
 
 def _red_za_upis(korak, sada):
+    r = korak["ravnoca"]
     return (korak["kolo"], korak["redni"], ",".join(map(str, korak["predlog"])),
             korak["preklapanje"], korak["gubitak"], korak["gubitak_unif"],
             korak["k"], korak["ocekivano"], korak["pojas_donja"], korak["pojas_gornja"],
             korak["sigma"], json.dumps(korak["tezine"]), json.dumps(korak["k_eksperti"]),
-            json.dumps({e: round(g, 6) for e, g in korak["gubitak_eksperta"].items()}), sada)
+            json.dumps({e: round(g, 6) for e, g in korak["gubitak_eksperta"].items()}),
+            r["p_min"], r["p_max"], r["raspon_udeo"], r["zazor_udeo"], sada)
 
 
 def istorija_iz_conn(conn):
@@ -574,6 +604,7 @@ def rezime(conn):
         "z": z, "p": p,
         "predlog": [int(x) for x in red["predlog"].split(",") if x.strip()],
         "tezine": json.loads(red["tezine"]), "k_eksperti": json.loads(red["k_eksperti"]),
+        "ravnoca": _ravnoca_izlaz(red),
         "zakljucak": zakljucak(k, red["pojas_donja"], red["pojas_gornja"]),
     }
 
@@ -653,6 +684,26 @@ def _eksperti_opis():
     return {e: {"naziv": naziv, "opis": opis} for e, (naziv, opis) in EKSPERTI.items()}
 
 
+def _ravnoca_izlaz(izvor):
+    """Mere ravnoće za API, sa pragom i zaključkom (PLAN_KORAK_IZBORA §2.3, §2.4).
+
+    `izvor` je ili dict iz `izracunaj_ravnocu` ili red iz `sekv_stanje` — u redovima
+    upisanim pre ove izmene su kolone NULL, pa se vraća `None` i UI prikazuje „—"
+    umesto da izmišlja broj. Prag putuje uz vrednost da ga UI ne bi duplirao.
+    """
+    raspon_udeo = izvor.get("raspon_udeo") if izvor else None
+    if raspon_udeo is None:
+        return None
+    zazor_udeo = izvor.get("zazor_udeo")
+    # apsolutne vrednosti se izvode ovde, da UI ne bi računao ni sa 7/39
+    return {"p_min": izvor.get("p_min"), "p_max": izvor.get("p_max"),
+            "raspon": raspon_udeo * BASELINE, "raspon_udeo": raspon_udeo,
+            "zazor": None if zazor_udeo is None else zazor_udeo * BASELINE,
+            "zazor_udeo": zazor_udeo,
+            "baseline": BASELINE, "prag_raspona": PRAG_RASPONA,
+            "bez_preferencije": bez_preferencije(raspon_udeo)}
+
+
 def stanje_api(conn, period=PERIOD, min_start=MIN_START):
     """/api/sekv/stanje: težine, K, pojas, predlog za sledeće kolo, broj kola.
 
@@ -662,18 +713,21 @@ def stanje_api(conn, period=PERIOD, min_start=MIN_START):
     istorija = istorija_iz_conn(conn)
     izlaz = {"n": baza.sekv_broj(conn), "kola_u_bazi": len(istorija),
              "eksperti": _eksperti_opis(), "zastarelo": True,
-             "predlog": None, "ciljno_kolo": None}
+             "predlog": None, "ciljno_kolo": None, "ravnoca": None}
     s = rezime(conn)
     if s:
-        izlaz.update({k: v for k, v in s.items() if k != "predlog"})
+        izlaz.update({k: v for k, v in s.items() if k not in ("predlog", "ravnoca")})
         izlaz["predlog_poslednjeg"] = s["predlog"]
+        izlaz["ravnoca_poslednjeg"] = s["ravnoca"]
     redovi = baza.sekv_lista(conn)
     if redovi:
         izlaz["poslednji_korak"] = _korak_iz_redova(conn, redovi, len(redovi) - 1)
     m = ucitaj_model(conn, istorija)
     if m is not None:
         izlaz["zastarelo"] = False
-        izlaz["predlog"] = list(m.predvidi(_prozor_pre(istorija, len(istorija), period))[2])
+        p, _po_ekspertu, predlog = m.predvidi(_prozor_pre(istorija, len(istorija), period))
+        izlaz["predlog"] = list(predlog)
+        izlaz["ravnoca"] = _ravnoca_izlaz(izracunaj_ravnocu(p))
         izlaz["ciljno_kolo"] = istorija[-1][0] + 1
     return izlaz
 
@@ -716,6 +770,7 @@ def _korak_iz_redova(conn, redovi, i):
         "gubitak": round(red["gubitak"], 4), "gubitak_unif": round(red["gubitak_unif"], 4),
         "gubitak_eksperta": json.loads(red["gubitak_eksperta"] or "{}"),
         "k": red["k"], "ocekivano": red["ocekivano"],
+        "ravnoca": _ravnoca_izlaz(red),
         "pojas_donja": red["pojas_donja"], "pojas_gornja": red["pojas_gornja"],
         "tezine": tezine_pre, "tezine_posle": json.loads(red["tezine"]),
         "k_eksperti": json.loads(red["k_eksperti"]),
