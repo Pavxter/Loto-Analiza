@@ -116,7 +116,8 @@ function app() {
            otvori: { ansambl: false, kako: false, metod: false } },
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
-           vremeplov: { podaci: null, ishod: null, radi: false } },
+           vremeplov: { podaci: null, ishod: null, radi: false }, sekv: null },
+    sekv: { stanje: null, istorija: null, radi: false, ucitano: false },
 
     aktivna() { return this.strane.find(s => s.id === this.strana) || this.strane[0]; },
 
@@ -225,6 +226,8 @@ function app() {
       this.ist.vremeplov.radi = true;
       try {
         this.ist.vremeplov.podaci = await jget(`/api/istorija/prognoza?granica=${this.ist.granica}`);
+        try { this.ist.sekv = await jget(`/api/sekv/korak?granica=${this.ist.granica}`); }
+        catch (e) { this.ist.sekv = null; }   // stanje još nije rekonstruisano — panel to preskače
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
       this.ist.vremeplov.radi = false;
     },
@@ -838,6 +841,7 @@ function app() {
       try {
         this.dash = await jget(`/api/dashboard?period=${this.period}`);
         this.brojKola = this.dash.broj_kola;
+        this.ucitajSekvStanje();          // kartica koeficijenta; ne blokira dashboard
         const stat = await jget(`/api/statistika?period=${this.period}`);
         this.$nextTick(() => {
           const f = stat.frekvencija;
@@ -1237,6 +1241,166 @@ function app() {
     },
 
     // ---------- PROGNOZA / KOMBINACIJA ----------
+    // ---- Sekvencijalni prediktor (PLAN_SEKVENCIJALNI §5) ----
+    // Kartica na Dashboardu i panel u Prognozi gledaju isto stanje; panel dodatno
+    // uzima seriju kroz vreme. Nijedan broj se ovde ne racuna — sve stize gotovo.
+
+    async ucitajSekvStanje() {
+      try { this.sekv.stanje = await jget('/api/sekv/stanje'); }
+      catch (e) { this.sekv.stanje = null; }
+    },
+
+    async ucitajSekvPanel() {
+      try {
+        this.sekv.stanje = await jget('/api/sekv/stanje');
+        if (!this.sekv.stanje.n) return;
+        this.sekv.istorija = await jget('/api/sekv/istorija');
+        this.sekv.ucitano = true;
+        this.$nextTick(() => this.crtajSekv());
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    async sekvRekonstruisi() {
+      this.sekv.radi = true;
+      try {
+        const r = await jsend('/api/sekv/rekonstruisi', 'POST');
+        this.toast(`Prošao kroz ${r.kola} kola za ${r.trajanje_s}s — K = ${this.sekvBroj(r.k)}`, 'ok');
+        await this.ucitajSekvPanel();
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.sekv.radi = false;
+    },
+
+    // Zajednicki format: koeficijent se cita na sestoj decimali, sa decimalnim zarezom
+    // kao i ostatak UI-ja. Bez toliko decimala pojas (±0,0001) se ne bi ni video.
+    sekvBroj(v) { return v == null ? '—' : Number(v).toFixed(6).replace('.', ','); },
+    sekvProcenat(v) { return v == null ? '—' : (100 * v).toFixed(1).replace('.', ',') + '%'; },
+
+    sekvUPojasu() {
+      const s = this.sekv.stanje;
+      if (!s || !s.n) return true;
+      return s.k >= s.pojas_donja && s.k <= s.pojas_gornja;
+    },
+
+    sekvRecenica() {
+      const s = this.sekv.stanje;
+      if (!s || !s.n) return '';
+      if (s.k > s.pojas_gornja) return 'Model gubi više nego uniformni model. To je znak preučavanja — proveriti pre bilo kakvog zaključka.';
+      if (s.k < s.pojas_donja) return 'Model gubi manje nego što bi na slučajnim podacima. Prvo proveriti curenje budućnosti, tek onda tražiti signal.';
+      return 'Sistem uči iz svakog kola. Do sada nije naučio ništa što slučajnost ne zna.';
+    },
+
+    sekvRecenicaPredloga() {
+      const s = this.sekv.stanje;
+      if (!s || !s.n) return '';
+      if (!this.sekvUPojasu()) return 'koeficijent je izašao iz pojasa — pre svega ostalog proveriti podatke.';
+      return 'ovaj predlog ima istu šansu kao bilo koja druga kombinacija.';
+    },
+
+    // Redosled u tabeli: uniformni prvi (referenca), pa ostali po tezini opadajuce.
+    sekvPoredak() {
+      const k = this.sekv.stanje && this.sekv.stanje.poslednji_korak;
+      if (!k) return [];
+      const ostali = Object.keys(k.tezine_posle).filter(e => e !== 'uniformni');
+      ostali.sort((a, b) => k.tezine_posle[b] - k.tezine_posle[a]);
+      return ['uniformni', ...ostali];
+    },
+
+    sekvVrhTezina(tezine, n) {
+      if (!tezine) return [];
+      return Object.keys(tezine).sort((a, b) => tezine[b] - tezine[a]).slice(0, n);
+    },
+
+    sekvGubitak(e) {
+      const k = this.sekv.stanje && this.sekv.stanje.poslednji_korak;
+      const v = k && k.gubitak_eksperta[e];
+      return v == null ? '—' : Number(v).toFixed(3).replace('.', ',');
+    },
+    sekvRazlikaGubitka(e) {
+      const k = this.sekv.stanje && this.sekv.stanje.poslednji_korak;
+      if (!k || k.gubitak_eksperta[e] == null) return 0;
+      return k.gubitak_eksperta[e] - k.gubitak_eksperta['uniformni'];
+    },
+    sekvRazlikaGubitkaTekst(e) {
+      const d = this.sekvRazlikaGubitka(e);
+      if (e === 'uniformni') return '—';
+      return (d > 0 ? '+' : '') + d.toFixed(3).replace('.', ',');
+    },
+
+    // Prvih stotinak kola ima ogroman pojas (σ opada kao 1/T), pa bi razmera po
+    // celom nizu spljostila sve ostalo u pravu liniju. Granice se zato racunaju
+    // po repu; rani deo linije izlazi van okvira, a hint ispod naslova to kaze.
+    sekvOpseg(nizovi, preskok) {
+      const v = [];
+      for (const niz of nizovi) for (let i = preskok; i < niz.length; i++) if (niz[i] != null) v.push(niz[i]);
+      if (!v.length) return {};
+      const lo = Math.min(...v), hi = Math.max(...v), pad = Math.max((hi - lo) * 0.25, 1e-6);
+      return { min: lo - pad, max: hi + pad };
+    },
+
+    crtajSekv() {
+      const h = this.sekv.istorija;
+      if (!h || !h.n) return;
+      const x = h.kola.map(k => this.formatKolo(k));
+      const preskok = Math.min(Math.max(30, Math.floor(h.n * 0.1)), h.n - 1);
+
+      // K kroz vreme: pojas se crta stackovanjem dve nevidljive linije, isti trik
+      // kao na tabu Prognoza, pa oba grafika izgledaju isto.
+      crtaj('sekv-k', {
+        ...bazaOpcija(),
+        legend: { top: 4, textStyle: { color: BOJE.tekst, fontSize: 11 }, data: ['K mešavine', 'očekivano pod slučajnošću'] },
+        grid: { left: 66, right: 18, top: 40, bottom: 46 },
+        xAxis: { type: 'category', data: x, name: 'kolo', nameLocation: 'middle', nameGap: 28,
+                 axisLine: { lineStyle: { color: BOJE.mreza } }, axisLabel: { fontSize: 9 } },
+        yAxis: { type: 'value', ...this.sekvOpseg([h.k, h.pojas_donja, h.pojas_gornja], preskok),
+                 splitLine: { lineStyle: { color: BOJE.mreza } },
+                 axisLabel: { formatter: v => Number(v).toFixed(4) } },
+        series: [
+          { name: 'pojas-donja', type: 'line', data: h.pojas_donja, stack: 'pojas', symbol: 'none',
+            lineStyle: { opacity: 0 }, silent: true, tooltip: { show: false } },
+          { name: 'pojas ±2σ', type: 'line', data: h.pojas_gornja.map((v, i) => v - h.pojas_donja[i]),
+            stack: 'pojas', symbol: 'none', lineStyle: { opacity: 0 },
+            areaStyle: { color: 'rgba(154,167,181,.10)' }, silent: true, tooltip: { show: false } },
+          { name: 'očekivano pod slučajnošću', type: 'line', data: h.ocekivano, symbol: 'none',
+            lineStyle: { color: BOJE.tekst, type: 'dashed', width: 1.5 } },
+          { name: 'K mešavine', type: 'line', data: h.k, symbol: 'none',
+            lineStyle: { color: BOJE.accent, width: 2 } },
+        ],
+      });
+
+      const ids = Object.keys(h.eksperti);
+      crtaj('sekv-k-eksperti', {
+        ...bazaOpcija(),
+        legend: { type: 'scroll', top: 4, textStyle: { color: BOJE.tekst, fontSize: 10 },
+                  data: ids.map(e => h.eksperti[e].naziv) },
+        grid: { left: 66, right: 18, top: 46, bottom: 46 },
+        xAxis: { type: 'category', data: x, axisLine: { lineStyle: { color: BOJE.mreza } }, axisLabel: { fontSize: 9 } },
+        yAxis: { type: 'value', ...this.sekvOpseg(ids.map(e => h.k_eksperti[e]), preskok),
+                 splitLine: { lineStyle: { color: BOJE.mreza } },
+                 axisLabel: { formatter: v => Number(v).toFixed(3) } },
+        series: ids.map(e => ({
+          name: h.eksperti[e].naziv, type: 'line', data: h.k_eksperti[e], symbol: 'none',
+          lineStyle: { width: e === 'uniformni' ? 2 : 1, type: e === 'uniformni' ? 'dashed' : 'solid' },
+        })),
+      });
+
+      const poredak = this.sekvPoredak();
+      const tezine = this.sekv.stanje.tezine || {};
+      crtaj('sekv-tezine', {
+        ...bazaOpcija(),
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+        grid: { left: 120, right: 24, top: 12, bottom: 30 },
+        xAxis: { type: 'value', max: 1, splitLine: { lineStyle: { color: BOJE.mreza } },
+                 axisLabel: { formatter: v => Math.round(100 * v) + '%' } },
+        yAxis: { type: 'category', data: poredak.slice().reverse().map(e => h.eksperti[e].naziv),
+                 axisLine: { lineStyle: { color: BOJE.mreza } }, axisLabel: { fontSize: 10 } },
+        series: [{ type: 'bar', barMaxWidth: 16,
+          data: poredak.slice().reverse().map(e => ({
+            value: tezine[e] || 0,
+            itemStyle: { color: e === 'uniformni' ? BOJE.svez : BOJE.accent, borderRadius: [0, 3, 3, 0] },
+          })) }],
+      });
+    },
+
     async ucitajPrognozuKomb() {
       try {
         if (!this.dash) { try { this.dash = await jget('/api/dashboard?period=0'); } catch (e) {} }
@@ -1479,6 +1643,7 @@ function app() {
         this.toast(d.dodato ? `Kolo ${d.kolo} dodato. Provereno tiketa: ${d.provereno_tiketa}, bektestova: ${d.provereno_bektestova}, ocenjeno prognoza: ${d.ocenjeno_prognoza}.` : `Kolo već postoji; provere ažurirane.`, d.dodato ? 'ok' : 'warn');
         this.unos.brojevi = '';
         this.mapaZaboraviPodatke();
+        this.ucitajSekvStanje();   // kartica koeficijenta se pomera bez ručne akcije
         this.ucitajIstoriju();
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },

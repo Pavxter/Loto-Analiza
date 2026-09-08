@@ -70,6 +70,25 @@
               <div class="card kpi"><span class="label">Analizirano</span><span class="value sm" x-text="dash.naslov_sufiks"></span></div>
             </div>
 
+            <!-- Koeficijent nepredvidivosti (PLAN_SEKVENCIJALNI §5.1) -->
+            <div class="card" style="margin-top:16px" x-show="sekv.stanje && sekv.stanje.n">
+              <div class="row" style="justify-content:space-between; align-items:flex-start; gap:16px">
+                <div>
+                  <span class="label">Koeficijent nepredvidivosti</span>
+                  <!-- ceo stil ide kroz :style; Alpine bi statican style atribut pregazio -->
+                  <div class="mono"
+                       :style="'font-size:32px; font-weight:600; line-height:1.15' + (sekvUPojasu() ? '' : '; color:var(--warn)')"
+                       x-text="sekv.stanje ? sekvBroj(sekv.stanje.k) : '—'"></div>
+                  <p class="hint" style="margin:6px 0 0"
+                     x-text="sekv.stanje ? ('posle ' + sekv.stanje.n + ' kola  ·  pojas ' + sekvBroj(sekv.stanje.pojas_donja) + ' – ' + sekvBroj(sekv.stanje.pojas_gornja)) : ''"></p>
+                  <p style="margin:8px 0 0; max-width:60ch" x-text="sekvRecenica()"></p>
+                  <p class="muted" style="font-size:11px; margin:6px 0 0" x-show="sekv.stanje && sekv.stanje.zastarelo">
+                    Istorija je promenjena posle poslednjeg računanja — brojevi su zastareli.</p>
+                </div>
+                <button class="btn ghost sm" @click="idi('prognoza'); prog.tab='sekv'; ucitajSekvPanel()">Detalji →</button>
+              </div>
+            </div>
+
             <div class="grid g-2" style="margin-top:16px">
               <div class="card">
                 <h3>Vrući brojevi</h3>
@@ -379,6 +398,42 @@
                         </div>
                       </template>
                     </div>
+
+                    <!-- Sekvencijalni model u istoj tački (PLAN_SEKVENCIJALNI §5.3) -->
+                    <template x-if="ist.sekv && ist.sekv.cilj">
+                      <div style="margin-top:14px; border-top:1px solid var(--border-soft); padding-top:12px">
+                        <h3 style="font-size:13px">Sekvencijalni prediktor tada
+                          <span class="muted" style="font-weight:400; font-size:12px">— stanje modela posle <span x-text="formatKolo(ist.granica)"></span></span></h3>
+                        <div class="row" style="gap:20px; align-items:flex-start; margin-top:6px; flex-wrap:wrap">
+                          <div>
+                            <span class="label">Predlog</span>
+                            <div class="balls" style="margin-top:4px">
+                              <template x-for="b in ist.sekv.predlog" :key="b">
+                                <div class="ball sm" :class="ist.vremeplov.ishod && ist.sekv.stvarni && ist.sekv.stvarni.includes(b) ? 'vruc' : 'neutralan'"
+                                     :style="(ist.vremeplov.ishod && ist.sekv.stvarni && ist.sekv.stvarni.includes(b)) ? '' : 'opacity:.55'" x-text="b"></div>
+                              </template>
+                            </div>
+                            <div class="muted" style="font-size:12px; margin-top:4px"
+                                 x-text="ist.vremeplov.ishod ? ('preklapanje ' + ist.sekv.preklapanje + ' / 7') : 'ishod skriven'"></div>
+                          </div>
+                          <div>
+                            <span class="label">Koeficijent tada</span>
+                            <div class="mono" style="font-size:20px; margin-top:4px" x-text="sekvBroj(ist.sekv.k)"></div>
+                            <div class="muted" style="font-size:12px" x-text="'pojas ' + sekvBroj(ist.sekv.pojas_donja) + ' – ' + sekvBroj(ist.sekv.pojas_gornja)"></div>
+                          </div>
+                          <div>
+                            <span class="label">Najteži eksperti tada</span>
+                            <div style="margin-top:4px; font-size:12px">
+                              <template x-for="e in sekvVrhTezina(ist.sekv.tezine, 3)" :key="e">
+                                <div><span x-text="ist.sekv.eksperti[e].naziv"></span>
+                                  <span class="mono muted" x-text="' ' + sekvProcenat(ist.sekv.tezine[e])"></span></div>
+                              </template>
+                            </div>
+                          </div>
+                        </div>
+                        <p class="hint" style="margin:8px 0 0">Težine su one koje su predlog i proizvele — stanje pre nego što je kolo <span x-text="formatKolo(ist.sekv.cilj)"></span> viđeno.</p>
+                      </div>
+                    </template>
 
                     <p class="hint" style="margin-top:12px">Očekivano preklapanje slučajne kombinacije: μ = <span x-text="ist.vremeplov.podaci.teorija.ocekivano"></span> (σ = <span x-text="ist.vremeplov.podaci.teorija.sigma"></span>). Slučajan jedan broj pogađa u ≈ <span x-text="ist.vremeplov.podaci.teorija.baseline_udeo"></span>% slučajeva. Skoro uvek: rezultat se ne razlikuje od slučajnosti.</p>
                   </div>
@@ -917,6 +972,7 @@
         <div class="seg" style="margin-bottom:16px">
           <button :class="{active: prog.tab==='broj'}" @click="prog.tab='broj'">Jedan broj</button>
           <button :class="{active: prog.tab==='komb'}" @click="prog.tab='komb'; ucitajPrognozuKomb()">Kombinacija</button>
+          <button :class="{active: prog.tab==='sekv'}" @click="prog.tab='sekv'; ucitajSekvPanel()">Sekvencijalni</button>
         </div>
 
         <!-- ===== TAB: JEDAN BROJ ===== -->
@@ -1146,6 +1202,100 @@
             </div>
           </div>
         </div><!-- /TAB kombinacija -->
+
+        <!-- ===== TAB: SEKVENCIJALNI (PLAN_SEKVENCIJALNI §5.2) ===== -->
+        <div x-show="prog.tab==='sekv'">
+          <div class="notice" style="margin-bottom:16px">
+            <span>📉</span>
+            <span><b>Model koji izveštava koliko zna.</b> Jedanaest eksperata predlaže raspodelu za
+            svako kolo; posle svakog kola težine se pomeraju prema tome ko je manje pogrešio.
+            Koeficijent <b>K</b> je odnos gubitka te mešavine i gubitka uniformnog modela:
+            <b>K = 1</b> znači da model ne zna više od slučajnosti.</span>
+          </div>
+
+          <template x-if="!sekv.stanje || !sekv.stanje.n">
+            <div class="card">
+              <p class="muted" style="text-align:center; padding:12px">Sekvencijalno stanje nije izračunato.</p>
+              <div style="text-align:center"><button class="btn" @click="sekvRekonstruisi()" :disabled="sekv.radi"
+                      x-text="sekv.radi ? 'Računam…' : 'Prođi kroz celu istoriju'"></button></div>
+            </div>
+          </template>
+
+          <template x-if="sekv.stanje && sekv.stanje.n">
+            <div>
+              <div class="card">
+                <div class="row" style="justify-content:space-between; align-items:flex-start; gap:16px">
+                  <div>
+                    <h3>Predlog za sledeće kolo
+                      <span class="tag ok" x-show="sekv.stanje.ciljno_kolo" x-text="'za kolo ' + sekv.stanje.ciljno_kolo"></span></h3>
+                    <div class="balls" style="margin-top:8px">
+                      <template x-for="b in (sekv.stanje.predlog || [])" :key="b">
+                        <div class="ball" :class="klasaBroja(b)" style="width:42px;height:42px;font-size:16px" x-text="b"></div>
+                      </template>
+                    </div>
+                    <p style="margin:10px 0 0; max-width:70ch"
+                       x-text="'Koeficijent ' + sekvBroj(sekv.stanje.k) + ': ' + sekvRecenicaPredloga()"></p>
+                    <p class="muted" style="font-size:12px; margin:6px 0 0" x-show="sekv.stanje.zastarelo">
+                      Istorija je promenjena posle poslednjeg računanja — pokreni ponovni prolaz.</p>
+                  </div>
+                  <button class="btn ghost sm" @click="sekvRekonstruisi()" :disabled="sekv.radi"
+                          x-text="sekv.radi ? 'Računam…' : 'Ponovi ceo prolaz'"></button>
+                </div>
+              </div>
+
+              <div class="card" style="margin-top:16px">
+                <h3>Koeficijent kroz vreme</h3>
+                <p class="hint">Linija unutar osenčenog pojasa = model ne zna više od slučajnosti. Pojas je ±2σ oko vrednosti koju bi K imao na slučajnim podacima. Razmera je podešena po kasnijem delu — prvih stotinak kola ima toliko širok pojas da bi spljoštilo ceo grafik.</p>
+                <div id="sekv-k" class="chart"></div>
+              </div>
+
+              <div class="card" style="margin-top:16px">
+                <h3>Koeficijent po ekspertu</h3>
+                <p class="hint">Isti odnos, računat za svakog eksperta posebno. Iznad 1 znači da ekspert gubi više od uniformnog. Klik na legendu pali i gasi liniju.</p>
+                <div id="sekv-k-eksperti" class="chart"></div>
+              </div>
+
+              <div class="card" style="margin-top:16px">
+                <h3>Trenutne težine</h3>
+                <p class="hint">Uniformni ekspert je istaknut. On je osigurač: ako nijedan drugi ne radi, težina se sliva na njega.</p>
+                <div id="sekv-tezine" class="chart"></div>
+              </div>
+
+              <div class="card" style="margin-top:16px" x-show="sekv.stanje.poslednji_korak">
+                <h3>Šta je model naučio iz poslednjeg kola
+                  <span class="muted" style="font-weight:400; font-size:12px"
+                        x-text="sekv.stanje.poslednji_korak ? ('kolo ' + sekv.stanje.poslednji_korak.cilj) : ''"></span></h3>
+                <p class="hint">Gubitak je Bernulijev log-gubitak po broju: manji je bolji. Uniformni gubitak je referenca.</p>
+                <table class="tbl" style="margin-top:6px">
+                  <thead><tr><th>Ekspert</th><th class="num">Gubitak</th><th class="num">vs uniformni</th><th class="num">Težina pre</th><th class="num">Težina posle</th><th class="num">K eksperta</th></tr></thead>
+                  <tbody>
+                    <template x-for="e in sekvPoredak()" :key="e">
+                      <tr>
+                        <td :title="sekv.stanje.eksperti[e].opis">
+                          <span x-text="sekv.stanje.eksperti[e].naziv"></span>
+                          <span class="tag ok" x-show="e==='uniformni'" style="margin-left:6px">referenca</span>
+                        </td>
+                        <td class="num mono" x-text="sekvGubitak(e)"></td>
+                        <td class="num mono" :style="sekvRazlikaGubitka(e) < 0 ? 'color:var(--ok)' : 'color:var(--text-dim)'"
+                            x-text="sekvRazlikaGubitkaTekst(e)"></td>
+                        <td class="num mono" x-text="sekvProcenat(sekv.stanje.poslednji_korak.tezine[e])"></td>
+                        <td class="num mono" x-text="sekvProcenat(sekv.stanje.poslednji_korak.tezine_posle[e])"></td>
+                        <td class="num mono" x-text="sekvBroj(sekv.stanje.poslednji_korak.k_eksperti[e])"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="notice" style="margin-top:16px">
+                <span>ℹ️</span>
+                <span>Predlog se nikad ne prikazuje bez koeficijenta. Ako K trajno izađe iz pojasa,
+                to je jedini crveni signal u aplikaciji i prvo vodi na proveru curenja budućnosti,
+                ne na tiket.</span>
+              </div>
+            </div>
+          </template>
+        </div><!-- /TAB sekvencijalni -->
       </section>
 
       <!-- ============ BEKTEST ============ -->
