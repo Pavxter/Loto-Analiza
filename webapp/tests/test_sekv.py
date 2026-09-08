@@ -21,7 +21,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from webapp.core import baza, konfig, prelazi, prognoza, sinteza, sekvencijalni as S  # noqa: E402
+from webapp.core import (baza, konfig, prediktori, prelazi, prognoza, sinteza,  # noqa: E402
+                         sekvencijalni as S)
 from webapp.tests.test_prognoza import nova_baza, sinteticka_istorija  # noqa: E402
 
 MAX_BROJ = konfig.MAX_BROJ
@@ -101,7 +102,7 @@ def test_uniformni_K_jednak_1():
 
 
 def test_K_na_sintetici():
-    """5.000 slučajnih kola: K unutar pojasa, uniformni ekspert nosi najveću težinu.
+    """5.000 slučajnih kola: K unutar pojasa i nijedan ekspert se ne izdvaja.
 
     Ovo je očekivani ishod iz §1, zapisan kao test: kod nezavisnih izvlačenja model
     ne sme ništa da nauči, i sam to mora da prijavi.
@@ -115,15 +116,16 @@ def test_K_na_sintetici():
     for e in S.EKSPERTI:
         if e != S.UNIFORMNI:
             assert s["k_eksperti"][e] > 1.0, (e, s["k_eksperti"][e])
-    # Uniformni mora da nadjača svakog eksperta koji nešto tvrdi. Eksperti prelaza
-    # se na šumu svode NA uniformnu raspodelu (procene im ostaju na teoriji), pa je
-    # njihova težina neodvojiva od uniformne i ne poredi se — test njihove
-    # ispravnosti je test_prelazi_konvergiraju.
-    tvrde = [e for e in S.EKSPERTI if e != S.UNIFORMNI and e not in prelazi.EKSPERTI]
-    for e in tvrde:
-        assert s["tezine"][S.UNIFORMNI] > 100 * s["tezine"][e], (e, s["tezine"])
+    # Nijedan ekspert se ne izdvaja iz grupe. Fixed-share čini da težine prate
+    # skorašnji učinak, a na šumu skorašnji učinak nikoga trajno ne izdvaja — zato
+    # se ne traži da baš uniformni bude na vrhu (na šumu je vrh stvar slučaja),
+    # nego da niko ne pobegne od 1/n.
+    n = len(S.EKSPERTI)
+    najveca, najmanja = max(s["tezine"].values()), min(s["tezine"].values())
+    assert najveca < 2.0 / n, s["tezine"]
+    assert najmanja > 0.3 / n, s["tezine"]
     print(f"test_K_na_sintetici: OK (K = {s['k']}, pojas {s['pojas_donja']}–{s['pojas_gornja']}, "
-          f"uniformni {s['tezine'][S.UNIFORMNI]:.4f})")
+          f"težine {najmanja:.4f}–{najveca:.4f} oko 1/n = {1 / n:.4f})")
 
 
 def test_K_na_pristrasnoj_sintetici():
@@ -150,6 +152,106 @@ def test_K_na_pristrasnoj_sintetici():
     assert udeo > 0.9, udeo
     print(f"test_K_na_pristrasnoj_sintetici: OK (K = {s['k']} < {s['pojas_donja']}, "
           f"vrh = {najveci}, broj 7 u {100 * udeo:.0f}% predloga)")
+
+
+# ----------------------------------------------------------------------------
+# Poštena mešavina: ista oštrina, težina bez smrti
+# ----------------------------------------------------------------------------
+
+def test_ista_ostrina_za_sve():
+    """Svaki ekspert govori istim tonom: odstupanje od 7/39 je tačno λ puta sirovo.
+
+    Sirove raspodele šest omotanih eksperata već imaju identičan odnos najveće i
+    najmanje verovatnoće (ocene su min-max normalizovane, pa softmaks daje tačno
+    e^(1/τ)); λ zatim svima jednako smanjuje amplitudu. Time koliko brzo ekspert
+    gubi težinu zavisi od toga ŠTA tvrdi, a ne od toga koliko glasno.
+    """
+    from math import e as E
+    istorija = sinteticka_istorija(300, seme=101)
+    prozor = istorija[150:250]
+
+    skorovi = prediktori.skorovi_za_prozor(prozor)
+    for komponenta, obrni in S._KOMPONENTA.values():
+        s = skorovi[komponenta]
+        sirovo = S.u_raspodelu({b: (1 - s[b]) if obrni else s[b] for b in range(1, MAX_BROJ + 1)})
+        odnos = max(sirovo.values()) / min(sirovo.values())
+        assert abs(odnos - E ** (1 / S.TEMPERATURA)) < 1e-9, (komponenta, odnos)
+
+    # posle izjednačavanja je odstupanje svakog eksperta tačno λ puta manje
+    for e, p in S.raspodele(prozor).items():
+        assert abs(sum(p.values()) - K) < 1e-9, e
+        assert max(p.values()) < 1 and min(p.values()) > 0, e
+    sirovo = S.u_raspodelu({b: 1.0 if b == 7 else 0.0 for b in range(1, MAX_BROJ + 1)})
+    posle = S.izjednaci_ostrinu(sirovo)
+    for b in range(1, MAX_BROJ + 1):
+        ocekivano = S.BASELINE + S.LAMBDA * (sirovo[b] - S.BASELINE)
+        assert abs(posle[b] - ocekivano) < 1e-12, b
+    print(f"test_ista_ostrina_za_sve: OK (sirovi odnos e^(1/τ) za svih 6, λ = {S.LAMBDA})")
+
+
+def test_nijedan_ekspert_ne_umire():
+    """Fixed-share drži pod na α/n; bez njega bi ekspert pao ka nuli i ostao tamo."""
+    istorija = pristrasna_istorija(800, favorit=7, udeo=0.35, seme=5)
+    n = len(S.EKSPERTI)
+    pod = S.ALFA / n
+
+    m, _ = S.prodji_do_kraja(istorija)
+    assert min(m.tezine.values()) > pod, m.tezine
+    assert all(w > 0 for w in m.tezine.values())
+    assert abs(sum(m.tezine.values()) - 1.0) < 1e-12
+
+    bez = S.Mesavina(alfa=0.0)
+    list(S.prodji(istorija, mesavina=bez))
+    assert min(bez.tezine.values()) < pod, "bez fixed-share ekspert nije ni pao — test ne meri ništa"
+    print(f"test_nijedan_ekspert_ne_umire: OK (min {min(m.tezine.values()):.5f} > pod {pod:.6f}; "
+          f"bez deljenja {min(bez.tezine.values()):.2e})")
+
+
+def test_tezina_se_vraca():
+    """Učenje nije jednosmerno: ekspert koji je potonuo mora da se digne kad prestane
+    da greši. Faza 1 nosi frekvencijski signal, faza 2 je čist šum."""
+    faza1 = pristrasna_istorija(800, favorit=7, udeo=0.35, seme=5)
+    faza2 = [(2020801 + i, br) for i, (_k, br) in enumerate(sinteticka_istorija(800, seme=6))]
+
+    m1 = S.Mesavina()
+    list(S.prodji(faza1, mesavina=m1))
+    m2 = S.Mesavina()
+    list(S.prodji(faza1 + faza2, mesavina=m2))
+    pre, posle = m1.tezine, m2.tezine
+
+    assert pre["cold"] < pre["hot"], pre          # signal je u fazi 1 protiv hladnih
+    assert posle["cold"] > pre["cold"], (pre["cold"], posle["cold"])
+    assert posle["hot"] < pre["hot"], (pre["hot"], posle["hot"])
+    print(f"test_tezina_se_vraca: OK (cold {pre['cold']:.4f} → {posle['cold']:.4f}, "
+          f"hot {pre['hot']:.4f} → {posle['hot']:.4f})")
+
+
+def test_pomak_zbira_ne_odlucuje_sam():
+    """Monotoni ekspert ne sme sam da određuje predlog.
+
+    Kad su ostali eksperti bili mrtvi, jedini koji je brojeve uređivao po veličini
+    bio je `pomak_zbira`, pa je predlog ispadao kao niz susednih brojeva sa jednog
+    kraja opsega. Sa fiksnim podom težine ostali eksperti ostaju u igri i nose
+    najveći deo raspona mešavine.
+    """
+    istorija = sinteticka_istorija(600, seme=103)
+    m, _ = S.prodji_do_kraja(istorija[:-1])
+    p, po_ekspertu, predlog = m.predvidi(S._prozor_pre(istorija, len(istorija) - 1, S.PERIOD))
+    w = m.tezine
+
+    def doprinos(e):
+        return w[e] * (max(po_ekspertu[e].values()) - min(po_ekspertu[e].values()))
+
+    zbir = doprinos("pomak_zbira")
+    najveci = max(doprinos(e) for e in S.EKSPERTI)
+    assert zbir < 0.2 * najveci, (zbir, najveci)
+
+    najnizi = tuple(range(1, K + 1))
+    najvisi = tuple(range(MAX_BROJ - K + 1, MAX_BROJ + 1))
+    assert predlog != najnizi and predlog != najvisi, predlog
+    assert max(predlog) - min(predlog) > K, predlog   # nije niz susednih brojeva
+    print(f"test_pomak_zbira_ne_odlucuje_sam: OK (predlog {list(predlog)}, "
+          f"doprinos zbira {zbir:.6f} vs najveći {najveci:.6f})")
 
 
 # ----------------------------------------------------------------------------
@@ -599,6 +701,10 @@ def main():
     test_uniformni_K_jednak_1()
     test_K_na_sintetici()
     test_K_na_pristrasnoj_sintetici()
+    test_ista_ostrina_za_sve()
+    test_nijedan_ekspert_ne_umire()
+    test_tezina_se_vraca()
+    test_pomak_zbira_ne_odlucuje_sam()
     test_prelazi_pocinju_na_teoriji()
     test_prelazi_konvergiraju()
     test_prelazi_uce_signal_prelaza()

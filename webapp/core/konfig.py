@@ -20,6 +20,10 @@ KOLONE_ZA_BROJEVE = [f"b{i}" for i in range(1, BROJEVA_U_KOMBINACIJI + 1)]
 # „dok K ne padne ispod 1" je preučavanje i plan ga izričito zabranjuje (§8).
 ETA_HEDGE = 0.05             # korak eksponencijalnih težina (Hedge)
 TEMPERATURA_SOFTMAX = 1.0    # oštrina pretvaranja ocena prediktora u raspodelu
+ALFA_DELJENJA = 0.01         # fixed-share: deo težine koji se posle svakog kola
+                             # ravnomerno preraspodeli, da nijedan ekspert ne umre
+LAMBDA_OSTRINE = 0.3         # svaki ekspert = (1−λ)·uniformni + λ·njegova raspodela;
+                             # isti λ za sve, pa težine mere sadržaj a ne ton
 SEKV_PERIOD = 100            # prozor koji eksperti vide; jednak prognoza.RETRO_PERIOD
 SEKV_MIN_START = 50          # preskoči prva kola; jednak prognoza.MIN_START
 SNAGA_PRIORA_PRELAZA = 50    # pseudo-posmatranja koja drže eksperte prelaza na teoriji

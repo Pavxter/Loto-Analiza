@@ -39,6 +39,9 @@ BASELINE = K_BROJEVA / MAX_BROJ            # 7/39 ≈ 0,1795 — uniformna verov
 
 ETA = konfig.ETA_HEDGE
 TEMPERATURA = konfig.TEMPERATURA_SOFTMAX
+ALFA = konfig.ALFA_DELJENJA
+LAMBDA = konfig.LAMBDA_OSTRINE
+FORMAT_STANJA = 2            # verzija serijalizacije; starije stanje se odbacuje
 PERIOD = konfig.SEKV_PERIOD                # isti prozor kao retro-bektest
 MIN_START = konfig.SEKV_MIN_START          # pre ovoga nema dovoljno istorije
 
@@ -97,6 +100,23 @@ def u_raspodelu(skor, temperatura=TEMPERATURA):
     return {b: K_BROJEVA * tezine[b] / ukupno for b in BROJEVI}
 
 
+def izjednaci_ostrinu(p, lam=LAMBDA):
+    """(1 − λ)·uniformna + λ·p — isti λ za SVAKOG eksperta.
+
+    Bez ovoga koliko brzo ekspert gubi težinu zavisi od toga koliko je „glasan",
+    a glasnoća omotanih eksperata dolazi iz temperature softmaksa, koja je
+    proizvoljno izabrana. Sa istim λ za sve, najveće moguće odstupanje od 7/39 je
+    isto za svakog, pa težine mere sadržaj tvrdnje, ne njen ton.
+
+    Šta se time NE izjednačava: oblik raspodele. Šest omotanih eksperata već ima
+    identičan odnos najveće i najmanje verovatnoće (ocene su min-max normalizovane
+    pa softmaks daje tačno e), a razlikuju se po tome KOJI brojevi su gore — a to
+    je sadržaj. Eksperti prelaza ovim postaju namerno tiši nego što bi im brojači
+    dozvoljavali; to je cena iste mere za sve.
+    """
+    return {b: (1.0 - lam) * BASELINE + lam * p[b] for b in BROJEVI}
+
+
 def raspodele(prozor, temperatura=TEMPERATURA, eksperti=None, stanje_prelaza=None):
     """Raspodela svakog eksperta nad datim prozorom kola (bez ciljnog kola).
 
@@ -119,7 +139,8 @@ def raspodele(prozor, temperatura=TEMPERATURA, eksperti=None, stanje_prelaza=Non
     if any(e in prelazi.EKSPERTI for e in trazeni):
         stanje = stanje_prelaza if stanje_prelaza is not None else prelazi.Prelazi()
         izlaz.update(stanje.raspodele())
-    return {e: izlaz[e] for e in trazeni}
+    # izjednačavanje oštrine ide na SVE, uključujući uniformnog (kod njega je no-op)
+    return {e: izjednaci_ostrinu(izlaz[e]) for e in trazeni}
 
 
 def predlog_iz(p):
@@ -131,6 +152,13 @@ def predlog_iz(p):
 # ----------------------------------------------------------------------------
 # Gubitak i varijansa (§2.3, §2.5)
 # ----------------------------------------------------------------------------
+
+def _logsumexp(vrednosti):
+    """Stabilan log(Σ exp(x)) — normalizacija težina u log-prostoru."""
+    v = list(vrednosti)
+    najveci = max(v)
+    return najveci + log(sum(exp(x - najveci) for x in v))
+
 
 def log_gubitak(p, dobitni):
     """Bernulijev log-gubitak po broju: −Σ_{i∈S} ln p_i − Σ_{i∉S} ln(1 − p_i)."""
@@ -179,12 +207,15 @@ class Mesavina:
     režim (Faza 4) po konstrukciji daje isto što i rekonstrukcija cele istorije.
     """
 
-    def __init__(self, eta=ETA, temperatura=TEMPERATURA, eksperti=None):
+    def __init__(self, eta=ETA, temperatura=TEMPERATURA, eksperti=None, alfa=ALFA):
         self.eta = eta
         self.temperatura = temperatura
+        self.alfa = alfa
         self.eksperti = tuple(eksperti) if eksperti else tuple(EKSPERTI)
         n = len(self.eksperti)
-        self.tezine = {e: 1.0 / n for e in self.eksperti}
+        # Težine se drže u log-prostoru: Hedge je tamo sabiranje, pa nema
+        # potkoračenja ni na hiljadama kola.
+        self.log_tezine = {e: -log(n) for e in self.eksperti}
         self.gubitak_eksperta = {e: 0.0 for e in self.eksperti}
         self.gubitak = 0.0            # kumulativni gubitak mešavine
         self.gubitak_unif = 0.0       # kumulativni gubitak uniformnog (imenilac K)
@@ -193,12 +224,18 @@ class Mesavina:
         self.n = 0
         self.prelazi = prelazi.Prelazi()   # online brojači eksperata prelaza (§2.2)
 
+    @property
+    def tezine(self):
+        """Težine u običnom prostoru; izvedene iz log-težina, ne čuvaju se posebno."""
+        return {e: exp(self.log_tezine[e]) for e in self.eksperti}
+
     # --- predikcija ---
 
     def predvidi(self, prozor):
         """(p_mešavine, raspodele po ekspertu, predlog) za sledeće kolo."""
         po_ekspertu = raspodele(prozor, self.temperatura, self.eksperti, self.prelazi)
-        p = {b: sum(self.tezine[e] * po_ekspertu[e][b] for e in self.eksperti) for b in BROJEVI}
+        w = self.tezine
+        p = {b: sum(w[e] * po_ekspertu[e][b] for e in self.eksperti) for b in BROJEVI}
         return p, po_ekspertu, predlog_iz(p)
 
     def posmatraj(self, brojevi):
@@ -229,14 +266,30 @@ class Mesavina:
             self.gubitak_eksperta[e] += g
         self.n += 1
 
-        najmanji = min(gubici.values())
-        nove = {e: self.tezine[e] * exp(-self.eta * (gubici[e] - najmanji)) for e in self.eksperti}
-        ukupno = sum(nove.values())
-        if ukupno > 0:
-            self.tezine = {e: w / ukupno for e, w in nove.items()}
+        self._pomeri_tezine(gubici)
         # tek sada kolo ulazi u brojače prelaza — nikad pre nego što je ocenjeno
         self.posmatraj(dobitni)
         return {"gubitak": gubitak_mesavine, "gubitak_eksperta": gubici}
+
+    def _pomeri_tezine(self, gubici):
+        """Hedge u log-prostoru, pa fixed-share korak.
+
+        Hedge sam po sebi tera težinu izgubljenog eksperta ka nuli i tamo je
+        ostavlja: učenje bi bilo jednosmerno, pa ekspert koji počne da pogađa ne bi
+        mogao da se vrati. Fixed-share posle svakog kola vraća deo `alfa` ukupne
+        težine ravnomerno svima, čime nastaje pod od alfa/n (za 11 eksperata i
+        alfa = 0,01 to je 0,09%). Ispod tog poda niko ne pada, a ko ponovo počne da
+        pogađa penje se odatle.
+        """
+        nove = {e: self.log_tezine[e] - self.eta * gubici[e] for e in self.eksperti}
+        norma = _logsumexp(nove.values())
+        nove = {e: v - norma for e, v in nove.items()}
+        if self.alfa > 0:
+            n = len(self.eksperti)
+            linearne = {e: (1.0 - self.alfa) * exp(v) + self.alfa / n for e, v in nove.items()}
+            ukupno = sum(linearne.values())
+            nove = {e: log(w / ukupno) for e, w in linearne.items()}
+        self.log_tezine = nove
 
     # --- koeficijent i pojas ---
 
@@ -296,8 +349,9 @@ class Mesavina:
         """Celo stanje kao obični tipovi. JSON čuva float-ove tačno (repr), pa je
         obilazak kroz bazu identičan držanju objekta u memoriji."""
         return {
-            "eta": self.eta, "temperatura": self.temperatura,
-            "eksperti": list(self.eksperti), "tezine": dict(self.tezine),
+            "verzija": FORMAT_STANJA,
+            "eta": self.eta, "temperatura": self.temperatura, "alfa": self.alfa,
+            "eksperti": list(self.eksperti), "log_tezine": dict(self.log_tezine),
             "gubitak_eksperta": dict(self.gubitak_eksperta),
             "gubitak": self.gubitak, "gubitak_unif": self.gubitak_unif,
             "ocekivani_gubitak": self.ocekivani_gubitak, "varijansa": self.varijansa,
@@ -306,8 +360,9 @@ class Mesavina:
 
     @classmethod
     def iz_json(cls, d):
-        m = cls(eta=d["eta"], temperatura=d["temperatura"], eksperti=tuple(d["eksperti"]))
-        m.tezine = dict(d["tezine"])
+        m = cls(eta=d["eta"], temperatura=d["temperatura"],
+                eksperti=tuple(d["eksperti"]), alfa=d["alfa"])
+        m.log_tezine = dict(d["log_tezine"])
         m.gubitak_eksperta = dict(d["gubitak_eksperta"])
         m.gubitak = d["gubitak"]
         m.gubitak_unif = d["gubitak_unif"]
@@ -552,7 +607,10 @@ def ucitaj_model(conn, istorija):
         return None
     if red["otisak"] != otisak_istorije(istorija):
         return None
-    return Mesavina.iz_json(json.loads(red["stanje"]))
+    d = json.loads(red["stanje"])
+    if d.get("verzija") != FORMAT_STANJA:
+        return None      # stariji zapis: format se promenio, računa se iznova
+    return Mesavina.iz_json(d)
 
 
 def azuriraj_posle_kola(conn, kolo, period=PERIOD, min_start=MIN_START):
