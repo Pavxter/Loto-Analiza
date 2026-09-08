@@ -14,7 +14,7 @@ Garancije (identične jednobrojnim, testira se u tests/test_prognoza.py):
 
 import random as _random
 
-from . import konfig
+from . import konfig, sekvencijalni
 from .prediktori import (_prozor, _frekvencija_i_poslednji, _bajes_skorovi, _povezanost,
                          skor_ansambla)
 
@@ -177,6 +177,20 @@ def k_ensemble(istorija, period, ciljno_kolo=None):
     return _sedam(rang)
 
 
+def k_sekv(istorija, period, ciljno_kolo=None):
+    """Sekvencijalni prediktor: 7 brojeva sa najvećom verovatnoćom u Hedge mešavini.
+
+    Jedini metod u oba registra koji nosi stanje — predlog za kolo N zavisi od celog
+    niza kola pre N, ne samo od prozora. Interfejs je ipak isti: funkcija dobija
+    istoriju STROGO PRE ciljnog kola, pa garancija protiv curenja ostaje ista kao
+    kod ostalih (sekvencijalni.predlog_za samo produžava svoj keširani prefiks tim
+    istim kolima). `period` se ignoriše: model ima sopstveni prozor, fiksiran u
+    konfiguraciji, jer plan zabranjuje podešavanje parametara na istorijskim
+    podacima (§8).
+    """
+    return sekvencijalni.predlog_za(istorija)
+
+
 def k_random(istorija, period, ciljno_kolo=None):
     """Kontrolna grupa: 7 nasumičnih jedinstvenih brojeva, seed = kolo*2
     (različit od jednobrojnog random prediktora da ne dele slučajnost)."""
@@ -193,5 +207,6 @@ PREDIKTORI_KOMB = {
     "k_rhythm7": ("Top-7 po ritmu", k_rhythm7, "7 brojeva sa najvećim odnosom kašnjenja i ritma (D/R)."),
     "k_cooc":    ("Ko-okurencijski", k_cooc,   "Pohlepno bira brojeve koji najčešće izlaze zajedno."),
     "k_ensemble": ("Ansambl (7)",    k_ensemble, "Top-7 po težinskom zbiru ocena šest komponenti; iste težine kao jednobrojni ansambl."),
+    "k_sekv":    ("Sekvencijalni",  k_sekv,    "Top-7 iz mešavine 11 eksperata koja posle svakog kola pomera težine prema sopstvenoj grešci."),
     "k_random":  ("Nasumični (kontrola)", k_random, "Kontrolna grupa: 7 nasumičnih brojeva (seed = kolo·2)."),
 }

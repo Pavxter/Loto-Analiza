@@ -16,7 +16,7 @@ zaključak to kaže eksplicitno.
 
 from dataclasses import asdict, dataclass, field
 
-from . import konfig, prognoza, razlicitost
+from . import konfig, prognoza, razlicitost, sekvencijalni
 from .prediktori import PREDIKTORI
 from .prediktori_komb import PREDIKTORI_KOMB
 
@@ -208,7 +208,33 @@ def redovi_testovi(conn, period=0):
         napomena="" if uzastopna.get("p_tacno") is not None else "premalo podataka za test",
         detalj=uzastopna,
     ))
+    redovi.append(_red_koeficijenta(conn))
     return redovi
+
+
+def _red_koeficijenta(conn):
+    """Koeficijent nepredvidivosti kao red tipa `test` (PLAN_SEKVENCIJALNI §5.4).
+
+    Pitanje reda je „odstupa li K od vrednosti koju bi model imao na slučajnim
+    podacima". Plan ga naziva „K ≠ 1?"; centar je E[K | H₀], a ne tačno 1, jer
+    mešavina koja hedžuje pod slučajnošću gubi nešto više od uniformnog modela
+    (obrazloženje u sekvencijalni.moment_gubitka). Razlika je u petoj decimali i
+    vidi se u koloni „očekivano".
+    """
+    opis = ("Odnos gubitka sekvencijalnog modela i uniformnog kroz celu istoriju. "
+            "Ispod očekivanog: model je nešto naučio. Iznad: preučen je.")
+    s = sekvencijalni.rezime(conn)
+    if not s:
+        return Eksperiment(
+            metod="sekv_koeficijent", naziv="Koeficijent nepredvidivosti",
+            tip="test", n=0, jedinica="K", opis=opis,
+            napomena="sekvencijalno stanje nije rekonstruisano")
+    return Eksperiment(
+        metod="sekv_koeficijent", naziv="Koeficijent nepredvidivosti",
+        tip="test", n=s["n"], rezultat=round(s["k"], 6),
+        ocekivano=round(s["ocekivano"], 6), jedinica="K",
+        z=round(s["z"], 4) if s["z"] is not None else None, p=s["p"],
+        opis=opis, detalj=s)
 
 
 # ----------------------------------------------------------------------------
@@ -278,6 +304,18 @@ def detalj_metoda(conn, metod, izvor="retro"):
                 "pojas_donja": serije["pojas_donja"], "pojas_gornja": serije["pojas_gornja"],
                 "baseline": serije["baseline"], "jedinica": "prosečno preklapanje",
                 "vodi_na": "prognoza"}
+
+    if metod == "sekv_koeficijent":
+        s = sekvencijalni.serija(conn)
+        if not s["serija"]:
+            return None
+        # Isti oblik kao krivulje prediktora, pa ga postojeći panel crta bez izmene:
+        # serija + pojas + referentna linija. Tip nije „test" jer to nije histogram.
+        return {"metod": metod, "naziv": "Koeficijent nepredvidivosti", "tip": "koeficijent",
+                "opis": "K kroz vreme sa pojasom ±2σ oko vrednosti očekivane pod slučajnošću.",
+                "serija": s["serija"], "pojas_donja": s["pojas_donja"],
+                "pojas_gornja": s["pojas_gornja"], "baseline": s["baseline"],
+                "jedinica": "K", "vodi_na": "prognoza"}
 
     istorija = razlicitost.istorija_iz_conn(conn)
     if len(istorija) < 2:

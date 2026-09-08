@@ -260,6 +260,28 @@ def skorovi_komponenti(prim):
     return {k: _normalizuj(sirovo[k]) for k in KOMPONENTE}
 
 
+# Isti prozor u istom koraku retro-petlje traze tri potrosaca: `ensemble`,
+# `k_ensemble` i sekvencijalni prediktor. Racun je identican, pa se pamti.
+# Kljuc je SADRZAJ prozora, ne otisak (duzina + prvo/poslednje kolo): dve razlicite
+# istorije imaju ista kola pa bi otisak lazno pogadjao. Hesiranje 100 torki je
+# reda mikrosekunde, racun je reda milisekunde.
+_KES_KOMP = {}
+_KES_KOMP_MAX = 4
+
+
+def skorovi_za_prozor(prozor):
+    """Kesirani `skorovi_komponenti(_primitivi(prozor))`. Rezultat je deljen — ne menjati ga."""
+    kljuc = tuple(prozor)
+    postojece = _KES_KOMP.get(kljuc)
+    if postojece is not None:
+        return postojece
+    vrednost = skorovi_komponenti(_primitivi(list(prozor)))
+    if len(_KES_KOMP) >= _KES_KOMP_MAX:
+        _KES_KOMP.clear()
+    _KES_KOMP[kljuc] = vrednost
+    return vrednost
+
+
 def _lift(skorovi, dobitni):
     """Koliko je komponenta podigla izvucene brojeve iznad proseka svih brojeva.
 
@@ -343,7 +365,7 @@ def skor_ansambla(istorija, period):
         return _KES_SKOR["skor"], _KES_SKOR["tezine"]
 
     tezine = nauci_tezine(istorija, period)
-    skorovi = skorovi_komponenti(_primitivi(prozor))
+    skorovi = skorovi_za_prozor(prozor)
     skor = {b: round(sum(tezine[k] * skorovi[k][b] for k in KOMPONENTE), 9)
             for b in range(1, MAX_BROJ + 1)}
     _KES_SKOR.update(kljuc=kljuc, skor=skor, tezine=tezine)
