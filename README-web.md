@@ -54,7 +54,9 @@ Redosledom kako se pojavljuju u aplikaciji (detaljan opis svake je u `FUNKCIJE.m
    (rekordi, uzastopna/svi parovi, profil vs. sadržaj, ko-okurencija).
 6. **Rangiranje** — brojevi rangirani metodom Frekvencija / Bajes / Hibrid.
 7. **Prognoza** — statistički eksperiment: predviđanje jednog broja i cele kombinacije
-   za sledeće kolo (7 metoda + kontrola, uživo i retro-bektest, testovi značajnosti).
+   za sledeće kolo (7 metoda + kontrola, uživo i retro-bektest, testovi značajnosti), plus
+   **sekvencijalni prediktor** — mešavina 11 eksperata koja uči iz svake greške i uz svaki
+   predlog prijavljuje koeficijent nepredvidivosti.
 8. **Generator** — kombinacije po filterima (par/nepar, vrući/hladni, sredina, uzastopni,
    dekade, diverzitet) uz bodovanje; opcioni „vremeplov" (analiza do zadatog kola).
 9. **Bektest** — uspešnost sačuvanih strategija (rezultat, indeks promašaja/iznenađenja).
@@ -79,6 +81,8 @@ webapp/
     razlicitost.py         # analize preklapanja izvučenih kombinacija
     prediktori.py          # jednobrojni prediktori + ansambl (čiste funkcije, bez curenja)
     prediktori_komb.py     # kombinacijski prediktori (7 brojeva po metodu)
+    prelazi.py             # eksperti prelaza: povratak, zadržavanje, matrica preklapanja, pomak zbira
+    sekvencijalni.py       # raspodele eksperata, Hedge mešanje, koeficijent K i pojas, stanje modela
     sinteza.py             # „Sinteza": Eksperiment, sakupljanje svih redova, Bonferroni, zaključak
     prognoza.py            # uživo/retro prognoza, evaluacija, prognoza_u_tacki (vremeplov)
     istorija.py            # „Istraži istoriju": sečenje po granica/prozor + prosleđivanje
@@ -109,6 +113,7 @@ python -X utf8 -m webapp.tests.test_prognoza     # bez curenja, determinizam, ek
 python -X utf8 -m webapp.tests.test_istorija     # granica/prozor, vremeplov == retro, anti-curenje
 python -X utf8 -m webapp.tests.test_mapa         # rang↔unrang, Hilbert, ocena == Generator, pločice
 python -X utf8 -m webapp.tests.test_sinteza      # Bonferroni, ansambl bez curenja, rang na sintetici
+python -X utf8 -m webapp.tests.test_sekv         # koeficijent K, eksperti prelaza, inkrementalni korak
 ```
 
 `test_mapa` traje oko pola minuta; ako pločice nisu generisane, provera pločica se
@@ -138,3 +143,9 @@ preskoči, a ostalo se izvrši.
   zaključka. Uz nju su došla i dva dodatka: **ansambl** (težinski zbir šest komponenti,
   registrovan kao svaki drugi prediktor) i **četiri testa nad rangom kombinacije**, koji
   prvi put mere celu sedmorku kao jedan broj.
+- **Sekvencijalni prediktor i koeficijent nepredvidivosti** — model koji prolazi istoriju
+  kolo po kolo, meša raspodele 11 eksperata eksponencijalnim težinama i posle svakog kola
+  pomera težine prema sopstvenoj grešci. Uz predlog uvek stoji **K**, odnos njegovog
+  log-gubitka i log-gubitka uniformnog modela: K = 1 znači da model ne zna više od
+  slučajnosti. Uniformni ekspert se nikad ne izbacuje iz mešavine, pa je preučavanje
+  ograničeno konstrukcijom. Unos kola pomera K jednim korakom, bez ponovnog prolaza.

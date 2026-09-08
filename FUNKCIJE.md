@@ -605,6 +605,89 @@ Kontrola stoji u istom redu sa Bajesom i ansamblom, i ništa ih ne razdvaja.
 
 ---
 
+## 13. Sekvencijalni prediktor i koeficijent nepredvidivosti
+
+Poslednja strana Prognoze (tab **Sekvencijalni**) i kartica na Dashboardu pokazuju isti
+broj: **K**, koeficijent nepredvidivosti. To je jedini broj u aplikaciji koji, iz kola u
+kolo, kaže koliko se iz istorije uopšte može naučiti.
+
+### Kako model radi
+
+Jedanaest eksperata predlaže raspodelu verovatnoća po svih 39 brojeva, ne listu od sedam
+brojeva. Zbir svake raspodele je 7, pa se čita kao „koliko pogodaka očekujem od svakog
+broja".
+
+- **uniformni** — svakom broju daje 7/39. Referenca i osigurač;
+- **šest omotanih** — vrući, hladni, bajesovski, hibridni, ritam, sveži. To su iste ocene
+  koje već koristi ansambl, propuštene kroz softmaks;
+- **četiri eksperta prelaza** — uče iz razlike dva uzastopna kola: da li se broj koji je
+  otišao vraća, da li broj koji je ostao ostaje i dalje, koliko se brojeva iz poslednjeg
+  kola očekuje ponovo (matrica prelaza preklapanja 8×8), i kuda ide zbir kola. Svi su
+  obični brojači i svaki kreće od svoje teorijske vrednosti: 7/39, hipergeometrijska
+  raspodela, 140.
+
+Posle svakog kola svaki ekspert dobija Bernulijev log-gubitak po broju, a težine se množe
+sa `exp(−η · gubitak)` i normalizuju. Ko manje greši, dobija više težine. Uniformni
+ekspert se nikad ne izbacuje: ako ništa ne radi, težina se sliva na njega, i to je ugrađena
+granica preučavanja.
+
+### Kako se čita koeficijent
+
+K je odnos kumulativnog log-gubitka mešavine i log-gubitka uniformnog modela.
+
+| K | Značenje |
+|---|---|
+| ≈ 1 | model ne zna više od slučajnosti |
+| < 1 | model izvlači informaciju iz istorije |
+| > 1 | model je preučen |
+
+Uz K ide pojas ±2σ. **Pojas nije centriran na tačno 1,00 nego na vrednost koju bi K imao
+na slučajnim podacima.** Razlog je matematički: mešavina koja deli težinu na više eksperata
+pod slučajnošću u proseku gubi nešto više od uniformnog modela (Gibsova nejednakost), pa je
+njeno očekivano K uvek malo iznad 1. Pojas oko tačno 1,00 bi zato prijavljivao preučavanje
+na svakoj slučajnoj istoriji. Razlika se vidi kao zaseban broj u koloni „očekivano".
+
+### Šta strana pokazuje
+
+- predlog za sledeće kolo, **nikad bez koeficijenta ispod njega**;
+- krivulju K kroz vreme sa pojasom koji se sužava kako istorija raste;
+- iste krivulje po ekspertu;
+- trakasti dijagram trenutnih težina, sa istaknutim uniformnim ekspertom;
+- tabelu „šta je model naučio iz poslednjeg kola": gubitak svakog eksperta, razliku u
+  odnosu na uniformnog i težinu pre i posle tog kola.
+
+Na strani „Istraži istoriju", u panelu „Predikcija tada", isti model pokazuje šta je
+predložio u izabranoj tački, sa kojim težinama i sa kojim K — a ishod se, kao i svuda na
+toj strani, otkriva tek na klik.
+
+### Bez ručnog pokretanja
+
+Unos novog kola pomera K jednim korakom nad sačuvanim stanjem modela, ne ponovnim prolazom
+kroz istoriju. Ako se izmeni neko staro kolo, otisak istorije se više ne poklapa i model se
+sam preračunava od početka. Dugme „Ponovi ceo prolaz" postoji za slučaj da se stanje ručno
+obriše.
+
+### Red u Sintezi
+
+`k_sekv` stoji u tabeli Sinteze kao svaki drugi kombinacijski prediktor, sa prosečnim
+preklapanjem i p-vrednošću, a koeficijent ima svoj red tipa test. Oba ulaze u istu
+Bonferroni korekciju kao i sve ostalo.
+
+### Rezultat nad tvojom bazom
+
+Posle 1.372 ocenjena kola K je **1,000038** uz pojas 0,999934 – 1,000119, dakle unutar
+pojasa. Težina uniformnog eksperta je 22%, a četiri eksperta prelaza dele ostatak, jer se
+pod slučajnošću i oni svode na uniformnu raspodelu. Šest frekvencijskih eksperata je palo
+na nulu. Procene eksperata prelaza stoje na svojim teorijskim vrednostima: stopa povratka
+0,1805 naspram 0,1795, očekivano preklapanje 1,277 naspram 1,256.
+
+To nije mana modela nego osobina podataka, i to se dokazuje testom: na sintetičkoj istoriji
+gde jedan broj izlazi 30% češće K padne na 0,994 i izađe ispod pojasa, a na istoriji gde
+svako kolo zadržava tri broja iz prethodnog K padne na 0,960 i najveću težinu dobija
+ekspert prelaza preklapanja. Model bi prepoznao signal kad bi ga bilo.
+
+---
+
 ## Podešavanja i tehnički detalji
 
 - **Period analize** (gore desno) utiče na Dashboard, Statistiku i bodovanje generatora.
