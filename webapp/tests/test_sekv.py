@@ -155,6 +155,129 @@ def test_K_na_pristrasnoj_sintetici():
 
 
 # ----------------------------------------------------------------------------
+# Ravnoća raspodele i prag (PLAN_KORAK_IZBORA §2.3, §2.4)
+# ----------------------------------------------------------------------------
+
+# Šta je izmereno na pravoj bazi u kolu 2026072 i pokrenulo ceo plan: raspon p_mix
+# je bio 5,7% od baseline-a 7/39, a razlika 7. i 8. kandidata 0,24%. Pitanje testa
+# je da li su te vrednosti signal ili ono što čist šum ionako proizvodi.
+IZMERENO_RASPON = 0.057
+IZMERENO_ZAZOR = 0.0024
+
+# Semena i dužina od kojih je izveden konfig.PRAG_RASPONA. Menjati samo uz ponovno
+# izvođenje praga i novi datum u konfig.py — inače test i konstanta govore o
+# različitim merenjima.
+PRAG_SEMENA = (17, 23, 31, 47, 59)
+PRAG_KOLA = 1500
+
+
+def _ravnoca_kroz_istoriju(istorija):
+    """Mera ravnoće za svaki ocenjeni korak — isti prolaz kao `prodji`, bez baze."""
+    m = S.Mesavina()
+    izlaz = []
+    for i in range(len(istorija)):
+        if i < S.MIN_START:
+            m.posmatraj(istorija[i][1])
+            continue
+        p, po_ekspertu, _predlog = m.predvidi(S._prozor_pre(istorija, i, S.PERIOD))
+        izlaz.append(S.izracunaj_ravnocu(p))
+        m.uci(p, po_ekspertu, {int(b) for b in istorija[i][1]})
+    return izlaz
+
+
+def _percentil(vrednosti, q):
+    a = sorted(vrednosti)
+    return a[min(len(a) - 1, int(q * len(a)))]
+
+
+def test_raspon_p_mix_na_sintetici():
+    """KLJUČNI test plana: raspon p_mix na čistom šumu, i odatle PRAG_RASPONA.
+
+    Model se pušta na uniformne sintetičke istorije — nezavisna izvlačenja, ništa
+    za naučiti. Raspodela `raspon_udeo` koju tamo pravi JESTE raspon koji šum sam
+    proizvodi. Ako izmerenih 5,7% sa prave baze upada u tu raspodelu, onda raspon
+    nije nalaz nego pozadina, i predlog modela je izbor iz gotovo ravne raspodele.
+
+    Ispis ovog testa je postupak izvođenja praga: 95. percentil je vrednost koja
+    stoji u konfig.PRAG_RASPONA. Test je zato i regresioni — svaka izmena eksperata
+    ili mešavine pomera raspodelu, pa prag mora da se izvede iznova i da dobije nov
+    datum u konfig.py (§7: prag se nikad ne bira po osećaju).
+    """
+    svi = []
+    for seme in PRAG_SEMENA:
+        svi.extend(_ravnoca_kroz_istoriju(sinteticka_istorija(PRAG_KOLA, seme=seme)))
+    raspon = [x["raspon_udeo"] for x in svi]
+    zazor = [x["zazor_udeo"] for x in svi]
+    p05, p50, p95 = (_percentil(raspon, q) for q in (0.05, 0.50, 0.95))
+
+    # 1. Izmereno na pravoj bazi je unutar šuma — i to ispod medijane šuma.
+    assert p05 < IZMERENO_RASPON < p95, (p05, IZMERENO_RASPON, p95)
+    assert IZMERENO_RASPON < p50, (IZMERENO_RASPON, p50)
+    assert IZMERENO_ZAZOR < _percentil(zazor, 0.95), (IZMERENO_ZAZOR, _percentil(zazor, 0.95))
+
+    # 2. Prag u konfigu je tačno taj 95. percentil (na 4 decimale).
+    assert round(p95, 4) == konfig.PRAG_RASPONA, (
+        f"prag se razišao sa merenjem: izmereno {p95:.6f}, u konfigu {konfig.PRAG_RASPONA}. "
+        "Ako je model menjan, upiši novu vrednost i nov datum u konfig.PRAG_RASPONA.")
+
+    # 3. Ni sama sintetika ne sme da pređe prag češće nego u 5% koraka.
+    preko = sum(1 for x in raspon if x > konfig.PRAG_RASPONA) / len(raspon)
+    assert preko <= 0.06, preko
+    assert all(not S.bez_preferencije(x) for x in raspon if x > konfig.PRAG_RASPONA)
+    print(f"test_raspon_p_mix_na_sintetici: OK ({len(raspon)} koraka šuma — "
+          f"raspon_udeo p05={p05:.4f} p50={p50:.4f} p95={p95:.4f}; "
+          f"izmereno na kolu 2026072 = {IZMERENO_RASPON} → unutar šuma, "
+          f"PRAG_RASPONA = {konfig.PRAG_RASPONA})")
+
+
+def test_ravnoca_u_stanju():
+    """`raspon_udeo` i `zazor_udeo` se upisuju uz svako kolo i stižu do API-ja."""
+    istorija = sinteticka_istorija(200, seme=77)
+    conn, putanja = nova_baza(istorija)
+    try:
+        S.rekonstruisi(conn)
+        redovi = baza.sekv_lista(conn)
+        assert len(redovi) == 200 - S.MIN_START
+        for r in redovi:
+            for kolona in ("p_min", "p_max", "raspon_udeo", "zazor_udeo"):
+                assert r[kolona] is not None, (r["kolo"], kolona)
+            assert 0 < r["p_min"] <= r["p_max"] < 1, r["kolo"]
+            assert abs(r["raspon_udeo"] - (r["p_max"] - r["p_min"]) / S.BASELINE) < 1e-9
+            assert r["zazor_udeo"] >= 0
+
+        # ista mera stiže do sva tri pogleda, sa pragom i zaključkom
+        st = S.stanje_api(conn)
+        for cvor in (st["ravnoca"], st["ravnoca_poslednjeg"],
+                     S.korak_api(conn, istorija[120][0])["ravnoca"]):
+            assert cvor is not None
+            assert cvor["prag_raspona"] == konfig.PRAG_RASPONA
+            assert cvor["bez_preferencije"] == (cvor["raspon_udeo"] <= konfig.PRAG_RASPONA)
+        # ravnoća ciljnog kola se računa iz žive mešavine, ne prepisuje iz poslednjeg reda
+        assert st["ravnoca"]["raspon_udeo"] != st["ravnoca_poslednjeg"]["raspon_udeo"]
+        print(f"test_ravnoca_u_stanju: OK ({len(redovi)} redova, "
+              f"raspon ciljnog kola {st['ravnoca']['raspon_udeo']:.4f})")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_stari_redovi_bez_ravnoce():
+    """Baza od pre ove izmene: kolone su NULL, API vraća None umesto izmišljenog broja."""
+    istorija = sinteticka_istorija(120, seme=79)
+    conn, putanja = nova_baza(istorija)
+    try:
+        S.rekonstruisi(conn)
+        conn.execute("UPDATE sekv_stanje SET p_min=NULL, p_max=NULL, "
+                     "raspon_udeo=NULL, zazor_udeo=NULL")
+        conn.commit()
+        assert S.rezime(conn)["ravnoca"] is None
+        assert S.stanje_api(conn)["ravnoca_poslednjeg"] is None
+        assert S.korak_api(conn, istorija[80][0])["ravnoca"] is None
+        print("test_stari_redovi_bez_ravnoce: OK (NULL → None, bez izuzetka)")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+# ----------------------------------------------------------------------------
 # Poštena mešavina: ista oštrina, težina bez smrti
 # ----------------------------------------------------------------------------
 
@@ -701,6 +824,9 @@ def main():
     test_uniformni_K_jednak_1()
     test_K_na_sintetici()
     test_K_na_pristrasnoj_sintetici()
+    test_raspon_p_mix_na_sintetici()
+    test_ravnoca_u_stanju()
+    test_stari_redovi_bez_ravnoce()
     test_ista_ostrina_za_sve()
     test_nijedan_ekspert_ne_umire()
     test_tezina_se_vraca()
