@@ -700,15 +700,50 @@ def api_sinteza_osvezi():
 
 @app.get("/api/sekv/stanje")
 def api_sekv_stanje():
-    """Trenutne težine eksperata, K, pojas, predlog za sledeće kolo, broj kola."""
+    """Težine, K, pojas, broj kola i OBA izlaza za sledeće kolo (PLAN_KORAK_IZBORA §2.1).
+
+    Tiket se ovde računa sa podrazumevanim filterima Generatora, pa odgovor ostaje
+    keširan. Kad korisnik promeni filtere na tabu Generator, UI traži tiket ponovo
+    preko /api/sekv/tiket — ista funkcija, drugi filteri.
+    """
     kljuc = ("sekv_stanje", _kes.get("verzija", 0))
     if kljuc not in _kes:
         conn = baza.konekcija()
         try:
-            _kes[kljuc] = sekvencijalni.stanje_api(conn)
+            _kes[kljuc] = sekvencijalni.stanje_api(conn, analiza=_analiza(0))
         finally:
             conn.close()
     return _kes[kljuc]
+
+
+class SekvTiketZahtev(BaseModel):
+    filteri: dict = {}
+    period: int = 0
+    granica: int | None = None            # vremeplov: tiket za stari korak
+
+
+@app.post("/api/sekv/tiket")
+def api_sekv_tiket(z: SekvTiketZahtev):
+    """Tiket Generatora iz bazena sekvencijalnog modela, sa filterima korisnika.
+
+    Bez `granica` je bazen onaj za sledeće kolo; sa njom je bazen zapisan uz prvi
+    korak posle granice, a analitika vidi samo kola ≤ granica — isto pravilo protiv
+    curenja kao svuda na strani „Istraži istoriju".
+    """
+    conn = baza.konekcija()
+    try:
+        a = _analiza(z.period, z.granica)
+        if z.granica is None:
+            st = sekvencijalni.stanje_api(conn, analiza=a, filteri=z.filteri)
+            return {"granica": None, "ciljno_kolo": st["ciljno_kolo"],
+                    "bazen": st["bazen"], "tiket": st["tiket"]}
+        korak = sekvencijalni.korak_api(conn, z.granica, analiza=a, filteri=z.filteri)
+        if korak is None:
+            raise HTTPException(404, "Sekvencijalno stanje nije rekonstruisano.")
+        return {"granica": z.granica, "ciljno_kolo": korak.get("cilj"),
+                "bazen": korak.get("bazen"), "tiket": korak.get("tiket")}
+    finally:
+        conn.close()
 
 
 @app.get("/api/sekv/istorija")
@@ -729,7 +764,7 @@ def api_sekv_korak(granica: int):
     """Vremeplov: šta je model predložio za prvo kolo posle granice i šta se desilo."""
     conn = baza.konekcija()
     try:
-        rezultat = sekvencijalni.korak_api(conn, granica)
+        rezultat = sekvencijalni.korak_api(conn, granica, analiza=_analiza(0, granica))
     finally:
         conn.close()
     if rezultat is None:

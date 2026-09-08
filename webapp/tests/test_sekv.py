@@ -21,8 +21,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from webapp.core import (baza, konfig, prediktori, prelazi, prognoza, sinteza,  # noqa: E402
-                         sekvencijalni as S)
+from webapp.core import (analitika, baza, generator, konfig, prediktori, prelazi,  # noqa: E402
+                         prognoza, sinteza, sekvencijalni as S)
 from webapp.tests.test_prognoza import nova_baza, sinteticka_istorija  # noqa: E402
 
 MAX_BROJ = konfig.MAX_BROJ
@@ -368,6 +368,107 @@ def test_K_nepromenjen():
         assert m.stanje()["k"] == ocekivano, (seme, kola, m.stanje()["k"], ocekivano)
     print(f"test_K_nepromenjen: OK ({len(K_PRE_IZMENE)} istorije, "
           f"K = {', '.join(str(v) for v in K_PRE_IZMENE.values())})")
+
+
+# ----------------------------------------------------------------------------
+# Dva izlaza: predlog modela i tiket Generatora (PLAN_KORAK_IZBORA §2.1, Faza 3)
+# ----------------------------------------------------------------------------
+
+# Filteri koji menjaju izbor dovoljno da se razlika vidi: tražena parnost i
+# zabranjeni uzastopni brojevi. Ako bi predlog modela ikad reagovao na njih, prestao
+# bi da svedoči o modelu — što je i razlog zašto ne prolazi kroz Generator.
+OSTRI_FILTERI = {"parni": 3, "uzastopni": 0, "min_sv": 15, "max_sv": 25}
+
+
+def _analiza_iz(conn):
+    return analitika.Analiza(analitika.ucitaj_df(conn), period_analize=0)
+
+
+def test_predlog_bez_filtera():
+    """Predlog modela ne zavisi ni od jednog podešavanja Generatora (§2.1, §7)."""
+    istorija = sinteticka_istorija(220, seme=81)
+    conn, putanja = nova_baza(istorija)
+    try:
+        S.rekonstruisi(conn)
+        a = _analiza_iz(conn)
+        bez = S.stanje_api(conn, analiza=a)
+        sa = S.stanje_api(conn, analiza=a, filteri=OSTRI_FILTERI)
+        prazno = S.stanje_api(conn)                      # bez analitike uopšte
+
+        assert bez["predlog"] == sa["predlog"] == prazno["predlog"]
+        assert bez["bazen"] == sa["bazen"] == prazno["bazen"]
+        assert bez["ravnoca"] == sa["ravnoca"]
+        # a tiket se od filtera menja — inače test ne bi ništa dokazivao
+        assert sa["tiket"]["kombinacija"] != bez["tiket"]["kombinacija"], sa["tiket"]
+        assert prazno["tiket"] is None                   # nema analitike → nema tiketa
+        print(f"test_predlog_bez_filtera: OK (predlog {bez['predlog']} isti uz "
+              f"tiket {bez['tiket']['kombinacija']} → {sa['tiket']['kombinacija']})")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_tiket_iz_bazena():
+    """Tiket je podskup bazena od SEKV_BAZEN i zadovoljava aktivne filtere (§7)."""
+    istorija = sinteticka_istorija(220, seme=83)
+    conn, putanja = nova_baza(istorija)
+    try:
+        S.rekonstruisi(conn)
+        a = _analiza_iz(conn)
+        st = S.stanje_api(conn, analiza=a, filteri=OSTRI_FILTERI)
+        bazen, tiket = st["bazen"], st["tiket"]
+
+        assert len(bazen) == konfig.SEKV_BAZEN == st["sekv_bazen"]
+        assert set(st["predlog"]) <= set(bazen), "predlog mora biti podskup bazena"
+        assert len(tiket["kombinacija"]) == K
+        assert set(tiket["kombinacija"]) <= set(bazen), tiket
+        assert tiket["bira"] == "generator" and tiket["ista_sansa"] is True
+        assert st["predlog_izlaz"]["bira"] == "model"
+
+        # aktivni filteri zaista važe za tiket
+        o = tiket["osobine"]
+        assert o["parni"] == OSTRI_FILTERI["parni"], o
+        assert o["uzastopni"] == OSTRI_FILTERI["uzastopni"], o
+        assert OSTRI_FILTERI["min_sv"] <= o["zbir"] / K <= OSTRI_FILTERI["max_sv"], o
+        assert o == generator.osobine_kombinacije(tiket["kombinacija"])
+
+        # bazen je zapisan uz svaki korak, pa se tiket računa i za staro kolo
+        korak = S.korak_api(conn, istorija[150][0], analiza=a, filteri=OSTRI_FILTERI)
+        assert len(korak["bazen"]) == konfig.SEKV_BAZEN
+        assert set(korak["predlog"]) <= set(korak["bazen"])
+        assert set(korak["tiket"]["kombinacija"]) <= set(korak["bazen"])
+
+        # preuski filteri: nema kombinacije, ali ni greške
+        prazan = S.stanje_api(conn, analiza=a, filteri={"parni": 7, "uzastopni": 6})
+        assert prazan["tiket"]["kombinacija"] is None
+        assert prazan["tiket"]["ukupno_validnih"] == 0
+        print(f"test_tiket_iz_bazena: OK (bazen {len(bazen)}, tiket "
+              f"{tiket['kombinacija']}, parnih {o['parni']}, zbir {o['zbir']})")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_bazen_sadrzi_predlog_kroz_istoriju():
+    """Kroz ceo prolaz: predlog je prefiks istog poretka, dakle uvek u bazenu.
+
+    Bazen i predlog koriste isti tie-break sa istim semenom, pa je podskup zagarantovan
+    konstrukcijom, a ne srećom. Bez toga bi „tiket iz bazena" mogao da ne sadrži nijedan
+    broj koji je model zaista favorizovao.
+    """
+    istorija = sinteticka_istorija(400, seme=85)
+    m = S.Mesavina()
+    provereno = 0
+    for i in range(len(istorija)):
+        if i < S.MIN_START:
+            m.posmatraj(istorija[i][1])
+            continue
+        prozor = S._prozor_pre(istorija, i, S.PERIOD)
+        p, po_ekspertu, predlog = m.predvidi(prozor)
+        bazen = S.bazen_iz(p, konfig.SEKV_BAZEN, S.seme_izbora(prozor))
+        assert set(predlog) <= set(bazen), (istorija[i][0], predlog, bazen)
+        assert len(bazen) == konfig.SEKV_BAZEN
+        provereno += 1
+        m.uci(p, po_ekspertu, {int(b) for b in istorija[i][1]})
+    print(f"test_bazen_sadrzi_predlog_kroz_istoriju: OK ({provereno} koraka)")
 
 
 # ----------------------------------------------------------------------------
@@ -923,6 +1024,9 @@ def main():
     test_tiebreak_reproducibilan()
     test_tiebreak_bez_pristrasnosti()
     test_K_nepromenjen()
+    test_predlog_bez_filtera()
+    test_tiket_iz_bazena()
+    test_bazen_sadrzi_predlog_kroz_istoriju()
     test_ista_ostrina_za_sve()
     test_nijedan_ekspert_ne_umire()
     test_tezina_se_vraca()

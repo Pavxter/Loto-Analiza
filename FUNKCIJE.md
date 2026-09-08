@@ -702,19 +702,47 @@ koji se do sada nije desio, ne ispravka postojećeg rezultata.
 Prosek izabranog broja kroz istoriju je 21,2 umesto 20. To nije posledica tie-breaka nego
 šuma: isti prolaz na čistim sintetičkim istorijama daje 18,5 do 21,2 zavisno od semena.
 
+### Dva izlaza, jasno razdvojena
+
+Strana pokazuje **dva** skupa od sedam brojeva, i uz svaki piše ko ga je birao.
+
+| Izlaz | Ko bira | Kako |
+|---|---|---|
+| **Predlog modela** | sekvencijalni model | goli top 7 po verovatnoći, bez ikakvih filtera |
+| **Tiket** | Generator | bazen = 15 najverovatnijih, pa postojeći filteri i bodovanje |
+
+Predlog modela **ne prolazi** kroz Generator, i to je namerno. Filteri Generatora rade na
+razlikama reda 0,01, a razlika 7. i 8. kandidata je 0,0004 — Generator bi u potpunosti
+preuzeo izbor, pa bi „predlog modela" prestao da svedoči o modelu. Zato dva odvojena
+izlaza umesto jednog pomešanog.
+
+Tiket koristi filtere koje si podesio na tabu Generator. Dok su podrazumevani, tiket
+dolazi zajedno sa ostatkom stanja; čim nešto promeniš, strana ga traži ponovo i to piše
+ispod brojeva. „Podesi filtere →" prebacuje bazen od 15 brojeva u Generator.
+
+Uz oba izlaza stoje osobine cele kombinacije: par/nepar, zbir, uzastopni, raspon, dekade.
+One su tu upravo zato što ih model **ne vidi**. Verovatnoća se računa po broju, a parnost i
+uzastopnost postoje tek na nivou skupa, pa predlog modela povremeno ima šest parnih ili
+nekoliko uzastopnih brojeva. Takve kombinacije su ređe kao *klasa*, ali svaka pojedinačna
+ima istu šansu kao bilo koja druga. Zato uz tiket obavezno piše da nema veću šansu od
+predloga iznad njega.
+
 ### Šta strana pokazuje
 
-- meru ravnoće **iznad** predloga, uvek i bez isticanja bojom osim kad raspon pređe prag;
-- predlog za sledeće kolo, **nikad bez koeficijenta ispod njega**;
+- meru ravnoće **iznad** oba izlaza, uvek i bez isticanja bojom osim kad raspon pređe prag;
+- oba izlaza sa oznakom ko je birao, **nikad jedan bez drugog**;
+- koeficijent ispod njih, **nikad predlog bez koeficijenta**;
 - krivulju K kroz vreme sa pojasom koji se sužava kako istorija raste;
 - iste krivulje po ekspertu;
 - trakasti dijagram trenutnih težina, sa istaknutim uniformnim ekspertom;
 - tabelu „šta je model naučio iz poslednjeg kola": gubitak svakog eksperta, razliku u
   odnosu na uniformnog i težinu pre i posle tog kola.
 
-Na strani „Istraži istoriju", u panelu „Predikcija tada", isti model pokazuje šta je
-predložio u izabranoj tački, sa kojim težinama, sa kojim K i koliko je tada raspodela bila
-ravna — a ishod se, kao i svuda na toj strani, otkriva tek na klik.
+Na strani „Istraži istoriju", u panelu „Predikcija tada", isti model pokazuje oba izlaza
+za izabranu tačku, sa kojim težinama, sa kojim K i koliko je tada raspodela bila ravna — a
+ishod se, kao i svuda na toj strani, otkriva tek na klik. Bazen od 15 brojeva se pamti uz
+svako kolo, pa se tiket za staro kolo računa bez ponovnog prolaza kroz model, a analitika
+za njega vidi samo kola do granice.
 
 ### Bez ručnog pokretanja
 

@@ -406,7 +406,7 @@
                           <span class="muted" style="font-weight:400; font-size:12px">— stanje modela posle <span x-text="formatKolo(ist.granica)"></span></span></h3>
                         <div class="row" style="gap:20px; align-items:flex-start; margin-top:6px; flex-wrap:wrap">
                           <div>
-                            <span class="label">Predlog</span>
+                            <span class="label">Predlog modela</span>
                             <div class="balls" style="margin-top:4px">
                               <template x-for="b in ist.sekv.predlog" :key="b">
                                 <div class="ball sm" :class="ist.vremeplov.ishod && ist.sekv.stvarni && ist.sekv.stvarni.includes(b) ? 'vruc' : 'neutralan'"
@@ -415,6 +415,18 @@
                             </div>
                             <div class="muted" style="font-size:12px; margin-top:4px"
                                  x-text="ist.vremeplov.ishod ? ('preklapanje ' + ist.sekv.preklapanje + ' / 7') : 'ishod skriven'"></div>
+                          </div>
+                          <!-- Drugi izlaz i ovde: predlog se nikad ne prikazuje sam (§4.2) -->
+                          <div x-show="ist.sekv.tiket && ist.sekv.tiket.kombinacija">
+                            <span class="label">Tiket Generatora tada</span>
+                            <div class="balls" style="margin-top:4px">
+                              <template x-for="b in ((ist.sekv.tiket && ist.sekv.tiket.kombinacija) || [])" :key="b">
+                                <div class="ball sm" :class="ist.vremeplov.ishod && ist.sekv.stvarni && ist.sekv.stvarni.includes(b) ? 'vruc' : 'neutralan'"
+                                     :style="(ist.vremeplov.ishod && ist.sekv.stvarni && ist.sekv.stvarni.includes(b)) ? '' : 'opacity:.55'" x-text="b"></div>
+                              </template>
+                            </div>
+                            <div class="muted" style="font-size:12px; margin-top:4px"
+                                 x-text="'iz bazena od ' + ((ist.sekv.bazen && ist.sekv.bazen.length) || 0) + ' — nema veću šansu'"></div>
                           </div>
                           <div>
                             <span class="label">Koeficijent tada</span>
@@ -1233,8 +1245,10 @@
               <div class="card">
                 <div class="row" style="justify-content:space-between; align-items:flex-start; gap:16px">
                   <div>
-                    <h3>Predlog za sledeće kolo
-                      <span class="tag ok" x-show="sekv.stanje.ciljno_kolo" x-text="'za kolo ' + sekv.stanje.ciljno_kolo"></span></h3>
+                    <!-- Naslov je neutralan: ispod stoje DVA izlaza, pa „Predlog" u
+                         naslovu ne sme da natkriljuje tiket ni obrnuto (§4.2). -->
+                    <h3>Za sledeće kolo
+                      <span class="tag ok" x-show="sekv.stanje.ciljno_kolo" x-text="'kolo ' + sekv.stanje.ciljno_kolo"></span></h3>
 
                     <!-- Ravnoća raspodele (PLAN_KORAK_IZBORA §4.1, §4.2).
                          Stoji IZNAD predloga i uvek se prikazuje. Bez isticanja bojom
@@ -1258,12 +1272,59 @@
                          x-text="'→ ' + sekvRavnocaTekst(sekv.stanje.ravnoca)"></p>
                     </div>
 
-                    <div class="balls" style="margin-top:12px">
-                      <template x-for="b in (sekv.stanje.predlog || [])" :key="b">
-                        <div class="ball" :class="klasaBroja(b)" style="width:42px;height:42px;font-size:16px" x-text="b"></div>
-                      </template>
+                    <!-- DVA IZLAZA (PLAN_KORAK_IZBORA §2.1, §4.2). Nikad se ne prikazuje
+                         jedan bez drugog i nikad bez oznake ko je birao. -->
+
+                    <!-- 1. Predlog modela: goli top-7 po verovatnoći, bez ikakvih filtera -->
+                    <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border-soft)">
+                      <div class="label">Predlog modela <span class="muted" style="font-weight:400; text-transform:none; letter-spacing:0">— top 7 po verovatnoći, bez filtera</span></div>
+                      <div class="balls" style="margin-top:8px">
+                        <template x-for="b in (sekv.stanje.predlog || [])" :key="b">
+                          <div class="ball" :class="klasaBroja(b)" style="width:42px;height:42px;font-size:16px" x-text="b"></div>
+                        </template>
+                      </div>
+                      <div class="mono muted" style="font-size:12px; margin-top:6px"
+                           x-show="sekv.stanje.predlog_izlaz"
+                           x-text="sekvOsobine(sekv.stanje.predlog_izlaz && sekv.stanje.predlog_izlaz.osobine)"></div>
+                      <p class="muted" style="margin:6px 0 0; max-width:74ch; font-size:12.5px">
+                        Bira model. Može izgledati netipično (uzastopni brojevi, parnost) —
+                        marginalne verovatnoće ne poznaju osobine cele kombinacije.</p>
                     </div>
-                    <p style="margin:10px 0 0; max-width:70ch"
+
+                    <!-- 2. Tiket: bira Generator iz bazena najverovatnijih -->
+                    <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border-soft)">
+                      <div class="label">Tiket <span class="muted" style="font-weight:400; text-transform:none; letter-spacing:0"
+                           x-text="'— Generator, iz bazena od ' + (sekv.stanje.sekv_bazen || 15) + ' najverovatnijih'"></span></div>
+
+                      <template x-if="sekvTiket() && sekvTiket().kombinacija">
+                        <div>
+                          <div class="balls" style="margin-top:8px">
+                            <template x-for="b in sekvTiket().kombinacija" :key="b">
+                              <div class="ball" :class="klasaBroja(b)" style="width:42px;height:42px;font-size:16px" x-text="b"></div>
+                            </template>
+                          </div>
+                          <div class="mono muted" style="font-size:12px; margin-top:6px"
+                               x-text="sekvOsobine(sekvTiket().osobine) + '  ·  skor ' + sekvTiket().skor"></div>
+                        </div>
+                      </template>
+                      <template x-if="sekvTiket() && !sekvTiket().kombinacija">
+                        <p class="muted" style="margin:8px 0 0; font-size:12.5px">
+                          Nijedna kombinacija iz bazena ne prolazi trenutne filtere Generatora.
+                          Popusti filtere da bi se tiket pojavio.</p>
+                      </template>
+                      <template x-if="!sekvTiket()">
+                        <p class="muted" style="margin:8px 0 0; font-size:12.5px">Tiket nije izračunat.</p>
+                      </template>
+
+                      <p class="muted" style="margin:6px 0 0; max-width:74ch; font-size:12.5px">
+                        Bira Generator po filterima tipičnosti — ne model.
+                        <b>Nema veću šansu od predloga iznad.</b>
+                        <a href="#" @click.prevent="sekvPodesiFiltere()">Podesi filtere →</a></p>
+                      <p class="muted" style="margin:4px 0 0; font-size:11.5px" x-show="sekv.tiketFilteri">
+                        Primenjeni su tvoji filteri sa taba Generator.</p>
+                    </div>
+
+                    <p style="margin:12px 0 0; max-width:74ch"
                        x-text="'Koeficijent ' + sekvBroj(sekv.stanje.k) + ': ' + sekvRecenicaPredloga()"></p>
                     <p class="muted" style="font-size:12px; margin:6px 0 0" x-show="sekv.stanje.zastarelo">
                       Istorija je promenjena posle poslednjeg računanja — pokreni ponovni prolaz.</p>

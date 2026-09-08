@@ -8,7 +8,7 @@ Verno portovano iz analiza.py:
 
 import itertools
 
-from . import konfig
+from . import konfig, mapa
 
 MAX_BROJ = konfig.MAX_BROJ
 BROJEVA_U_KOMBINACIJI = konfig.BROJEVA_U_KOMBINACIJI
@@ -83,6 +83,24 @@ def parametri_skora(analiza, strategija_svezine="favorizuj"):
     }
 
 
+def broj_uzastopnih(komb):
+    """Koliko parova susednih brojeva su uzastopni: (3, 4) broji 1. Isti račun koji
+    koristi i filter `uzastopni` u `generisi`, da isti pojam ne bi imao dve definicije."""
+    b = sorted(komb)
+    return sum(1 for i in range(len(b) - 1) if b[i + 1] == b[i] + 1)
+
+
+def osobine_kombinacije(komb):
+    """Zbir, raspon, parni, dekade i uzastopni — osobine CELE kombinacije.
+
+    Prve četiri dolaze iz `mapa.osobine`, jedine implementacije tih veličina u
+    projektu. Ovo su osobine koje marginalne verovatnoće ne vide (PLAN_KORAK_IZBORA
+    §4.3): verovatnoća se računa po broju, a parnost i uzastopnost postoje tek na
+    nivou skupa.
+    """
+    return mapa.osobine(komb) | {"uzastopni": broj_uzastopnih(komb)}
+
+
 def primeni_filter_diverziteta(kandidati, max_slicnost, broj_kola_za_izbegavanje, loto_df):
     """Zadržava kombinacije koje se ne preklapaju previše međusobno i sa skorašnjim kolima."""
     if not kandidati:
@@ -136,7 +154,7 @@ def generisi(analiza, bazen=None, filteri=None):
             continue
         if hladni is not None and sum(1 for b in komb if b in analiza.hladni_brojevi) != hladni:
             continue
-        if uzastopni is not None and sum(1 for i in range(len(komb) - 1) if komb[i + 1] == komb[i] + 1) != uzastopni:
+        if uzastopni is not None and broj_uzastopnih(komb) != uzastopni:
             continue
         if dekada_max is not None:
             dekade = {"1-9": 0, "10-19": 0, "20-29": 0, "30-39": 0}
@@ -167,3 +185,31 @@ def generisi(analiza, bazen=None, filteri=None):
         "posle_diverziteta": len(sa_skorom),
         "kombinacije": [{"skor": s, "brojevi": list(k)} for s, k in sa_skorom],
     }
+
+
+def generisi_iz_bazena(analiza, bazen, filteri=None):
+    """Najbolja kombinacija iz datog bazena (PLAN_KORAK_IZBORA §2.1).
+
+    Tanak omotač nad `generisi`: isti filteri, isto bodovanje, isti `analiza` objekat
+    — samo suženo na bazen i skraćeno na jednu kombinaciju. Nema nijednog novog
+    pravila izbora, pa je „tiket" tačno ono što bi Generator dao da mu se ručno
+    upiše taj bazen.
+
+    Vraća None kad bazen nema ni sedam brojeva. Kad ga ima, ali nijedna kombinacija
+    ne prođe filtere, vraća zapis sa `kombinacija: None` — to je informacija za
+    korisnika (filteri su preuski za ovaj bazen), ne greška.
+    """
+    brojevi = sorted({int(b) for b in bazen})
+    if len(brojevi) < BROJEVA_U_KOMBINACIJI:
+        return None
+    rez = generisi(analiza, bazen=brojevi, filteri=filteri or {})
+    izlaz = {"bazen": brojevi,
+             "ukupno_validnih": rez["ukupno_validnih"],
+             "posle_diverziteta": rez["posle_diverziteta"],
+             "kombinacija": None, "skor": None, "osobine": None}
+    if rez["kombinacije"]:
+        najbolja = rez["kombinacije"][0]
+        izlaz["kombinacija"] = list(najbolja["brojevi"])
+        izlaz["skor"] = najbolja["skor"]
+        izlaz["osobine"] = osobine_kombinacije(najbolja["brojevi"])
+    return izlaz

@@ -116,6 +116,10 @@ def postavi_bazu(putanja=None):
             "p_max": "REAL",              # najveća verovatnoća u p_mix tog koraka
             "raspon_udeo": "REAL",        # (p_max − p_min) / (7/39)
             "zazor_udeo": "REAL",         # (p 7. kandidata − p 8. kandidata) / (7/39)
+            # Bazen od SEKV_BAZEN najverovatnijih brojeva (PLAN_KORAK_IZBORA §2.1).
+            # Čuva se da bi „tiket" za staro kolo mogao da se izračuna bez ponovnog
+            # prolaza kroz model — p_mix se ne čuva, a bazen je sve što Generator traži.
+            "bazen": "TEXT",
         })
         conn.commit()
         _prognoze_broj_nullable(c)   # migracija starih baza gde je broj bio NOT NULL
@@ -370,7 +374,7 @@ def obrisi_retro_prognoze(conn):
 
 _SEKV_KOLONE = ("kolo, redni, predlog, preklapanje, gubitak, gubitak_unif, k, ocekivano, "
                 "pojas_donja, pojas_gornja, sigma, tezine, k_eksperti, gubitak_eksperta, "
-                "p_min, p_max, raspon_udeo, zazor_udeo, kreirano")
+                "p_min, p_max, raspon_udeo, zazor_udeo, bazen, kreirano")
 
 
 def sekv_obrisi(conn):

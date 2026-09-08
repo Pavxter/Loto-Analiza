@@ -36,6 +36,12 @@ SNAGA_PRIORA_PRELAZA = 50    # pseudo-posmatranja koja drže eksperte prelaza na
 # Ispod praga raspon je ono što šum sam po sebi proizvodi, pa model nema
 # preferenciju. Postupak je zapisan u test_raspon_p_mix_na_sintetici; vrednost se
 # menja samo ponovnim merenjem, sa novim datumom.
+SEKV_BAZEN = 15              # koliko najverovatnijih brojeva ulazi u bazen iz kog
+                             # Generator bira tiket. Predlog modela NE prolazi kroz
+                             # Generator (§2.1): filteri rade na razlikama reda 10⁻²
+                             # dok je razlika kandidata 4·10⁻⁴, pa bi Generator u
+                             # potpunosti preuzeo izbor i predlog bi prestao da
+                             # svedoči o modelu. Zato dva odvojena izlaza.
 PRAG_RASPONA = 0.0814        # 95. percentil na 7.250 koraka čistog šuma
                              # (semena 17/23/31/47/59), izmereno 2026-09-08.
                              # Za poređenje: medijana šuma je 0,0597, a raspon

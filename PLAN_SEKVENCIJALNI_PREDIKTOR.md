@@ -55,6 +55,8 @@ Svi se ažuriraju online: brojači, ne ML. Svaki ima jasno teorijsko očekivanje
 
 7 brojeva sa najvećim p_mix. Opcija: proći kroz postojeći diverzitet Generatora. Prikazuje se **uvek** uz koeficijent, nikad sama.
 
+> **REVIDIRANO 2026-09-08** (PLAN_KORAK_IZBORA §2.1). Opcija „proći kroz Generator" je odbačena. Filteri Generatora rade na razlikama reda 10⁻², dok je razlika 7. i 8. kandidata 4·10⁻⁴ — Generator bi u potpunosti preuzeo izbor, pa bi predlog prestao da svedoči o modelu. Umesto toga se prikazuju **dva odvojena izlaza sa jasnim vlasništvom**: predlog modela (goli top-7 po p_mix, bez ikakvih filtera) i tiket (Generator bira iz bazena od `SEKV_BAZEN` najverovatnijih brojeva). Nijedan se ne prikazuje sam, i uz tiket obavezno stoji da nema veću šansu od predloga.
+
 ### 2.5. Koeficijent nepredvidivosti (definisan pre implementacije)
 
 ```

@@ -117,7 +117,8 @@ function app() {
     ist: { granica: null, cilj: null, prozor: 100, broj: null, loading: false, kontekst: null, detalj: null,
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false }, sekv: null },
-    sekv: { stanje: null, istorija: null, radi: false, ucitano: false },
+    sekv: { stanje: null, istorija: null, radi: false, ucitano: false,
+            tiket: null, tiketFilteri: false },
 
     aktivna() { return this.strane.find(s => s.id === this.strana) || this.strane[0]; },
 
@@ -1075,20 +1076,37 @@ function app() {
     },
 
     // ---------- GENERATOR ----------
+    // Filteri se grade na JEDNOM mestu, pa tab Generator i tiket na tabu Sekvencijalni
+    // ne mogu da se raziđu — isti dict ide na oba endpointa.
+    genFilteri() {
+      const filteri = {
+        min_sv: this.gen.min_sv, max_sv: this.gen.max_sv,
+        strategija_svezine: this.gen.strategija, primeni_pristrasnost: this.gen.pristrasnost,
+        filtriraj_unikate: this.gen.unikati,
+      };
+      if (this.gen.f_parni) filteri.parni = this.gen.parni;
+      if (this.gen.f_vruci) filteri.vruci = this.gen.vruci;
+      if (this.gen.f_hladni) filteri.hladni = this.gen.hladni;
+      if (this.gen.f_uzastopni) filteri.uzastopni = this.gen.uzastopni;
+      if (this.gen.f_dekada) filteri.dekada_max = this.gen.dekada_max;
+      if (this.gen.diverzitet) { filteri.diverzitet = true; filteri.max_slicnost = this.gen.max_slicnost; }
+      return filteri;
+    },
+
+    // Server racuna tiket u /api/sekv/stanje sa podrazumevanim filterima i kesira ga.
+    // Trazi se ponovo samo ako je korisnik nesto stvarno promenio.
+    genFilteriPodrazumevani() {
+      const f = this.genFilteri();
+      return f.min_sv === 1 && f.max_sv === 39 && f.strategija_svezine === 'favorizuj'
+        && f.primeni_pristrasnost === true && f.filtriraj_unikate === false
+        && f.parni === undefined && f.vruci === undefined && f.hladni === undefined
+        && f.uzastopni === undefined && f.dekada_max === undefined && !f.diverzitet;
+    },
+
     async generisi() {
       this.gen.radi = true; this.gen.rezultati = []; this.gen.razlicitost = null;
       try {
-        const filteri = {
-          min_sv: this.gen.min_sv, max_sv: this.gen.max_sv,
-          strategija_svezine: this.gen.strategija, primeni_pristrasnost: this.gen.pristrasnost,
-          filtriraj_unikate: this.gen.unikati,
-        };
-        if (this.gen.f_parni) filteri.parni = this.gen.parni;
-        if (this.gen.f_vruci) filteri.vruci = this.gen.vruci;
-        if (this.gen.f_hladni) filteri.hladni = this.gen.hladni;
-        if (this.gen.f_uzastopni) filteri.uzastopni = this.gen.uzastopni;
-        if (this.gen.f_dekada) filteri.dekada_max = this.gen.dekada_max;
-        if (this.gen.diverzitet) { filteri.diverzitet = true; filteri.max_slicnost = this.gen.max_slicnost; }
+        const filteri = this.genFilteri();
 
         let bazen = null;
         if (this.gen.koristiBazen && this.gen.bazenText.trim()) {
@@ -1254,10 +1272,22 @@ function app() {
       try {
         this.sekv.stanje = await jget('/api/sekv/stanje');
         if (!this.sekv.stanje.n) return;
+        await this.ucitajSekvTiket();
         this.sekv.istorija = await jget('/api/sekv/istorija');
         this.sekv.ucitano = true;
         this.$nextTick(() => this.crtajSekv());
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    // Tiket sa filterima koje je korisnik podesio na tabu Generator. Kad su filteri
+    // podrazumevani, vec ga je vratio /api/sekv/stanje — nema drugog poziva.
+    async ucitajSekvTiket() {
+      if (this.genFilteriPodrazumevani()) { this.sekv.tiket = null; this.sekv.tiketFilteri = false; return; }
+      try {
+        const d = await jsend('/api/sekv/tiket', 'POST', { period: this.period, filteri: this.genFilteri() });
+        this.sekv.tiket = d.tiket;
+        this.sekv.tiketFilteri = true;
+      } catch (e) { this.sekv.tiket = null; this.sekv.tiketFilteri = false; }
     },
 
     async sekvRekonstruisi() {
@@ -1317,6 +1347,27 @@ function app() {
       if (!s || !s.n) return '';
       if (!this.sekvUPojasu()) return 'koeficijent je izašao iz pojasa — pre svega ostalog proveriti podatke.';
       return 'ovaj predlog ima istu šansu kao bilo koja druga kombinacija.';
+    },
+
+    // ---- Dva izlaza (PLAN_KORAK_IZBORA 2.1) ----
+    // Tiket sa korisnickim filterima ima prednost nad podrazumevanim iz /stanje.
+
+    sekvTiket() {
+      if (this.sekv.tiketFilteri) return this.sekv.tiket;
+      return this.sekv.stanje ? this.sekv.stanje.tiket : null;
+    },
+
+    // Osobine CELE kombinacije — one koje marginalne verovatnoce ne vide.
+    sekvOsobine(o) {
+      if (!o) return '';
+      return `par/nepar ${o.parni}/${7 - o.parni}  ·  zbir ${o.zbir}  ·  `
+        + `uzastopnih ${o.uzastopni}  ·  raspon ${o.raspon}  ·  dekada ${o.dekade}`;
+    },
+
+    sekvPodesiFiltere() {
+      const bazen = this.sekv.stanje && this.sekv.stanje.bazen;
+      if (bazen) this.bazenUGenerator(bazen);
+      else this.idi('generator');
     },
 
     // Redosled u tabeli: uniformni prvi (referenca), pa ostali po tezini opadajuce.
