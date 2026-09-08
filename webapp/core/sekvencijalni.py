@@ -22,6 +22,7 @@ interfejsa prediktora, pa je zamenjena „svežinom" — osom koju testiraju fre
 
 import hashlib
 import json
+import random
 import threading
 import time
 from datetime import datetime
@@ -144,9 +145,43 @@ def raspodele(prozor, temperatura=TEMPERATURA, eksperti=None, stanje_prelaza=Non
     return {e: izjednaci_ostrinu(izlaz[e]) for e in trazeni}
 
 
-def predlog_iz(p):
-    """7 brojeva sa najvećim p; tie-break manji broj. Uvek sortirano rastuće."""
-    rang = sorted(BROJEVI, key=lambda b: (-p[b], b))
+def seme_izbora(prozor):
+    """Seme tie-breaka: broj poslednjeg kola koje je model video (PLAN_KORAK_IZBORA §2.2).
+
+    ODSTUPANJE OD PLANA. Plan traži `seed = kolo`, dakle broj kola koje se predviđa.
+    Taj broj se ne zna pre nego što je kolo izvučeno: numeracija je godina·1000 + broj,
+    pa „poslednje + 1" pogađa pogrešno na svakoj granici godine, a u ovoj bazi i na
+    preskočenom kolu 2025054 — ukupno 14 mesta. Panel bi tada pokazao predlog sa
+    jednim semenom, a zapis posle unosa kola sa drugim.
+
+    Poslednje VIĐENO kolo obe strane znaju tačno i isto: prozor za korak koji
+    predviđa kolo na poziciji i završava se kolom i−1, a isti taj prozor dobija i
+    `predlog_za` kad računa predlog za sledeće kolo. Svaki cilj i dalje ima svoje
+    seme, jer svaki ima svog prethodnika, a nijedno seme ne zavisi od budućnosti.
+    """
+    return prozor[-1][0] if prozor else 0
+
+
+def izaberi_top7(p, seme):
+    """7 brojeva sa najvećim p; kod TAČNO jednakih verovatnoća bira slučaj, ne redosled.
+
+    Staro pravilo je kod jednakih p uzimalo manji broj, što je kroz vreme sistematska
+    pristrasnost ka niskim brojevima. Novo je pseudoslučajno, ali sa semenom iz
+    `seme_izbora`, pa ostaje reproducibilno — retro-bektest i vremeplov moraju da daju
+    isti predlog pri svakom pokretanju.
+
+    Koliko ovo menja u praksi: ništa, i to je izmereno. Na 1.372 koraka prave baze
+    nema nijedne tačne veze između dve verovatnoće (razlike su reda 10⁻⁴, ne 0), pa
+    tie-break nikad ne odlučuje. Izmereni prosek izabranog broja je 21,2, ali isti
+    prolaz na čistoj sintetici daje 18,5–21,2 zavisno od semena — dakle nagib dolazi
+    od šuma, ne od ovog pravila. Pravilo je osigurač: kad do veze dođe, ne sme da je
+    razreši redosled brojeva.
+
+    `rnd.random()` se poziva tačno jednom po broju, u rastućem redosledu brojeva,
+    pa je izlaz određen isključivo semenom.
+    """
+    rnd = random.Random(seme)
+    rang = sorted(BROJEVI, key=lambda b: (-p[b], rnd.random()))
     return tuple(sorted(rang[:K_BROJEVA]))
 
 
@@ -262,7 +297,8 @@ class Mesavina:
         po_ekspertu = raspodele(prozor, self.temperatura, self.eksperti, self.prelazi)
         w = self.tezine
         p = {b: sum(w[e] * po_ekspertu[e][b] for e in self.eksperti) for b in BROJEVI}
-        return p, po_ekspertu, predlog_iz(p)
+        # seme se izvodi iz samog prozora, pa nijedan pozivalac ne može da ga promaši
+        return p, po_ekspertu, izaberi_top7(p, seme_izbora(prozor))
 
     def posmatraj(self, brojevi):
         """Kolo ulazi u brojače prelaza, ali se ne meri (zagrevanje pre min_start).

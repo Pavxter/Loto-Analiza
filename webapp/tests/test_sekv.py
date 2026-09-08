@@ -278,6 +278,99 @@ def test_stari_redovi_bez_ravnoce():
 
 
 # ----------------------------------------------------------------------------
+# Tie-break i nepromenjen K (PLAN_KORAK_IZBORA §2.2, Faza 2)
+# ----------------------------------------------------------------------------
+
+# K zabeležen PRE izmene tie-breaka, na fiksnim sintetičkim istorijama. Izbor
+# sedmorke i merenje znanja su odvojeni: K se računa iz raspodele, a tie-break bira
+# među brojevima kad je raspodela već data. Ako se ovi brojevi ikad pomere zbog
+# izmene u koraku izbora, to je greška, ne poboljšanje. (Referenca sa prave baze:
+# K = 1,000068 posle 1.372 kola zaključno sa 2026071.)
+K_PRE_IZMENE = {(17, 1500): 1.000036, (42, 300): 1.00003, (95, 200): 1.000235}
+
+
+def _stari_izbor(p):
+    """Tie-break kakav je bio pre Faze 2: kod jednakih verovatnoća manji broj."""
+    return tuple(sorted(sorted(range(1, MAX_BROJ + 1), key=lambda b: (-p[b], b))[:K]))
+
+
+def test_tiebreak_reproducibilan():
+    """Isto seme → isti predlog, koliko god puta se pozvalo; različito seme → sme drugi."""
+    p = S.uniformna()          # sve verovatnoće tačno jednake: odlučuje samo tie-break
+    assert S.izaberi_top7(p, 2026071) == S.izaberi_top7(p, 2026071)
+    assert len({S.izaberi_top7(p, 2026071) for _ in range(50)}) == 1
+    assert S.izaberi_top7(p, 2026071) != S.izaberi_top7(p, 2026072)
+
+    # seme se izvodi iz prozora, pa ga nijedan pozivalac ne bira ručno
+    istorija = sinteticka_istorija(300, seme=61)
+    prozor = istorija[100:200]
+    assert S.seme_izbora(prozor) == prozor[-1][0] == istorija[199][0]
+
+    # ceo prolaz dva puta → identičan niz predloga (retro-bektest ostaje determinističan)
+    prvi = [x["predlog"] for x in S.prodji_do_kraja(istorija)[1]]
+    drugi = [x["predlog"] for x in S.prodji_do_kraja(istorija)[1]]
+    assert prvi == drugi
+    # i predlog iz keširanog prefiksa je isti kao iz punog prolaza
+    S.zaboravi_kes()
+    assert S.predlog_za(istorija[:250]) == prvi[250 - S.MIN_START]
+    print(f"test_tiebreak_reproducibilan: OK ({len(prvi)} koraka, seme = poslednje viđeno kolo)")
+
+
+def test_tiebreak_bez_pristrasnosti():
+    """Kod jednakih verovatnoća staro pravilo uvek bira 1–7; novo bira po celom opsegu.
+
+    Test se radi na uniformnoj raspodeli, jer je to jedini slučaj u kom tie-break
+    uopšte odlučuje. Na pravim raspodelama tačnih veza nema (drugi deo testa), pa bi
+    merenje proseka izabranog broja kroz istoriju merilo šum eksperata, ne ovo pravilo.
+    """
+    p = S.uniformna()
+    assert _stari_izbor(p) == tuple(range(1, K + 1)), "staro pravilo nije birlo 1–7"
+
+    semena = [2020001 + i for i in range(2000)]
+    izabrani = [b for seme in semena for b in S.izaberi_top7(p, seme)]
+    prosek = sum(izabrani) / len(izabrani)
+    assert len(set(izabrani)) == MAX_BROJ, "novo pravilo ne dohvata sve brojeve"
+    assert abs(prosek - (MAX_BROJ + 1) / 2) < 0.25, prosek
+    # nijedan broj se ne bira bitno češće od 7/39 udela
+    for b in range(1, MAX_BROJ + 1):
+        udeo = izabrani.count(b) / len(semena)
+        assert 0.12 < udeo < 0.24, (b, udeo)
+
+    # Na pravim raspodelama tačnih veza nema, pa se izbor ne menja — izmereno, ne
+    # pretpostavljeno. Zato ova izmena ni ne pomera nijedan postojeći rezultat.
+    istorija = sinteticka_istorija(400, seme=63)
+    m, veza, isto = S.Mesavina(), 0, 0
+    for i in range(len(istorija)):
+        if i < S.MIN_START:
+            m.posmatraj(istorija[i][1])
+            continue
+        p_mix, po_ekspertu, predlog = m.predvidi(S._prozor_pre(istorija, i, S.PERIOD))
+        vrednosti = sorted(p_mix.values())
+        veza += len(vrednosti) - len(set(vrednosti))
+        isto += (predlog == _stari_izbor(p_mix))
+        m.uci(p_mix, po_ekspertu, {int(b) for b in istorija[i][1]})
+    koraka = len(istorija) - S.MIN_START
+    assert veza == 0, f"pojavile su se tačne veze ({veza}) — tie-break sada zaista odlučuje"
+    assert isto == koraka, (isto, koraka)
+    print(f"test_tiebreak_bez_pristrasnosti: OK (na jednakim p prosek {prosek:.2f} ≈ 20 "
+          f"i svih 39 brojeva; na {koraka} pravih koraka 0 veza, izbor nepromenjen)")
+
+
+def test_K_nepromenjen():
+    """Regresioni: izmena koraka izbora ne sme da pomeri K ni na jednoj decimali.
+
+    K se računa iz raspodele i stvarnog kola, a tie-break bira među brojevima tek
+    pošto je raspodela data. Ta dva se ne mešaju, i ovaj test je jedino mesto gde
+    to piše kao broj.
+    """
+    for (seme, kola), ocekivano in K_PRE_IZMENE.items():
+        m, _koraci = S.prodji_do_kraja(sinteticka_istorija(kola, seme=seme))
+        assert m.stanje()["k"] == ocekivano, (seme, kola, m.stanje()["k"], ocekivano)
+    print(f"test_K_nepromenjen: OK ({len(K_PRE_IZMENE)} istorije, "
+          f"K = {', '.join(str(v) for v in K_PRE_IZMENE.values())})")
+
+
+# ----------------------------------------------------------------------------
 # Poštena mešavina: ista oštrina, težina bez smrti
 # ----------------------------------------------------------------------------
 
@@ -827,6 +920,9 @@ def main():
     test_raspon_p_mix_na_sintetici()
     test_ravnoca_u_stanju()
     test_stari_redovi_bez_ravnoce()
+    test_tiebreak_reproducibilan()
+    test_tiebreak_bez_pristrasnosti()
+    test_K_nepromenjen()
     test_ista_ostrina_za_sve()
     test_nijedan_ekspert_ne_umire()
     test_tezina_se_vraca()

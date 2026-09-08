@@ -686,6 +686,22 @@ je dakle ispod onoga što slučajnost prosečno daje, razlika 7. i 8. kandidata 
 strana to piše iznad predloga: model nema značajnu preferenciju, predlog je praktično
 nasumičan izbor iz gotovo ravne raspodele.
 
+### Kako se bira sedmorka
+
+Predlog je sedam brojeva sa najvećom verovatnoćom. Kad su dve verovatnoće **tačno**
+jednake, redosled odlučuje pseudoslučajno, sa semenom izvedenim iz poslednjeg kola koje
+je model video. Ranije je u tom slučaju pobeđivao manji broj, što bi kroz vreme bila
+sistematska pristrasnost ka niskim brojevima. Seme drži izbor reproducibilnim: retro-bektest
+i vremeplov daju isti predlog pri svakom pokretanju.
+
+Koliko to menja u praksi: ništa, i to je izmereno. Na 1.372 koraka tvoje baze nema
+nijedne tačne veze — razlike su reda 0,0001, ne nule — pa pravilo nikad ne odlučuje. Posle
+izmene nijedan od 1.372 zapisanih predloga se nije promenio. Pravilo je osigurač za slučaj
+koji se do sada nije desio, ne ispravka postojećeg rezultata.
+
+Prosek izabranog broja kroz istoriju je 21,2 umesto 20. To nije posledica tie-breaka nego
+šuma: isti prolaz na čistim sintetičkim istorijama daje 18,5 do 21,2 zavisno od semena.
+
 ### Šta strana pokazuje
 
 - meru ravnoće **iznad** predloga, uvek i bez isticanja bojom osim kad raspon pređe prag;
