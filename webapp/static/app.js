@@ -1281,6 +1281,29 @@ function app() {
       return s.k >= s.pojas_donja && s.k <= s.pojas_gornja;
     },
 
+    // ---- Ravnoca raspodele (PLAN_KORAK_IZBORA 2.3, 4.1) ----
+    // Verovatnoce se citaju na cetvrtoj decimali, zazor na petoj — ispod toga se
+    // razlika 7. i 8. kandidata ne bi ni videla. Nista se ovde ne racuna: raspon,
+    // zazor i njihovi udeli stizu gotovi iz API-ja, zajedno sa pragom.
+
+    sekvP(v, d = 4) { return v == null ? '—' : Number(v).toFixed(d).replace('.', ','); },
+
+    sekvUdeo(v, d = 1) {
+      return v == null ? '—' : (100 * v).toFixed(d).replace('.', ',') + '%';
+    },
+
+    // Recenica o ravnoci. Stoji IZNAD predloga i uvek se prikazuje (4.2) — predlog
+    // bez nje izgleda kao odluka, a jeste izbor iz gotovo ravne raspodele.
+    sekvRavnocaTekst(r) {
+      if (!r) return 'Mera ravnoće nije zapisana za ovo kolo — pokreni ponovni prolaz.';
+      if (r.bez_preferencije) {
+        return 'Model nema značajnu preferenciju. Predlog je praktično nasumičan izbor iz gotovo ravne raspodele.';
+      }
+      return 'Raspon je iznad praga od ' + this.sekvUdeo(r.prag_raspona)
+        + ', koliko čist šum daje u najviše 5% koraka. To je izuzetak, ne dobra vest: '
+        + 'prvo proveriti curenje budućnosti i ponoviti merenje na sintetici.';
+    },
+
     sekvRecenica() {
       const s = this.sekv.stanje;
       if (!s || !s.n) return '';

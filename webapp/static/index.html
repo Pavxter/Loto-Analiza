@@ -422,6 +422,13 @@
                             <div class="muted" style="font-size:12px" x-text="'pojas ' + sekvBroj(ist.sekv.pojas_donja) + ' – ' + sekvBroj(ist.sekv.pojas_gornja)"></div>
                           </div>
                           <div>
+                            <span class="label">Ravnoća raspodele</span>
+                            <div class="mono" style="font-size:20px; margin-top:4px"
+                                 x-text="ist.sekv.ravnoca ? sekvUdeo(ist.sekv.ravnoca.raspon_udeo) : '—'"></div>
+                            <div class="muted" style="font-size:12px"
+                                 x-text="ist.sekv.ravnoca ? ('zazor 7./8. ' + sekvUdeo(ist.sekv.ravnoca.zazor_udeo, 2) + '  ·  prag ' + sekvUdeo(ist.sekv.ravnoca.prag_raspona)) : 'nije zapisano'"></div>
+                          </div>
+                          <div>
                             <span class="label">Najteži eksperti tada</span>
                             <div style="margin-top:4px; font-size:12px">
                               <template x-for="e in sekvVrhTezina(ist.sekv.tezine, 3)" :key="e">
@@ -1228,7 +1235,30 @@
                   <div>
                     <h3>Predlog za sledeće kolo
                       <span class="tag ok" x-show="sekv.stanje.ciljno_kolo" x-text="'za kolo ' + sekv.stanje.ciljno_kolo"></span></h3>
-                    <div class="balls" style="margin-top:8px">
+
+                    <!-- Ravnoća raspodele (PLAN_KORAK_IZBORA §4.1, §4.2).
+                         Stoji IZNAD predloga i uvek se prikazuje. Bez isticanja bojom
+                         osim kad raspon pređe prag — a tada je to izuzetak za proveru,
+                         ne dobra vest. -->
+                    <div style="margin-top:10px; padding:10px 12px; border-radius:8px;
+                                background:var(--bg-elev2); max-width:74ch"
+                         :style="sekv.stanje.ravnoca && !sekv.stanje.ravnoca.bez_preferencije
+                                 ? 'border-left:3px solid var(--warn)' : ''">
+                      <div class="mono" style="font-size:12.5px" x-show="sekv.stanje.ravnoca">
+                        <span class="muted">Raspon verovatnoća:</span>
+                        <span x-text="sekvP(sekv.stanje.ravnoca && sekv.stanje.ravnoca.p_min) + ' – ' + sekvP(sekv.stanje.ravnoca && sekv.stanje.ravnoca.p_max)"></span>
+                        <span class="muted" x-text="'(' + sekvUdeo(sekv.stanje.ravnoca && sekv.stanje.ravnoca.raspon_udeo) + ' od 7/39)'"></span>
+                      </div>
+                      <div class="mono" style="font-size:12.5px; margin-top:2px" x-show="sekv.stanje.ravnoca">
+                        <span class="muted">Razlika 7. i 8. kandidata:</span>
+                        <span x-text="sekvP(sekv.stanje.ravnoca && sekv.stanje.ravnoca.zazor, 5)"></span>
+                        <span class="muted" x-text="'(' + sekvUdeo(sekv.stanje.ravnoca && sekv.stanje.ravnoca.zazor_udeo, 2) + ')'"></span>
+                      </div>
+                      <p style="margin:8px 0 0; font-size:13px"
+                         x-text="'→ ' + sekvRavnocaTekst(sekv.stanje.ravnoca)"></p>
+                    </div>
+
+                    <div class="balls" style="margin-top:12px">
                       <template x-for="b in (sekv.stanje.predlog || [])" :key="b">
                         <div class="ball" :class="klasaBroja(b)" style="width:42px;height:42px;font-size:16px" x-text="b"></div>
                       </template>

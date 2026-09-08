@@ -663,8 +663,32 @@ pod slučajnošću u proseku gubi nešto više od uniformnog modela (Gibsova nej
 njeno očekivano K uvek malo iznad 1. Pojas oko tačno 1,00 bi zato prijavljivao preučavanje
 na svakoj slučajnoj istoriji. Razlika se vidi kao zaseban broj u koloni „očekivano".
 
+### Koliko je raspodela ravna
+
+Koeficijent kaže koliko model zna kroz celu istoriju. On ne kaže koliko je model bio
+siguran baš u ovom kolu — a to je ono što korisnik gleda kad vidi sedam brojeva. Zato uz
+svaki predlog idu i dve mere ravnoće:
+
+- **raspon verovatnoća** — razlika najveće i najmanje od 39 verovatnoća;
+- **razlika 7. i 8. kandidata** — koliko je izbor sedmorke uopšte bio izbor.
+
+Obe se prikazuju i kao udeo baseline-a 7/39, jer 0,00043 ne znači ništa samo za sebe, a
+0,24% odmah kaže da razlike praktično nema.
+
+Prag iznad kog raspon prestaje da bude šum **nije izabran po osećaju**. Model je pušten na
+pet uniformnih sintetičkih istorija od po 1.500 kola — čista slučajnost, ništa za naučiti —
+i iz 7.250 izmerenih koraka uzet je 95. percentil: **8,1%**. Ispod te vrednosti raspon je
+ono što šum sam proizvodi. Postupak stoji u `test_raspon_p_mix_na_sintetici`, a vrednost u
+`konfig.PRAG_RASPONA` sa datumom merenja; menja se samo ponovnim merenjem.
+
+Na tvojoj bazi je za kolo 2026-072 raspon **5,7%**, a medijana čistog šuma je 6,0%. Raspon
+je dakle ispod onoga što slučajnost prosečno daje, razlika 7. i 8. kandidata je 0,24%, i
+strana to piše iznad predloga: model nema značajnu preferenciju, predlog je praktično
+nasumičan izbor iz gotovo ravne raspodele.
+
 ### Šta strana pokazuje
 
+- meru ravnoće **iznad** predloga, uvek i bez isticanja bojom osim kad raspon pređe prag;
 - predlog za sledeće kolo, **nikad bez koeficijenta ispod njega**;
 - krivulju K kroz vreme sa pojasom koji se sužava kako istorija raste;
 - iste krivulje po ekspertu;
@@ -673,8 +697,8 @@ na svakoj slučajnoj istoriji. Razlika se vidi kao zaseban broj u koloni „oče
   odnosu na uniformnog i težinu pre i posle tog kola.
 
 Na strani „Istraži istoriju", u panelu „Predikcija tada", isti model pokazuje šta je
-predložio u izabranoj tački, sa kojim težinama i sa kojim K — a ishod se, kao i svuda na
-toj strani, otkriva tek na klik.
+predložio u izabranoj tački, sa kojim težinama, sa kojim K i koliko je tada raspodela bila
+ravna — a ishod se, kao i svuda na toj strani, otkriva tek na klik.
 
 ### Bez ručnog pokretanja
 
