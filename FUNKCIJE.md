@@ -727,10 +727,36 @@ nekoliko uzastopnih brojeva. Takve kombinacije su ređe kao *klasa*, ali svaka p
 ima istu šansu kao bilo koja druga. Zato uz tiket obavezno piše da nema veću šansu od
 predloga iznad njega.
 
+### Zašto predlog izgleda neobično
+
+Strana ima sklopivo objašnjenje sa izvedenim brojevima — nijedan nije upisan u tekst.
+Za predlog `5 10 14 16 22 28 30` ono kaže: šest parnih i jedan neparan, nijedan par
+uzastopnih, zbir 125, raspon 25. Uz to tabela veličina klasa:
+
+| Klasa | Kombinacija u klasi | Udeo |
+|---|---|---|
+| tačno 6 parnih | 542.640 | 3,53% |
+| tačno 0 uzastopnih parova | 4.272.048 | 27,77% |
+| sve kombinacije | 15.380.937 | 100,00% |
+
+Zaključak koji strana piše doslovno: takve kombinacije su ređe **kao klasa**, ali svaka
+pojedinačna ima istu šansu kao bilo koja druga, 1 prema 15.380.937. Redak je oblik, ne
+kombinacija. Veličine klasa su tačne kombinatorne formule, proverene testom koji sabira
+sve klase i mora da dobije tačno C(39,7), i grubom silom na manjem prostoru.
+
+### Ravnoća kroz celu istoriju
+
+Ispod objašnjenja je krivulja raspona verovatnoća kroz svih 1.372 ocenjena kola, sa pragom
+šuma kao vodoravnom linijom. Medijana je 6,05%, najveći raspon 9,23%, a prag 8,14%. Iznad
+praga je 54 kola, odnosno 3,9% — otprilike onoliko koliko čist šum i daje po konstrukciji
+praga. Raspodela nije ravna samo sada: ravna je kroz celu istoriju.
+
 ### Šta strana pokazuje
 
 - meru ravnoće **iznad** oba izlaza, uvek i bez isticanja bojom osim kad raspon pređe prag;
 - oba izlaza sa oznakom ko je birao, **nikad jedan bez drugog**;
+- sklopivo objašnjenje zašto predlog povremeno izgleda netipično;
+- krivulju ravnoće kroz vreme sa pragom šuma;
 - koeficijent ispod njih, **nikad predlog bez koeficijenta**;
 - krivulju K kroz vreme sa pojasom koji se sužava kako istorija raste;
 - iste krivulje po ekspertu;

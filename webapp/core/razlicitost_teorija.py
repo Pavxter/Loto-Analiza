@@ -189,6 +189,35 @@ def hi_kvadrat_preklapanje(posmatrano, n: int, spoji_od: int = 4):
 UKUPNO_KOMBINACIJA = _UKUPNO
 
 
+# --- Koliko je neka KLASA kombinacija česta (PLAN_KORAK_IZBORA §4.3) ---
+# Predlog sa šest parnih izgleda neobično, i jeste redak kao klasa — ali svaka
+# pojedinačna kombinacija u toj klasi ima istu šansu kao bilo koja druga. Ove dve
+# funkcije daju tačan broj, da se to ne bi tvrdilo napamet.
+
+_PARNIH = N // 2                        # 2, 4, …, 38 → 19 parnih brojeva
+_NEPARNIH = N - _PARNIH                 # 20 neparnih
+
+
+def broj_sa_parnih(parnih: int) -> int:
+    """Koliko od C(39,7) kombinacija ima tačno `parnih` parnih brojeva."""
+    if not 0 <= parnih <= K:
+        return 0
+    return comb(_PARNIH, parnih) * comb(_NEPARNIH, K - parnih)
+
+
+def broj_sa_uzastopnih(parova: int) -> int:
+    """Koliko kombinacija ima tačno `parova` susednih parova (npr. 3,4 broji jedan).
+
+    K brojeva raspoređenih u `r` neprekinutih nizova daju tačno K − r susednih
+    parova. Broj K-podskupova od N sa tačno r nizova je C(N − K + 1, r)·C(K − 1, r − 1),
+    pa je odgovor ta vrednost za r = K − parova.
+    """
+    if not 0 <= parova <= K - 1:
+        return 0
+    r = K - parova
+    return comb(N - K + 1, r) * comb(K - 1, r - 1)
+
+
 def ocekivano_po_korpi(n: int, broj_korpi: int) -> float:
     """Očekivan broj kola po korpi ako je rang ravnomeran."""
     if broj_korpi <= 0:

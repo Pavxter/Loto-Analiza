@@ -118,7 +118,7 @@ function app() {
            otvori: { sazetak: false, razl: false, rang: false, prog: false }, razl: null, rang: null,
            vremeplov: { podaci: null, ishod: null, radi: false }, sekv: null },
     sekv: { stanje: null, istorija: null, radi: false, ucitano: false,
-            tiket: null, tiketFilteri: false },
+            tiket: null, tiketFilteri: false, otvoriZasto: false },
 
     aktivna() { return this.strane.find(s => s.id === this.strana) || this.strane[0]; },
 
@@ -1364,6 +1364,67 @@ function app() {
         + `uzastopnih ${o.uzastopni}  ·  raspon ${o.raspon}  ·  dekada ${o.dekade}`;
     },
 
+    // ---- „Zasto predlog izgleda neobicno" (PLAN_KORAK_IZBORA 4.3) ----
+    // Svi brojevi u tekstu se IZVODE: parnost i uzastopni iz samog predloga, velicine
+    // klasa iz kombinatorike na serveru. Nijedan nije upisan u sablon.
+
+    sekvKlasa() {
+      const p = this.sekv.stanje && this.sekv.stanje.predlog_izlaz;
+      return p ? p.klasa : null;
+    },
+
+    sekvOsobinaPredloga(ime) {
+      const p = this.sekv.stanje && this.sekv.stanje.predlog_izlaz;
+      return p && p.osobine ? p.osobine[ime] : '—';
+    },
+
+    // Grupise cifre tackom, kao ostatak UI-ja: 15380937 -> 15.380.937
+    sekvBrojSaTackom(v) {
+      return v == null ? '—' : Number(v).toLocaleString('sr-RS').replace(/ /g, '.');
+    },
+
+    // Srpska promena uz broj: 1 paran, 2-4 parna, 0 i 5+ parnih. Bez ovoga bi tekst
+    // koji se izvodi iz podataka glasio „1 neparnih".
+    sekvMnozina(n, oblici) {
+      const d = n % 10, dd = n % 100;
+      if (d === 1 && dd !== 11) return `${n} ${oblici[0]}`;
+      if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return `${n} ${oblici[1]}`;
+      return `${n} ${oblici[2]}`;
+    },
+
+    sekvUzastopniTekst(n) {
+      return n === 0 ? 'nijedan par uzastopnih brojeva'
+                     : this.sekvMnozina(n, ['uzastopni par', 'uzastopna para', 'uzastopnih parova']);
+    },
+
+    sekvZastoTekst() {
+      const p = this.sekv.stanje && this.sekv.stanje.predlog_izlaz;
+      if (!p || !p.osobine) return '';
+      const o = p.osobine;
+      const parni = this.sekvMnozina(o.parni, ['paran', 'parna', 'parnih']);
+      const neparni = this.sekvMnozina(7 - o.parni, ['neparan', 'neparna', 'neparnih']);
+      return `Trenutni predlog ima ${parni} i ${neparni}, ${this.sekvUzastopniTekst(o.uzastopni)}, `
+        + `zbir ${o.zbir} i raspon ${o.raspon}.`;
+    },
+
+    sekvSansaTekst() {
+      const k = this.sekvKlasa();
+      if (!k) return '';
+      return 'Takve kombinacije su ređe kao klasa, ali svaka pojedinačna ima istu šansu kao '
+        + 'bilo koja druga: 1 prema ' + this.sekvBrojSaTackom(k.ukupno) + '. '
+        + 'Redak je oblik, ne kombinacija.';
+    },
+
+    // ---- Ravnoca kroz vreme (Faza 4) ----
+    sekvRavnocaSazetakTekst() {
+      const s = this.sekv.istorija && this.sekv.istorija.ravnoca_sazetak;
+      if (!s) return 'Mera ravnoće nije zapisana ni za jedno kolo — pokreni ponovni prolaz.';
+      return `Kroz ${s.n} ocenjenih kola medijana raspona je ${this.sekvUdeo(s.medijana, 2)}, `
+        + `najveći ${this.sekvUdeo(s.najveci, 2)}, a prag šuma je ${this.sekvUdeo(s.prag_raspona, 2)}. `
+        + `Iznad praga je ${s.preko_praga} kola (${this.sekvUdeo(s.preko_praga_udeo, 1)}) — `
+        + `otprilike onoliko koliko čist šum i daje. Raspodela je ravna kroz celu istoriju, ne samo sada.`;
+    },
+
     sekvPodesiFiltere() {
       const bazen = this.sekv.stanje && this.sekv.stanje.bazen;
       if (bazen) this.bazenUGenerator(bazen);
@@ -1440,6 +1501,29 @@ function app() {
             lineStyle: { color: BOJE.accent, width: 2 } },
         ],
       });
+
+      // Ravnoca kroz vreme: prag je vodoravna linija, pa se odmah vidi da krivulja
+      // gotovo ceo vek stoji ispod njega. Y-osa krece od nule — udeo baseline-a je
+      // velicina koja ima apsolutnu nulu, za razliku od K.
+      if (h.ravnoca_sazetak) {
+        const prag = h.prag_raspona;
+        crtaj('sekv-ravnoca', {
+          ...bazaOpcija(),
+          legend: { top: 4, textStyle: { color: BOJE.tekst, fontSize: 11 },
+                    data: ['raspon verovatnoća', 'prag šuma'] },
+          grid: { left: 58, right: 18, top: 40, bottom: 46 },
+          xAxis: { type: 'category', data: x, name: 'kolo', nameLocation: 'middle', nameGap: 28,
+                   axisLine: { lineStyle: { color: BOJE.mreza } }, axisLabel: { fontSize: 9 } },
+          yAxis: { type: 'value', min: 0, splitLine: { lineStyle: { color: BOJE.mreza } },
+                   axisLabel: { formatter: v => (100 * v).toFixed(1).replace('.', ',') + '%' } },
+          series: [
+            { name: 'prag šuma', type: 'line', data: h.kola.map(() => prag), symbol: 'none',
+              lineStyle: { color: BOJE.tekst, type: 'dashed', width: 1.5 } },
+            { name: 'raspon verovatnoća', type: 'line', data: h.raspon_udeo, symbol: 'none',
+              connectNulls: false, lineStyle: { color: BOJE.accent, width: 1.5 } },
+          ],
+        });
+      }
 
       const ids = Object.keys(h.eksperti);
       crtaj('sekv-k-eksperti', {

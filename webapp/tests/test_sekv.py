@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from webapp.core import (analitika, baza, generator, konfig, prediktori, prelazi,  # noqa: E402
-                         prognoza, sinteza, sekvencijalni as S)
+                         prognoza, razlicitost_teorija, sinteza, sekvencijalni as S)
 from webapp.tests.test_prognoza import nova_baza, sinteticka_istorija  # noqa: E402
 
 MAX_BROJ = konfig.MAX_BROJ
@@ -469,6 +469,97 @@ def test_bazen_sadrzi_predlog_kroz_istoriju():
         provereno += 1
         m.uci(p, po_ekspertu, {int(b) for b in istorija[i][1]})
     print(f"test_bazen_sadrzi_predlog_kroz_istoriju: OK ({provereno} koraka)")
+
+
+# ----------------------------------------------------------------------------
+# Objašnjenje klase i ravnoća kroz vreme (PLAN_KORAK_IZBORA §4.3, Faza 4)
+# ----------------------------------------------------------------------------
+
+def test_klase_pokrivaju_sve_kombinacije():
+    """Veličine klasa su tačne: zbir po parnosti i po uzastopnim daje tačno C(39,7).
+
+    Bez ove provere bi tekst „takve kombinacije su ređe kao klasa" tvrdio broj koji
+    nikad nije proveren. Zbir preko svih klasa mora da bude ceo prostor, inače je
+    formula pogrešna.
+    """
+    ukupno = razlicitost_teorija.UKUPNO_KOMBINACIJA
+    assert ukupno == 15380937
+    assert sum(razlicitost_teorija.broj_sa_parnih(i) for i in range(K + 1)) == ukupno
+    assert sum(razlicitost_teorija.broj_sa_uzastopnih(i) for i in range(K)) == ukupno
+    # van opsega nema kombinacija, a ne izuzetak
+    assert razlicitost_teorija.broj_sa_parnih(-1) == 0
+    assert razlicitost_teorija.broj_sa_uzastopnih(K) == 0
+
+    # provera grubom silom na manjem prostoru: iste formule za N=12, K=4
+    from itertools import combinations
+    from math import comb as _comb
+    n, k = 12, 4
+    po_parnosti, po_uzastopnim = {}, {}
+    for komb in combinations(range(1, n + 1), k):
+        pa = sum(1 for b in komb if b % 2 == 0)
+        uz = sum(1 for i in range(k - 1) if komb[i + 1] == komb[i] + 1)
+        po_parnosti[pa] = po_parnosti.get(pa, 0) + 1
+        po_uzastopnim[uz] = po_uzastopnim.get(uz, 0) + 1
+    for pa, broj in po_parnosti.items():
+        assert _comb(n // 2, pa) * _comb(n - n // 2, k - pa) == broj, pa
+    for uz, broj in po_uzastopnim.items():
+        r = k - uz
+        assert _comb(n - k + 1, r) * _comb(k - 1, r - 1) == broj, uz
+    print(f"test_klase_pokrivaju_sve_kombinacije: OK (obe klase sumiraju na {ukupno}, "
+          f"formule proverene grubom silom na C(12,4))")
+
+
+def test_klasa_uz_oba_izlaza():
+    """Uz predlog i uz tiket ide veličina njihove klase, izvedena iz njihovih osobina."""
+    istorija = sinteticka_istorija(220, seme=87)
+    conn, putanja = nova_baza(istorija)
+    try:
+        S.rekonstruisi(conn)
+        st = S.stanje_api(conn, analiza=_analiza_iz(conn))
+        for izlaz in (st["predlog_izlaz"], st["tiket"]):
+            o, klasa = izlaz["osobine"], izlaz["klasa"]
+            assert klasa["ukupno"] == razlicitost_teorija.UKUPNO_KOMBINACIJA
+            assert klasa["parnost_broj"] == razlicitost_teorija.broj_sa_parnih(o["parni"])
+            assert klasa["uzastopni_broj"] == razlicitost_teorija.broj_sa_uzastopnih(o["uzastopni"])
+            assert 0 < klasa["parnost_udeo"] <= 1 and 0 < klasa["uzastopni_udeo"] <= 1
+        print(f"test_klasa_uz_oba_izlaza: OK (predlog {st['predlog']}, "
+              f"{st['predlog_izlaz']['osobine']['parni']} parnih → "
+              f"{100 * st['predlog_izlaz']['klasa']['parnost_udeo']:.2f}% svih kombinacija)")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_ravnoca_kroz_vreme():
+    """Krivulja ravnoće i njen sažetak: raspodela je ravna kroz CELU istoriju."""
+    istorija = sinteticka_istorija(300, seme=89)
+    conn, putanja = nova_baza(istorija)
+    try:
+        S.rekonstruisi(conn)
+        h = S.istorija_api(conn)
+        n = h["n"]
+        assert len(h["raspon_udeo"]) == len(h["zazor_udeo"]) == n
+        assert all(v is not None for v in h["raspon_udeo"])
+        assert h["prag_raspona"] == konfig.PRAG_RASPONA
+
+        sz = h["ravnoca_sazetak"]
+        assert sz["n"] == n and sz["prag_raspona"] == konfig.PRAG_RASPONA
+        assert sz["medijana"] <= sz["najveci"]
+        assert sz["preko_praga"] == sum(1 for v in h["raspon_udeo"] if v > konfig.PRAG_RASPONA)
+        assert abs(sz["preko_praga_udeo"] - sz["preko_praga"] / n) < 1e-12
+        # na sintetici prag po definiciji prelazi oko 5% koraka
+        assert sz["preko_praga_udeo"] < 0.15, sz
+
+        # baza od pre Faze 1: kolone su NULL → sažetak izostaje, ali bez izuzetka
+        conn.execute("UPDATE sekv_stanje SET raspon_udeo=NULL, zazor_udeo=NULL")
+        conn.commit()
+        prazna = S.istorija_api(conn)
+        assert prazna["ravnoca_sazetak"] is None
+        assert all(v is None for v in prazna["raspon_udeo"])
+        print(f"test_ravnoca_kroz_vreme: OK ({n} kola, medijana "
+              f"{sz['medijana']:.4f}, preko praga {sz['preko_praga']} = "
+              f"{100 * sz['preko_praga_udeo']:.1f}%)")
+    finally:
+        conn.close(); os.remove(putanja)
 
 
 # ----------------------------------------------------------------------------
@@ -1027,6 +1118,9 @@ def main():
     test_predlog_bez_filtera()
     test_tiket_iz_bazena()
     test_bazen_sadrzi_predlog_kroz_istoriju()
+    test_klase_pokrivaju_sve_kombinacije()
+    test_klasa_uz_oba_izlaza()
+    test_ravnoca_kroz_vreme()
     test_ista_ostrina_za_sve()
     test_nijedan_ekspert_ne_umire()
     test_tezina_se_vraca()

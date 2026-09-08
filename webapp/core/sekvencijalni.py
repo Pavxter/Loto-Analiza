@@ -736,6 +736,23 @@ def _eksperti_opis():
     return {e: {"naziv": naziv, "opis": opis} for e, (naziv, opis) in EKSPERTI.items()}
 
 
+def klasa_kombinacije(osobine):
+    """Koliko je česta KLASA kojoj kombinacija pripada (PLAN_KORAK_IZBORA §4.3).
+
+    Odgovor na „zašto predlog izgleda neobično": kombinacija sa šest parnih jeste
+    retka kao klasa, ali svaka pojedinačna u toj klasi ima istu šansu kao bilo koja
+    druga — 1 prema C(39,7). Brojevi se izvode iz kombinatorike, ne hardkoduju.
+    """
+    if not osobine:
+        return None
+    ukupno = T.UKUPNO_KOMBINACIJA
+    po_parnosti = T.broj_sa_parnih(osobine["parni"])
+    po_uzastopnim = T.broj_sa_uzastopnih(osobine["uzastopni"])
+    return {"ukupno": ukupno,
+            "parnost_broj": po_parnosti, "parnost_udeo": po_parnosti / ukupno,
+            "uzastopni_broj": po_uzastopnim, "uzastopni_udeo": po_uzastopnim / ukupno}
+
+
 def _tiket_izlaz(bazen, analiza, filteri):
     """Tiket Generatora iz datog bazena, ili None kad se ne može izračunati (§2.1).
 
@@ -749,6 +766,7 @@ def _tiket_izlaz(bazen, analiza, filteri):
     if tiket is None:
         return None
     return tiket | {"bira": "generator", "ista_sansa": True,
+                    "klasa": klasa_kombinacije(tiket["osobine"]),
                     "filteri": dict(filteri or {})}
 
 
@@ -762,8 +780,9 @@ def _predlog_izlaz(brojevi):
     """
     if not brojevi:
         return None
+    osobine = generator.osobine_kombinacije(brojevi)
     return {"brojevi": list(brojevi), "bira": "model",
-            "osobine": generator.osobine_kombinacije(brojevi)}
+            "osobine": osobine, "klasa": klasa_kombinacije(osobine)}
 
 
 def _ravnoca_izlaz(izvor):
@@ -835,12 +854,34 @@ def istorija_api(conn):
         for e in EKSPERTI:
             tezine[e].append(w.get(e))
             k_eksperti[e].append(ke.get(e))
+    raspon = [r["raspon_udeo"] for r in redovi]
+    izmereni = [v for v in raspon if v is not None]
     return {"kola": [r["kolo"] for r in redovi], "k": [r["k"] for r in redovi],
             "ocekivano": [r["ocekivano"] for r in redovi],
             "pojas_donja": [r["pojas_donja"] for r in redovi],
             "pojas_gornja": [r["pojas_gornja"] for r in redovi],
+            # Ravnoća kroz vreme (Faza 4): raspodela je ravna kroz CELU istoriju,
+            # ne samo sada. NULL u starim redovima ostaje None i grafik ga preskače.
+            "raspon_udeo": raspon,
+            "zazor_udeo": [r["zazor_udeo"] for r in redovi],
+            "prag_raspona": PRAG_RASPONA,
+            "ravnoca_sazetak": _sazetak_ravnoce(izmereni),
             "tezine": tezine, "k_eksperti": k_eksperti,
             "eksperti": _eksperti_opis(), "n": len(redovi)}
+
+
+def _sazetak_ravnoce(vrednosti):
+    """Medijana, najveći i udeo koraka preko praga — jedan red teksta ispod grafika."""
+    if not vrednosti:
+        return None
+    poredjani = sorted(vrednosti)
+    preko = sum(1 for v in poredjani if v > PRAG_RASPONA)
+    return {"n": len(poredjani),
+            "medijana": poredjani[len(poredjani) // 2],
+            "najveci": poredjani[-1],
+            "preko_praga": preko,
+            "preko_praga_udeo": preko / len(poredjani),
+            "prag_raspona": PRAG_RASPONA}
 
 
 def _korak_iz_redova(conn, redovi, i, analiza=None, filteri=None):

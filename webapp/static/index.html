@@ -1334,6 +1334,52 @@
                 </div>
               </div>
 
+              <!-- „Zašto predlog izgleda neobično" (PLAN_KORAK_IZBORA §4.3).
+                   Svi brojevi u tekstu se izvode iz predloga i iz kombinatorike —
+                   nijedan nije upisan u šablon. -->
+              <div class="card" style="margin-top:16px" x-show="sekv.stanje.predlog_izlaz">
+                <div class="coll-head" @click="sekv.otvoriZasto = !sekv.otvoriZasto">
+                  <span class="caret" x-text="sekv.otvoriZasto ? '▾' : '▸'"></span>
+                  <h3>Zašto predlog izgleda neobično</h3>
+                </div>
+                <div x-show="sekv.otvoriZasto" x-cloak style="margin-top:10px; max-width:78ch">
+                  <p style="margin:0 0 10px">
+                    Model računa verovatnoću za <b>svaki broj posebno</b>. Parnost, raspon i
+                    uzastopni brojevi su osobine <b>cele kombinacije</b> — top 7 po pojedinačnim
+                    verovatnoćama ih ne vidi. Zato predlog povremeno izgleda netipično.
+                  </p>
+                  <p style="margin:0 0 10px" x-text="sekvZastoTekst()"></p>
+                  <table class="tbl" style="margin-top:4px" x-show="sekvKlasa()">
+                    <thead><tr><th>Klasa</th><th class="num">Kombinacija u klasi</th><th class="num">Udeo</th></tr></thead>
+                    <tbody>
+                      <tr>
+                        <td x-text="'tačno ' + sekvMnozina(sekvOsobinaPredloga('parni'), ['paran', 'parna', 'parnih'])"></td>
+                        <td class="num mono" x-text="sekvBrojSaTackom(sekvKlasa().parnost_broj)"></td>
+                        <td class="num mono" x-text="sekvUdeo(sekvKlasa().parnost_udeo, 2)"></td>
+                      </tr>
+                      <tr>
+                        <td x-text="'tačno ' + sekvMnozina(sekvOsobinaPredloga('uzastopni'), ['uzastopni par', 'uzastopna para', 'uzastopnih parova'])"></td>
+                        <td class="num mono" x-text="sekvBrojSaTackom(sekvKlasa().uzastopni_broj)"></td>
+                        <td class="num mono" x-text="sekvUdeo(sekvKlasa().uzastopni_udeo, 2)"></td>
+                      </tr>
+                      <tr>
+                        <td class="muted">sve kombinacije</td>
+                        <td class="num mono muted" x-text="sekvBrojSaTackom(sekvKlasa().ukupno)"></td>
+                        <td class="num mono muted">100,00%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <p class="hint" style="margin:10px 0 0" x-text="sekvSansaTekst()"></p>
+                </div>
+              </div>
+
+              <!-- Ravnoća kroz vreme (Faza 4): raspodela je ravna kroz CELU istoriju -->
+              <div class="card" style="margin-top:16px" x-show="sekv.istorija && sekv.istorija.ravnoca_sazetak">
+                <h3>Ravnoća raspodele kroz vreme</h3>
+                <p class="hint" x-text="sekvRavnocaSazetakTekst()"></p>
+                <div id="sekv-ravnoca" class="chart"></div>
+              </div>
+
               <div class="card" style="margin-top:16px">
                 <h3>Koeficijent kroz vreme</h3>
                 <p class="hint">Linija unutar osenčenog pojasa = model ne zna više od slučajnosti. Pojas je ±2σ oko vrednosti koju bi K imao na slučajnim podacima. Razmera je podešena po kasnijem delu — prvih stotinak kola ima toliko širok pojas da bi spljoštilo ceo grafik.</p>
