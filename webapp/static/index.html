@@ -1587,8 +1587,8 @@
                     <tr @click="sinOtvoriRed(r)" style="cursor:pointer"
                         :class="sin.detaljRed && sin.detaljRed.metod === r.metod ? 'izabran' : ''">
                       <td :title="r.opis" x-text="r.naziv"></td>
-                      <td class="num mono" x-text="r.jedinica + ' = ' + sinBroj(r.rezultat, 2)"></td>
-                      <td class="num muted mono" x-text="r.ocekivano != null ? r.ocekivano : '—'"></td>
+                      <td class="num mono" x-text="sinStat(r)"></td>
+                      <td class="num muted mono" x-text="sinOcek(r)"></td>
                       <td class="num mono" x-text="sinP(r.p)"></td>
                       <td class="num mono" x-text="sinP(r.p_korig)"></td>
                       <td><span class="tag" :class="sinKlasa(r)" x-text="r.napomena || r.zakljucak"></span></td>

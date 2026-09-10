@@ -1770,6 +1770,16 @@ function app() {
       return Number(v).toFixed(decimala).replace('.', ',');
     },
 
+    // Statistika testa se cita u svojoj jedinici. Hi-kvadrat i |z| na dve decimale,
+    // ali K na sestoj: njegov pojas je sirok oko 1e-4, pa bi na dve decimale svaki
+    // red sa koeficijentom pisao "K = 1,00" i razlika se ne bi videla.
+    sinDecimala(jedinica) { return jedinica === 'K' ? 6 : 2; },
+    sinStat(r) {
+      if (r.rezultat == null) return '—';
+      return r.jedinica + ' = ' + this.sinBroj(r.rezultat, this.sinDecimala(r.jedinica));
+    },
+    sinOcek(r) { return this.sinBroj(r.ocekivano, this.sinDecimala(r.jedinica)); },
+
     sinP(v) {
       if (v == null) return '—';
       if (v > 0 && v < 0.0001) return '< 0,0001';
