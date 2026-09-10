@@ -47,6 +47,19 @@ PRAG_RASPONA = 0.0814        # 95. percentil na 7.250 koraka čistog šuma
                              # Za poređenje: medijana šuma je 0,0597, a raspon
                              # izmeren na kolu 2026072 je 0,057 — ispod medijane.
 
+# --- Dva testa režima: klizni K i skan prozora (PLAN §3.2 C) ---
+# Zajedničko pitanje oba: „je li signala ikad bilo u NEKOM periodu", za razliku od
+# zbirnih testova koji ceo period usrednje i time sakriju efekat koji traje kratko.
+SEKV_PROZOR_K = 200          # dužina prozora kliznog K; isti prozor za disjunktne blokove
+
+SKAN_DUZINE = (100, 200, 400)  # dužine prozora u kojima se traži pristrasna kugla
+SKAN_KORAK = 25                # pomak početka prozora
+SKAN_REPLIKA = 2000            # Monte Karlo replika za nultu raspodelu skana.
+                               # Najmanja dostižna p je 1/(R+1); posle Bonferronija
+                               # preko ~25 redova Sinteze to je 0,0125 — i dalje
+                               # ispod 0,05, pa red MOŽE da odstupi.
+SKAN_SEME = 12345              # fiksirano: isti ulaz mora dati isti izlaz
+
 # --- Putanje ---
 # Koren projekta je roditelj foldera 'webapp'
 KOREN_PROJEKTA = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

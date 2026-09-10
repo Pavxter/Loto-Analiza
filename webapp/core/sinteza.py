@@ -172,6 +172,12 @@ TESTOVI = {
     "najmanji_broj": (
         "Najmanji izvučeni broj", "najmanji_broj", "χ²",
         "P(min=k) = C(39−k,6)/C(39,7) — objašnjava zašto su rangovi mahom mali."),
+    "skan_prozora": (
+        "Skan prozora", "skan", "|z|",
+        "Najveće odstupanje bilo kog broja u bilo kom prozoru od 100, 200 ili 400 "
+        "kola. Zbirna frekvencija usrednji ceo period i time sakrije pristrasnost "
+        "koja je trajala kratko; skan traži maksimum, a multiplicitet svih prozora "
+        "je već u njegovoj p-vrednosti."),
 }
 
 
@@ -191,10 +197,12 @@ def redovi_testovi(conn, period=0):
     redovi = []
     for metod, (naziv, kljuc, jedinica, opis) in TESTOVI.items():
         t = analize[kljuc]
-        statistika = t.get("chi2", t.get("Q"))
+        # Testovi sa poznatom raspodelom nose `chi2`/`Q` i `df`; skan nema df, nego
+        # `statistika` i centar izmeren na simulaciji. Kolone tabele su iste.
+        statistika = t.get("chi2", t.get("Q", t.get("statistika")))
         redovi.append(Eksperiment(
             metod=metod, naziv=naziv, tip="test", n=t.get("n", len(istorija)),
-            rezultat=statistika, ocekivano=t["df"], jedinica=jedinica,
+            rezultat=statistika, ocekivano=t.get("df", t.get("centar")), jedinica=jedinica,
             p=t.get("p_tacno"), opis=opis,
             napomena="" if t.get("p_tacno") is not None else "premalo podataka za test",
             detalj=t,
@@ -209,6 +217,7 @@ def redovi_testovi(conn, period=0):
         detalj=uzastopna,
     ))
     redovi.append(_red_koeficijenta(conn))
+    redovi.append(_red_kliznog(conn))
     return redovi
 
 
@@ -235,6 +244,34 @@ def _red_koeficijenta(conn):
         ocekivano=round(s["ocekivano"], 6), jedinica="K",
         z=round(s["z"], 4) if s["z"] is not None else None, p=s["p"],
         opis=opis, detalj=s)
+
+
+def _red_kliznog(conn):
+    """Klizni K kao red tipa `test`: „je li K ikad odstupio u NEKOM periodu".
+
+    Red iznad (`sekv_koeficijent`) meri celu istoriju odjednom i time usrednjuje —
+    efekat koji traje 200 kola nestane u proseku preko 1.400. Ovaj red gleda K po
+    disjunktnim blokovima i prijavljuje najekstremniji, a p-vrednost je Šidák preko
+    svih blokova, pa „najekstremniji od šest" nije prednost nego je već plaćen.
+
+    Blokovi su disjunktni zato što su im pod H₀ z-vrednosti nezavisne i imaju
+    zajedničku raspodelu u zatvorenom obliku. Klizna krivulja u panelu je isti
+    podatak sa finijim korakom, ali se iz nje p ne sme čitati.
+    """
+    opis = ("K na disjunktnim blokovima od "
+            f"{sekvencijalni.PROZOR_K} kola; prikazan je blok koji najviše odstupa, "
+            "a p je korigovan na broj blokova (Šidák).")
+    b = sekvencijalni.blokovi(conn)
+    naj = b.get("najekstremniji")
+    if not naj or b.get("p_zajedno") is None:
+        return Eksperiment(
+            metod="sekv_klizni_k", naziv="Klizni koeficijent (najekstremniji blok)",
+            tip="test", n=b.get("n", 0), jedinica="K", opis=opis,
+            napomena=b.get("napomena") or "nema dovoljno blokova")
+    return Eksperiment(
+        metod="sekv_klizni_k", naziv="Klizni koeficijent (najekstremniji blok)",
+        tip="test", n=b["n"], rezultat=naj["k"], ocekivano=naj["ocekivano"],
+        jedinica="K", z=naj["z"], p=b["p_zajedno"], opis=opis, detalj=b)
 
 
 # ----------------------------------------------------------------------------
@@ -279,6 +316,15 @@ def _detalj_testa(metod, analize, uzastopna):
         return _histogram([c["oznaka"] for c in t["kategorije"]],
                           [c["posmatrano"] for c in t["kategorije"]],
                           [c["ocekivano"] for c in t["kategorije"]]), "Najmanji broj"
+    if metod == "skan_prozora":
+        t = analize["skan"]
+        if t["statistika"] is None:
+            return None, ""
+        # Po jedan stub za svaki broj: koliko je NAJVIŠE odstupao igde u istoriji.
+        # Referentna linija je prag koji slučajnost sama probije u 5% istorija —
+        # stub iznad nje nije nalaz sam po sebi, jer ih 39 traži maksimum.
+        return _histogram(range(1, konfig.MAX_BROJ + 1), t["po_broju"],
+                          [t["prag95"]] * konfig.MAX_BROJ), "Broj (najveći |z| kroz sve prozore)"
     if metod == "preklapanje_uzastopnih":
         return _histogram([c["oznaka"] for c in uzastopna["kategorije"]],
                           [c["posmatrano"] for c in uzastopna["kategorije"]],
@@ -313,6 +359,20 @@ def detalj_metoda(conn, metod, izvor="retro"):
         # serija + pojas + referentna linija. Tip nije „test" jer to nije histogram.
         return {"metod": metod, "naziv": "Koeficijent nepredvidivosti", "tip": "koeficijent",
                 "opis": "K kroz vreme sa pojasom ±2σ oko vrednosti očekivane pod slučajnošću.",
+                "serija": s["serija"], "pojas_donja": s["pojas_donja"],
+                "pojas_gornja": s["pojas_gornja"], "baseline": s["baseline"],
+                "jedinica": "K", "vodi_na": "prognoza"}
+
+    if metod == "sekv_klizni_k":
+        s = sekvencijalni.klizni(conn)
+        if not s["serija"]:
+            return None
+        return {"metod": metod, "naziv": f"Klizni K (prozor {s['prozor']} kola)",
+                "tip": "koeficijent",
+                "opis": ("K na kliznom prozoru sa pojasom ±2σ oko vrednosti očekivane "
+                         "pod slučajnošću. Prozori se preklapaju, pa je krivulja glatka "
+                         "ali njene tačke nisu nezavisne — p u tabeli dolazi iz "
+                         "disjunktnih blokova."),
                 "serija": s["serija"], "pojas_donja": s["pojas_donja"],
                 "pojas_gornja": s["pojas_gornja"], "baseline": s["baseline"],
                 "jedinica": "K", "vodi_na": "prognoza"}

@@ -26,6 +26,7 @@ import random
 import threading
 import time
 from datetime import datetime
+from itertools import accumulate
 from math import exp, log, sqrt
 
 from scipy.stats import norm
@@ -47,6 +48,7 @@ PERIOD = konfig.SEKV_PERIOD                # isti prozor kao retro-bektest
 MIN_START = konfig.SEKV_MIN_START          # pre ovoga nema dovoljno istorije
 PRAG_RASPONA = konfig.PRAG_RASPONA         # granica šuma za raspon p_mix (§2.4)
 SEKV_BAZEN = konfig.SEKV_BAZEN             # koliko brojeva ide Generatoru (§2.1)
+PROZOR_K = konfig.SEKV_PROZOR_K            # prozor kliznog K i disjunktnih blokova
 
 UNIFORMNI = "uniformni"
 BROJEVI = tuple(range(1, MAX_BROJ + 1))
@@ -344,7 +346,10 @@ class Mesavina:
         self._pomeri_tezine(gubici)
         # tek sada kolo ulazi u brojače prelaza — nikad pre nego što je ocenjeno
         self.posmatraj(dobitni)
-        return {"gubitak": gubitak_mesavine, "gubitak_eksperta": gubici}
+        # Momenti se vraćaju i pojedinačno, ne samo sabrani u stanje: klizni K ih
+        # sabira po prozoru, a iz kumulativnih kolona se prozor ne da izdvojiti.
+        return {"gubitak": gubitak_mesavine, "gubitak_eksperta": gubici,
+                "ocekivano_korak": ocekivano, "varijansa_korak": varijansa}
 
     def _pomeri_tezine(self, gubici):
         """Hedge u log-prostoru, pa fixed-share korak.
@@ -489,6 +494,8 @@ def _korak(m, istorija, i, period, min_start):
             "gubitak": korak["gubitak"],
             "gubitak_unif": korak["gubitak_eksperta"][UNIFORMNI],
             "gubitak_eksperta": korak["gubitak_eksperta"],
+            "ocekivano_korak": korak["ocekivano_korak"],
+            "varijansa_korak": korak["varijansa_korak"],
             **stanje}
 
 
@@ -583,7 +590,8 @@ def _red_za_upis(korak, sada):
             korak["sigma"], json.dumps(korak["tezine"]), json.dumps(korak["k_eksperti"]),
             json.dumps({e: round(g, 6) for e, g in korak["gubitak_eksperta"].items()}),
             r["p_min"], r["p_max"], r["raspon_udeo"], r["zazor_udeo"],
-            ",".join(map(str, korak["bazen"])), sada)
+            ",".join(map(str, korak["bazen"])),
+            korak["ocekivano_korak"], korak["varijansa_korak"], sada)
 
 
 def istorija_iz_conn(conn):
@@ -672,6 +680,124 @@ def serija(conn):
         "baseline": 1.0,
         "n_max": len(redovi),
     }
+
+
+# ----------------------------------------------------------------------------
+# Klizni K (§3.2 C — „je li K ikad pao u NEKOM periodu")
+# ----------------------------------------------------------------------------
+# Kumulativni K odgovara na pitanje o celoj istoriji i time usrednjuje: efekat koji
+# traje 200 kola nestane u proseku preko 1.400. Prozor to pitanje postavlja lokalno.
+#
+# Pod H₀ su koraci nezavisni, pa se i E[ℓ] i Var[ℓ] SABIRAJU po prozoru. Zato je
+# pojas prozora izračunat iz istih članova po koraku iz kojih je izračunat i
+# kumulativni pojas — nijedna nova pretpostavka se ne uvodi.
+
+NEDOSTAJU_MOMENTI = ("momenti po koraku nisu zapisani — pokreni ponovni prolaz "
+                     "sekvencijalnog modela")
+
+
+def _kolone_koraka(redovi):
+    """(gubitak, gubitak_unif, E[ℓ], Var[ℓ]) po koraku, ili None ako momenti fale."""
+    if any(r["ocekivano_korak"] is None or r["varijansa_korak"] is None for r in redovi):
+        return None
+    return ([r["gubitak"] for r in redovi], [r["gubitak_unif"] for r in redovi],
+            [r["ocekivano_korak"] for r in redovi], [r["varijansa_korak"] for r in redovi])
+
+
+def _prefiksi(vrednosti):
+    """Kumulativni zbirovi sa vodećom nulom: zbir [a, b) je P[b] − P[a]."""
+    return [0.0] + list(accumulate(vrednosti))
+
+
+def _k_prozora(pref, a, b):
+    """(K, E[K | H₀], σ) za korake [a, b). `pref` su prefiksi četiri kolone koraka."""
+    Pg, Pu, Pe, Pv = pref
+    imenilac = Pu[b] - Pu[a]
+    if imenilac <= 0:
+        return None
+    return ((Pg[b] - Pg[a]) / imenilac,
+            (Pe[b] - Pe[a]) / imenilac,
+            sqrt(max(Pv[b] - Pv[a], 0.0)) / imenilac)
+
+
+def klizni(conn, prozor=PROZOR_K):
+    """K na kliznom prozoru sa pojasom ±2σ — krivulja za panel, ne test.
+
+    Prozori se preklapaju, pa se iz ove krivulje NE sme čitati p-vrednost: svaka
+    tačka je zavisna od susedne. Test nad istim podacima radi `blokovi`.
+    """
+    redovi = baza.sekv_lista(conn)
+    prazno = {"kola": [], "serija": [], "pojas_donja": [], "pojas_gornja": [],
+              "baseline": 1.0, "prozor": prozor, "n_max": 0}
+    kolone = _kolone_koraka(redovi)
+    if kolone is None:
+        return {**prazno, "napomena": NEDOSTAJU_MOMENTI}
+    if len(redovi) < prozor:
+        return {**prazno, "napomena": f"manje od {prozor} ocenjenih kola"}
+
+    pref = [_prefiksi(x) for x in kolone]
+    kola, serija_k, donja, gornja = [], [], [], []
+    for kraj in range(prozor, len(redovi) + 1):
+        w = _k_prozora(pref, kraj - prozor, kraj)
+        if w is None:
+            continue
+        k, ocek, sig = w
+        kola.append(redovi[kraj - 1]["kolo"])
+        serija_k.append(round(k, 6))
+        donja.append(round(ocek - 2.0 * sig, 6))
+        gornja.append(round(ocek + 2.0 * sig, 6))
+    return {"kola": kola, "serija": serija_k, "pojas_donja": donja, "pojas_gornja": gornja,
+            "baseline": 1.0, "prozor": prozor, "n_max": len(serija_k), "napomena": ""}
+
+
+def blokovi(conn, prozor=PROZOR_K):
+    """K na DISJUNKTNIM blokovima + jedna p-vrednost za „ijedan blok odstupa".
+
+    Zašto blokovi a ne klizni prozori: preklapajući prozori dele korake, pa su im
+    z-vrednosti zavisne i maksimum nema raspodelu u zatvorenom obliku (tražio bi
+    Monte Karlo nad celim modelom, ~1.400 koraka po replici). Disjunktni blokovi
+    je imaju: pod H₀ su koraci nezavisni, pa su nezavisni i blokovi, pa je
+    P(nijedan ne odstupi) = (1 − p₁)^m. Otuda Šidák: p = 1 − (1 − p_min)^m.
+
+    Blokovi se seku od KRAJA unazad — ostatak koji ne popuni ceo blok otpada sa
+    početka istorije, gde model tek uči i gde je K ionako najmanje informativan.
+    """
+    redovi = baza.sekv_lista(conn)
+    kolone = _kolone_koraka(redovi)
+    if kolone is None:
+        return {"blokovi": [], "n": 0, "prozor": prozor, "napomena": NEDOSTAJU_MOMENTI}
+    m = len(redovi) // prozor
+    if m < 1:
+        return {"blokovi": [], "n": 0, "prozor": prozor,
+                "napomena": f"manje od {prozor} ocenjenih kola"}
+
+    pref = [_prefiksi(x) for x in kolone]
+    ostatak = len(redovi) - m * prozor
+    stavke = []
+    for i in range(m):
+        a = ostatak + i * prozor
+        w = _k_prozora(pref, a, a + prozor)
+        if w is None:
+            continue
+        k, ocek, sig = w
+        z = (k - ocek) / sig if sig > 0 else None
+        stavke.append({
+            "od": redovi[a]["kolo"], "do": redovi[a + prozor - 1]["kolo"],
+            "k": round(k, 6), "ocekivano": round(ocek, 6), "sigma": round(sig, 8),
+            "z": round(z, 4) if z is not None else None,
+            "p": float(2 * norm.sf(abs(z))) if z is not None else None,
+        })
+
+    sa_p = [b for b in stavke if b["p"] is not None]
+    if not sa_p:
+        return {"blokovi": stavke, "n": m * prozor, "prozor": prozor,
+                "napomena": "nijedan blok nema pozitivnu σ"}
+    naj = min(sa_p, key=lambda b: b["p"])
+    # Šidák preko m nezavisnih blokova; ovo je p CELE porodice blokova, a Sinteza
+    # ga posle množi svojim Bonferronijem preko svih redova tabele.
+    p_zajedno = 1.0 - (1.0 - naj["p"]) ** len(sa_p)
+    return {"blokovi": stavke, "n": m * prozor, "prozor": prozor, "broj_blokova": len(sa_p),
+            "najekstremniji": naj, "p_zajedno": p_zajedno, "napomena": ""}
 
 
 # ----------------------------------------------------------------------------

@@ -209,6 +209,77 @@ def test_autokorelacija_na_sumu():
     print(f"test_autokorelacija_na_sumu: OK (Q={rez['Q']}, p={rez['p']}, z={rez['z']})")
 
 
+# ----------------------------------------------------------------------------
+# Skan prozora
+# ----------------------------------------------------------------------------
+# Broj replika je u testovima namerno mali (300): dovoljno da p padne na svoj pod
+# od 1/301 kad je signal jasan, a dovoljno brzo da se ceo fajl pusti u sekundi.
+
+SKAN_REPLIKA_TEST = 300
+
+
+def _istorija_sa_burstom(broj_kola=1400, favorit=7, od=600, do=800, udeo=0.22, seme=7):
+    """Sintetika u kojoj je jedan broj pristrasan SAMO u prozoru [od, do).
+
+    Višak je namerno odmeren tako da se u zbiru cele istorije izgubi: prozor od 200
+    kola nosi z ≈ 6, a ista razlika razmazana na 1.400 kola daje z ≈ 2,3, što
+    hi-kvadrat sa 38 stepeni slobode ne razaznaje. Zato ova istorija razdvaja skan
+    od zbirne frekvencije — jedan test mora da vidi ono što drugi ne vidi.
+    """
+    rng = random.Random(seme)
+    istorija = []
+    for i in range(broj_kola):
+        if od <= i < do and rng.random() < udeo:
+            ostali = rng.sample([b for b in range(1, MAX_BROJ + 1) if b != favorit], K - 1)
+            brojevi = tuple([favorit] + ostali)
+        else:
+            brojevi = tuple(rng.sample(range(1, MAX_BROJ + 1), K))
+        istorija.append((2010001 + i, brojevi))
+    return istorija
+
+
+def test_skan_na_sumu():
+    """Na čistoj slučajnosti najveći |z| ostaje u onome što slučajnost sama pravi."""
+    istorija = sinteticka_istorija(1400, seme=91)
+    rez = razlicitost.test_skan_prozora(istorija, replika=SKAN_REPLIKA_TEST)
+    assert rez["p_tacno"] > 0.05, rez["p_tacno"]
+    assert rez["statistika"] < rez["prag95"], (rez["statistika"], rez["prag95"])
+    print(f"test_skan_na_sumu: OK (|z|={rez['statistika']}, prag95={rez['prag95']}, "
+          f"p={rez['p_tacno']:.4f})")
+
+
+def test_skan_vidi_sto_frekvencija_ne_vidi():
+    """Pristrasnost koja traje 200 kola: skan je nalazi, zbirna frekvencija ne.
+
+    Bez ovog para tvrdnji „skan ništa ne nalazi na pravim podacima" ne znači ništa —
+    tek se ovde vidi da bi nalazio da ima šta.
+    """
+    istorija = _istorija_sa_burstom()
+    frekv = razlicitost.test_frekvencija_brojeva(istorija)
+    skan = razlicitost.test_skan_prozora(istorija, replika=SKAN_REPLIKA_TEST)
+
+    assert frekv["p_tacno"] > 0.05, ("zbirna frekvencija ne sme videti burst", frekv["p_tacno"])
+    assert skan["p_tacno"] < 0.01, ("skan mora videti burst", skan["p_tacno"])
+    najbolji = skan["top"][0]
+    assert najbolji["broj"] == 7, najbolji
+    assert najbolji["duzina"] == 200, najbolji
+    assert najbolji["od"] == 2010601 and najbolji["do"] == 2010800, najbolji
+    print(f"test_skan_vidi_sto_frekvencija_ne_vidi: OK (frekvencija p={frekv['p_tacno']:.3f}, "
+          f"skan p={skan['p_tacno']:.4f}, nasao broj {najbolji['broj']} "
+          f"u prozoru {najbolji['od']}-{najbolji['do']}, z={najbolji['z']})")
+
+
+def test_skan_determinizam():
+    """Isti ulaz mora dati isti p — Monte Karlo je vezan fiksiranim semenom."""
+    istorija = sinteticka_istorija(600, seme=92)
+    a = razlicitost.test_skan_prozora(istorija, replika=SKAN_REPLIKA_TEST, seme=4242)
+    razlicitost._SKAN_NULL_KES.clear()      # bez keša, da se meri sam račun a ne pamćenje
+    b = razlicitost.test_skan_prozora(istorija, replika=SKAN_REPLIKA_TEST, seme=4242)
+    assert a["statistika"] == b["statistika"] and a["p_tacno"] == b["p_tacno"], (a, b)
+    assert a["prag95"] == b["prag95"], (a["prag95"], b["prag95"])
+    print(f"test_skan_determinizam: OK (p={a['p_tacno']:.4f} dvaput, kes ociscen izmedju)")
+
+
 def main():
     test_isti_brojevi_kao_prognoza()
     test_bonferroni_preko_svih()
@@ -219,6 +290,9 @@ def main():
     test_rang_rastojanje_teorija()
     test_min_broj_raspodela()
     test_autokorelacija_na_sumu()
+    test_skan_na_sumu()
+    test_skan_vidi_sto_frekvencija_ne_vidi()
+    test_skan_determinizam()
     print("\nSVI TESTOVI SINTEZE PROSLI [OK]")
 
 

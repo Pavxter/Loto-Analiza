@@ -120,6 +120,12 @@ def postavi_bazu(putanja=None):
             # Čuva se da bi „tiket" za staro kolo mogao da se izračuna bez ponovnog
             # prolaza kroz model — p_mix se ne čuva, a bazen je sve što Generator traži.
             "bazen": "TEXT",
+            # Momenti gubitka JEDNOG koraka pod H₀ (sekvencijalni.moment_gubitka).
+            # Kolone `ocekivano` i `sigma` su kumulativne, pa se iz njih prozor ne
+            # može izdvojiti bez gubitka preciznosti; klizni K traži članove po
+            # koraku, jer se pod H₀ i sredine i varijanse sabiraju po prozoru.
+            "ocekivano_korak": "REAL",
+            "varijansa_korak": "REAL",
         })
         conn.commit()
         _prognoze_broj_nullable(c)   # migracija starih baza gde je broj bio NOT NULL
@@ -374,7 +380,8 @@ def obrisi_retro_prognoze(conn):
 
 _SEKV_KOLONE = ("kolo, redni, predlog, preklapanje, gubitak, gubitak_unif, k, ocekivano, "
                 "pojas_donja, pojas_gornja, sigma, tezine, k_eksperti, gubitak_eksperta, "
-                "p_min, p_max, raspon_udeo, zazor_udeo, bazen, kreirano")
+                "p_min, p_max, raspon_udeo, zazor_udeo, bazen, "
+                "ocekivano_korak, varijansa_korak, kreirano")
 
 
 def sekv_obrisi(conn):

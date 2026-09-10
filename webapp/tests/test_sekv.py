@@ -1103,6 +1103,131 @@ def test_rekonstrukcija_brzina():
         conn.close(); os.remove(putanja)
 
 
+# ----------------------------------------------------------------------------
+# Klizni K (§3.2 C) — „je li K ikad odstupio u NEKOM periodu"
+# ----------------------------------------------------------------------------
+
+def istorija_sa_pristrasnim_blokom(broj_kola=1250, favorit=7, od=650, do=850,
+                                   udeo=0.30, seme=13):
+    """Sintetika koja je čist šum SVUDA osim u jednom bloku od 200 kola.
+
+    Granice bloka su namerno poravnate sa podelom na disjunktne blokove (prvih
+    `SEKV_MIN_START` kola samo puni prozor, pa je red i = kolo i + 50). Signal je
+    dovoljno jak da ga model u tom bloku nauči, a dovoljno kratak da se u zbiru
+    preko 1.200 ocenjenih kola izgubi.
+    """
+    rng = random.Random(seme)
+    istorija = []
+    for i in range(broj_kola):
+        if od <= i < do and rng.random() < udeo:
+            ostali = rng.sample([b for b in range(1, MAX_BROJ + 1) if b != favorit], K - 1)
+            brojevi = tuple([favorit] + ostali)
+        else:
+            brojevi = tuple(rng.sample(range(1, MAX_BROJ + 1), K))
+        istorija.append((2010001 + i, brojevi))
+    return istorija
+
+
+def test_klizni_prozor_preko_svega_jednak_kumulativnom():
+    """Prozor koji obuhvata SVE korake mora dati tačno kumulativni K, E i σ.
+
+    Kumulativne vrednosti se računaju sabiranjem u toku prolaza, a prozorske
+    sabiranjem zapisanih članova po koraku. Ako se te dve staze raziđu, momenti po
+    koraku nisu isti oni od kojih je napravljen kumulativni pojas.
+    """
+    conn, putanja = nova_baza(sinteticka_istorija(400, seme=55))
+    try:
+        S.rekonstruisi(conn)
+        rez = S.rezime(conn)
+        b = S.blokovi(conn, prozor=rez["n"])
+        assert b["broj_blokova"] == 1, b
+        ceo = b["blokovi"][0]
+        assert abs(ceo["k"] - rez["k"]) < 1e-6, (ceo["k"], rez["k"])
+        assert abs(ceo["ocekivano"] - rez["ocekivano"]) < 1e-6, (ceo["ocekivano"], rez["ocekivano"])
+        assert abs(ceo["sigma"] - rez["sigma"]) < 1e-8, (ceo["sigma"], rez["sigma"])
+        print(f"test_klizni_prozor_preko_svega_jednak_kumulativnom: OK "
+              f"(K={ceo['k']}, kumulativni {rez['k']}, n={rez['n']})")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_klizni_na_sumu():
+    """Na čistom šumu nijedan blok ne odstupa posle Šidákove korekcije."""
+    conn, putanja = nova_baza(sinteticka_istorija(1250, seme=56))
+    try:
+        S.rekonstruisi(conn)
+        kl = S.klizni(conn)
+        b = S.blokovi(conn)
+        assert kl["n_max"] > 0 and not kl["napomena"], kl["napomena"]
+        assert len(kl["serija"]) == len(kl["pojas_donja"]) == len(kl["kola"])
+        assert b["p_zajedno"] > 0.05, b["p_zajedno"]
+        print(f"test_klizni_na_sumu: OK ({b['broj_blokova']} blokova, "
+              f"p_zajedno={b['p_zajedno']:.4f}, klizna kriva {kl['n_max']} tacaka)")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_klizni_nalazi_blok_koji_kumulativni_ne_vidi():
+    """Signal koji traje 200 kola: blokovi ga nalaze, kumulativni K ga ne vidi.
+
+    Ovo je razlog postojanja reda: `sekv_koeficijent` meri celu istoriju odjednom i
+    kratak period mu se utopi u proseku. Bez ovog testa „K ≈ 1 na pravim podacima"
+    ne bi značilo da signala nema, nego samo da ga zbir ne bi ni video.
+    """
+    conn, putanja = nova_baza(istorija_sa_pristrasnim_blokom())
+    try:
+        S.rekonstruisi(conn)
+        rez = S.rezime(conn)
+        b = S.blokovi(conn)
+        assert rez["p"] > 0.05, ("kumulativni K ne sme videti blok", rez["p"])
+        assert b["p_zajedno"] < 0.01, ("blokovi moraju videti blok", b["p_zajedno"])
+        naj = b["najekstremniji"]
+        assert naj["z"] < 0, naj          # model je NAUCIO -> K pada ispod ocekivanog
+        assert (naj["od"], naj["do"]) == (2010651, 2010850), naj
+        print(f"test_klizni_nalazi_blok_koji_kumulativni_ne_vidi: OK "
+              f"(kumulativni p={rez['p']:.3f}, blokovi p={b['p_zajedno']:.6f}, "
+              f"blok {naj['od']}-{naj['do']} z={naj['z']})")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_sinteza_ima_red_kliznog():
+    """Red kliznog K stoji u tabeli i njegov panel crta kliznu krivu."""
+    conn, putanja = nova_baza(sinteticka_istorija(1250, seme=57))
+    try:
+        S.rekonstruisi(conn)
+        redovi = {r["metod"]: r for r in sinteza.sakupi(conn, "retro")["redovi"]["test"]}
+        red = redovi["sekv_klizni_k"]
+        assert red["p"] is not None and red["jedinica"] == "K", red
+        assert red["n"] % S.PROZOR_K == 0, red["n"]
+        detalj = sinteza.detalj_metoda(conn, "sekv_klizni_k")
+        assert detalj["tip"] == "koeficijent" and detalj["serija"], detalj
+        assert len(detalj["serija"]) == len(detalj["pojas_gornja"])
+        print(f"test_sinteza_ima_red_kliznog: OK (n={red['n']}, p={red['p']:.4f}, "
+              f"panel {len(detalj['serija'])} tacaka)")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
+def test_klizni_bez_momenata():
+    """Stari redovi bez momenata po koraku: red kaze da fali prolaz, ne puca."""
+    conn, putanja = nova_baza(sinteticka_istorija(1250, seme=58))
+    try:
+        S.rekonstruisi(conn)
+        conn.execute("UPDATE sekv_stanje SET ocekivano_korak=NULL, varijansa_korak=NULL")
+        conn.commit()
+        assert S.klizni(conn)["serija"] == []
+        assert S.blokovi(conn)["blokovi"] == []
+        redovi = {r["metod"]: r for r in sinteza.sakupi(conn, "retro")["redovi"]["test"]}
+        red = redovi["sekv_klizni_k"]
+        assert red["p"] is None and red["zakljucak"] == sinteza.BEZ_PODATAKA, red
+        assert red["napomena"] == S.NEDOSTAJU_MOMENTI, red["napomena"]
+        assert sinteza.detalj_metoda(conn, "sekv_klizni_k") is None
+        print("test_klizni_bez_momenata: OK (red bez p-vrednosti, uz napomenu)")
+    finally:
+        conn.close(); os.remove(putanja)
+
+
 def main():
     test_raspodela_suma_7()
     test_period_isti_kao_retro()
@@ -1142,6 +1267,11 @@ def main():
     test_bez_curenja()
     test_determinizam()
     test_rekonstrukcija_brzina()
+    test_klizni_prozor_preko_svega_jednak_kumulativnom()
+    test_klizni_na_sumu()
+    test_klizni_nalazi_blok_koji_kumulativni_ne_vidi()
+    test_sinteza_ima_red_kliznog()
+    test_klizni_bez_momenata()
     print("\nSVI TESTOVI SEKVENCIJALNOG PREDIKTORA PROSLI [OK]")
 
 

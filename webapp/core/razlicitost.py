@@ -14,6 +14,8 @@ celom istorijom (svaki rekord se pripisuje trenutku kada se desio).
 
 import random
 
+import numpy as np
+
 from . import konfig, razlicitost_teorija as T
 
 MAX_BROJ = konfig.MAX_BROJ
@@ -553,8 +555,130 @@ def test_frekvencija_brojeva(istorija):
     return rezultat
 
 
+# ----------------------------------------------------------------------------
+# Skan prozora: „je li IJEDNA kugla bila pristrasna u IJEDNOM periodu"
+# ----------------------------------------------------------------------------
+# `test_frekvencija_brojeva` sabira celu istoriju i time gasi svaki efekat koji je
+# trajao kratko — set kuglica koji je bio u upotrebi dve godine pa zamenjen ostaje
+# nevidljiv u zbiru od trinaest godina. Skan gleda svaki broj u svakom prozoru i
+# uzima NAJVEĆE odstupanje koje je igde našao.
+#
+# Cena je multiplicitet: prozora ima na hiljade i preklapaju se, pa najveći |z|
+# nema ni hi-kvadrat raspodelu ni bilo koju drugu u zatvorenom obliku. Zato se
+# nulta raspodela MERI — simulira se ista igra pod čistom slučajnošću i iz nje se
+# čita koliko veliki maksimum slučajnost sama proizvodi. p je udeo replika koje su
+# dostigle posmatrani maksimum, pa je korekcija za sve prozore i sve brojeve već
+# unutar te jedne p-vrednosti.
+#
+# Determinizam: seme, broj replika i dužine prozora su fiksirani u konfigu, pa
+# ista istorija uvek daje isti p.
+
+SKAN_DUZINE = konfig.SKAN_DUZINE
+SKAN_KORAK = konfig.SKAN_KORAK
+SKAN_REPLIKA = konfig.SKAN_REPLIKA
+SKAN_SEME = konfig.SKAN_SEME
+
+# Nulta raspodela zavisi samo od (n, dužine, korak, replike, seme) i računa se
+# nekoliko sekundi. Keš je bez brave namerno: funkcija je čista i deterministička,
+# pa je najgori ishod utrke dvostruko isti posao, dok bi brava držala ostale
+# zahteve dok simulacija traje.
+_SKAN_NULL_KES = {}
+
+
+def _maske_matrica(istorija):
+    """(n, 39) matrica 0/1 — je li broj b izvučen u kolu i."""
+    m = np.zeros((len(istorija), MAX_BROJ), dtype=np.int8)
+    for i, (_kolo, brojevi) in enumerate(istorija):
+        for b in brojevi:
+            m[i, b - 1] = 1
+    return m
+
+
+def _skan_po_broju(m, duzine, korak):
+    """Najveći |z| svakog broja preko svih prozora. Vraća (39,) niz."""
+    n = m.shape[0]
+    p0 = K / MAX_BROJ
+    kum = np.vstack([np.zeros(MAX_BROJ), np.cumsum(m, axis=0)])
+    najveci = np.zeros(MAX_BROJ)
+    for L in duzine:
+        if L > n:
+            continue
+        poc = np.arange(0, n - L + 1, korak)
+        z = (kum[poc + L] - kum[poc] - L * p0) / np.sqrt(L * p0 * (1 - p0))
+        najveci = np.maximum(najveci, np.abs(z).max(axis=0))
+    return najveci
+
+
+def _skan_prozori(m, duzine, korak):
+    """Svi prozori kao lista (|z|, broj, duzina, pocetni_indeks) — samo za detalj."""
+    n = m.shape[0]
+    p0 = K / MAX_BROJ
+    kum = np.vstack([np.zeros(MAX_BROJ), np.cumsum(m, axis=0)])
+    nadjeno = []
+    for L in duzine:
+        if L > n:
+            continue
+        poc = np.arange(0, n - L + 1, korak)
+        z = (kum[poc + L] - kum[poc] - L * p0) / np.sqrt(L * p0 * (1 - p0))
+        # Po jedan (najjači) prozor te dužine za svaki broj — dovoljno za tabelu,
+        # a bez desetina hiljada gotovo istih redova iz susednih prozora.
+        i = np.abs(z).argmax(axis=0)
+        for b in range(MAX_BROJ):
+            nadjeno.append((abs(float(z[i[b], b])), b + 1, L, int(poc[i[b]]),
+                            float(z[i[b], b])))
+    return nadjeno
+
+
+def _skan_null(n, duzine, korak, replika, seme):
+    """Nulta raspodela najvećeg |z| — `replika` simuliranih istorija dužine n."""
+    kljuc = (n, tuple(duzine), korak, replika, seme)
+    if kljuc in _SKAN_NULL_KES:
+        return _SKAN_NULL_KES[kljuc]
+    rng = np.random.default_rng(seme)
+    uzorak = np.empty(replika)
+    for r in range(replika):
+        # Sedam od 39 bez vraćanja, vektorski: najmanjih 7 od 39 slučajnih ključeva.
+        idx = np.argpartition(rng.random((n, MAX_BROJ)), K, axis=1)[:, :K]
+        m = np.zeros((n, MAX_BROJ), dtype=np.int8)
+        np.put_along_axis(m, idx, 1, axis=1)
+        uzorak[r] = _skan_po_broju(m, duzine, korak).max()
+    uzorak.sort()
+    _SKAN_NULL_KES[kljuc] = uzorak
+    return uzorak
+
+
+def test_skan_prozora(istorija, duzine=SKAN_DUZINE, korak=SKAN_KORAK,
+                      replika=SKAN_REPLIKA, seme=SKAN_SEME):
+    """Najveći |z| bilo kog broja u bilo kom prozoru, protiv izmerene nulte raspodele."""
+    n = len(istorija)
+    duzine = tuple(L for L in duzine if L <= n)
+    prazno = {"n": n, "statistika": None, "centar": None, "p_tacno": None,
+              "po_broju": [], "prag95": None, "duzine": list(duzine),
+              "korak": korak, "replika": replika, "top": []}
+    if not duzine:
+        return prazno
+
+    m = _maske_matrica(istorija)
+    po_broju = _skan_po_broju(m, duzine, korak)
+    statistika = float(po_broju.max())
+    null = _skan_null(n, duzine, korak, replika, seme)
+    # +1 u brojiocu i imeniocu: posmatrana istorija se broji kao jedna replika, pa
+    # p nikad nije 0 (Davison–Hinkley).
+    p = (1 + int((null >= statistika).sum())) / (replika + 1)
+
+    top = sorted(_skan_prozori(m, duzine, korak), reverse=True)[:10]
+    return {**prazno,
+            "statistika": round(statistika, 4),
+            "centar": round(float(null.mean()), 4),
+            "p_tacno": p,
+            "po_broju": [round(float(x), 4) for x in po_broju],
+            "prag95": round(float(np.quantile(null, 0.95)), 4),
+            "top": [{"broj": b, "duzina": L, "od": istorija[i][0], "do": istorija[i + L - 1][0],
+                     "z": round(z, 3)} for _a, b, L, i, z in top]}
+
+
 def analize_ranga(istorija):
-    """Sva četiri testa nad rangom + frekvencija brojeva, u jednom prolazu."""
+    """Sva četiri testa nad rangom + frekvencija brojeva + skan, u jednom prolazu."""
     rangovi = rangovi_istorije(istorija)
     return {
         "broj_kola": len(istorija),
@@ -564,6 +688,7 @@ def analize_ranga(istorija):
         "rastojanja": test_rang_rastojanja(rangovi),
         "autokorelacija": test_rang_autokorelacija(rangovi),
         "najmanji_broj": test_najmanji_broj(istorija),
+        "skan": test_skan_prozora(istorija),
     }
 
 
