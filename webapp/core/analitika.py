@@ -173,7 +173,8 @@ class Analiza:
             "uzastopni": {int(k): int(v) for k, v in self.analiza_uzastopnih.items()},
             "dekade": {k: round(float(v), 3) for k, v in self.analiza_dekada.items()},
             "poziciona": self._poziciona_json(),
-            "pozicioni_prosek": {c: round(float(v), 2) for c, v in self.pozicioni_prosek.items()},
+            "pozicioni_prosek": {c: (round(float(v), 2) if pd.notna(v) else 0)
+                                 for c, v in self.pozicioni_prosek.items()},
         }
 
     def _poziciona_json(self):
