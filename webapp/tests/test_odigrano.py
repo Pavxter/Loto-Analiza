@@ -129,6 +129,7 @@ def test_lista_status_i_pogoci():
         baza.dodaj_odigrano(conn, 2026003, "1,2,3,4,5,6,7", "generator")
         conn.execute("INSERT INTO odigrano (kolo, kombinacija, izvor, uneto) VALUES (NULL, '1,2,3,4,5,6,8', 'uvoz', 'x')")
         conn.commit()
+        odigrano.oceni_sve(conn)
 
         redovi = odigrano.lista(conn)
         assert [(r["kolo"], r["status"]) for r in redovi] == [
@@ -153,6 +154,96 @@ def test_isti_izvor_istorije_kao_mapa():
     print("test_isti_izvor_istorije_kao_mapa: OK")
 
 
+# ----------------------------------------------------------------------------
+# Faza 2 — mere i ocenjivanje (§4)
+# ----------------------------------------------------------------------------
+
+def test_rastojanje_i_skoro():
+    a, b = [1, 2, 3, 4, 5, 6, 7], [33, 34, 35, 36, 37, 38, 39]
+    assert odigrano.rastojanje(a, a) == 0
+    assert odigrano.rastojanje(a, b) == odigrano.rastojanje(b, a) == 224
+    assert odigrano.rastojanje([7, 1, 2, 3, 4, 5, 6], [2, 3, 4, 5, 6, 7, 8]) == 7   # redosled ne smeta
+    # stara mera bi dala 1 (10 „pokriva" i 9 i 11); 1-na-1 uparivanje to ne dozvoljava
+    assert odigrano.rastojanje([10, 20], [9, 11]) == 10
+
+    izv = [5, 10, 20, 30]
+    assert odigrano.skoro_pogoci([4, 10, 21, 31], izv) == 3      # 5, 20, 30 za ±1; 10 je pogodak
+    assert odigrano.skoro_pogoci([10, 11], [10, 11]) == 0        # pogođeni se ne broje
+    print("test_rastojanje_i_skoro: OK")
+
+
+def test_raspodela_dp_tacna():
+    """DP mora dati istu raspodelu kao gruba enumeracija (manji problem 7 od 15)."""
+    from collections import Counter
+    from itertools import combinations
+    izv = [2, 3, 7, 8, 11, 13, 15]
+    dp = odigrano.raspodela_rastojanja(izv, n=15)
+    gruba = Counter(odigrano.rastojanje(x, izv) for x in combinations(range(1, 16), 7))
+    assert {D: int(c) for D, c in enumerate(dp) if c} == dict(gruba)
+
+    puna = odigrano.raspodela_rastojanja([3, 8, 12, 19, 22, 30, 37])
+    assert int(puna.sum()) == comb(39, 7) and int(puna[0]) == 1
+    print("test_raspodela_dp_tacna: OK")
+
+
+def test_percentil_kalibrisan():
+    """Srednji rang: očekivani percentil nasumičnog tiketa je TAČNO 0,5."""
+    r = odigrano.raspodela_rastojanja([1, 9, 14, 20, 26, 33, 38])
+    T = int(r.sum())
+    ocekivano = sum(int(r[D]) * odigrano.percentil(D, r) for D in range(len(r))) / T
+    assert abs(ocekivano - 0.5) < 1e-12, ocekivano
+    # pun pogodak: svi ostali su dalji
+    p0 = odigrano.percentil(0, r)
+    assert abs(p0 - (T - 0.5) / T) < 1e-15
+    # monotono: veće rastojanje → manji percentil
+    assert odigrano.percentil(10, r) > odigrano.percentil(30, r) > odigrano.percentil(80, r)
+    print("test_percentil_kalibrisan: OK")
+
+
+def test_ocenjivanje_pri_unosu_kola():
+    from webapp.core import bektest
+    conn, putanja = nova_baza([(2026001, (5, 1, 9, 13, 20, 33, 2))])
+    try:
+        baza.dodaj_odigrano(conn, 2026002, "4,8,15,16,24,35,38")    # čeka
+        baza.dodaj_odigrano(conn, 2026003, "1,2,3,4,5,6,7")         # drugo kolo, ostaje neocenjen
+        conn.execute("INSERT INTO odigrano (kolo, kombinacija, izvor, uneto) "
+                     "VALUES (NULL, '4,8,15,16,23,34,39', 'uvoz', 'x')")
+        conn.commit()
+
+        rez = bektest.dodaj_kolo_i_proveri(conn, 2026002, "2026-01-05", [4, 8, 15, 16, 23, 34, 39])
+        assert rez["ocenjeno_odigranih"] == 1
+        r = {x["kolo"]: x for x in odigrano.lista(conn)}
+        oc = r[2026002]
+        assert (oc["pogoci"], oc["skoro"], oc["rastojanje"]) == (4, 3, 3), oc
+        assert 0.99 < oc["percentil"] < 1 and oc["ocenjeno"]
+        assert r[2026003]["percentil"] is None
+        assert r[None]["percentil"] is None                         # uvezeni se ne diraju
+    finally:
+        _ukloni(conn, putanja)
+    print("test_ocenjivanje_pri_unosu_kola: OK")
+
+
+def test_ocena_prati_izmenu_i_brisanje_kola():
+    conn, putanja = nova_baza([(2026001, (1, 2, 3, 4, 5, 6, 7))])
+    try:
+        baza.dodaj_odigrano(conn, 2026001, "1,2,3,4,5,6,7")
+        odigrano.oceni_sve(conn)
+        assert odigrano.lista(conn)[0]["pogoci"] == 7
+
+        unos_id = conn.execute("SELECT id FROM istorijski_rezultati").fetchone()[0]
+        baza.izmeni_kolo(conn, unos_id, 2026001, "2020-01-01", [1, 2, 3, 30, 31, 32, 33])
+        odigrano.oceni_sve(conn)
+        assert odigrano.lista(conn)[0]["pogoci"] == 3
+
+        baza.obrisi_kolo(conn, unos_id)
+        odigrano.oceni_sve(conn)
+        red = odigrano.lista(conn)[0]
+        assert red["status"] == "ceka" and red["pogoci"] is None and red["percentil"] is None
+    finally:
+        _ukloni(conn, putanja)
+    print("test_ocena_prati_izmenu_i_brisanje_kola: OK")
+
+
 def main():
     test_uvoz_starih_tiketa()
     test_upis_jedinstven_po_kolu()
@@ -161,6 +252,11 @@ def main():
     test_slicnost_na_sintetici_blizu_ocekivanja()
     test_lista_status_i_pogoci()
     test_isti_izvor_istorije_kao_mapa()
+    test_rastojanje_i_skoro()
+    test_raspodela_dp_tacna()
+    test_percentil_kalibrisan()
+    test_ocenjivanje_pri_unosu_kola()
+    test_ocena_prati_izmenu_i_brisanje_kola()
     print("\nSVI TESTOVI DNEVNIKA PROSLI [OK]")
 
 

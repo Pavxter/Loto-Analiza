@@ -1476,7 +1476,9 @@
         <div class="grid g-2">
           <div class="card">
             <h3>Upiši kombinaciju</h3>
-            <p class="hint">Upisuje se pre izvlačenja. Kad se kolo unese na strani Podaci, tiket dobija rezultat.</p>
+            <p class="hint">Upisuje se pre izvlačenja. Kad se kolo unese na strani Podaci, tiket dobija ocenu:
+              pogotke, promašaje za ±1 i <b>percentil blizine</b> — od koliko svih mogućih kombinacija
+              je tvoja bila bliža izvučenoj (50% je prosek nasumičnog izbora).</p>
             <div class="row">
               <div class="field" style="flex:0 0 130px"><label>Kolo</label>
                 <input class="inp" type="number" x-model.number="odig.kolo">
@@ -1564,28 +1566,28 @@
                   </div>
                 </template>
               </div>
-              <table class="tbl">
-                <tbody>
-                  <template x-for="r in g.redovi" :key="r.id">
-                    <tr>
-                      <td style="width:1%">
-                        <div class="balls" style="flex-wrap:nowrap">
-                          <template x-for="b in r.brojevi" :key="b">
-                            <div class="ball sm" :class="g.izvuceni.includes(b) ? 'svez active' : 'neutralan'" x-text="b"></div>
-                          </template>
-                        </div>
-                      </td>
-                      <td style="white-space:nowrap">
-                        <span x-show="r.pogoci != null" class="tag" :class="r.pogoci >= 3 ? 'ok' : 'neutralan'"
-                              x-text="r.pogoci + ' pogod.'"></span>
-                      </td>
-                      <td><span class="tag neutralan" x-text="odigIzvor(r.izvor)"></span></td>
-                      <td class="muted" style="font-size:12.5px" x-text="r.napomena || ''"></td>
-                      <td style="width:1%"><button class="btn danger sm" @click="odigObrisi(r)">✕</button></td>
-                    </tr>
-                  </template>
-                </tbody>
-              </table>
+              <!-- flex umesto tabele: red se prelama u uskom prozoru umesto da beži udesno -->
+              <template x-for="r in g.redovi" :key="r.id">
+                <div class="odig-red">
+                  <div class="balls">
+                    <template x-for="b in r.brojevi" :key="b">
+                      <div class="ball sm" :class="g.izvuceni.includes(b) ? 'svez active' : 'neutralan'" x-text="b"></div>
+                    </template>
+                  </div>
+                  <div x-show="r.percentil != null" style="min-width:150px"
+                       :title="r.percentil != null ? 'Rastojanje D = ' + r.rastojanje + ' (zbir razlika sortiranih brojeva; 0 = pun pogodak)' : ''">
+                    <span class="tag" :class="r.pogoci >= 3 ? 'ok' : 'neutralan'" x-text="r.pogoci + ' pogod.'"></span>
+                    <span class="muted" style="font-size:12px" x-show="r.skoro" x-text="'+ ' + r.skoro + ' za ±1'"></span>
+                    <div style="font-size:12px; margin-top:3px">
+                      <span :style="'color:' + odigBojaPercentila(r.percentil)" x-text="'bliža od ' + odigPercentil(r.percentil)"></span>
+                      <span class="muted"> kombinacija</span>
+                    </div>
+                  </div>
+                  <span class="tag neutralan" x-text="odigIzvor(r.izvor)"></span>
+                  <span class="muted" style="font-size:12.5px; flex:1; min-width:80px" x-text="r.napomena || ''"></span>
+                  <button class="btn danger sm" @click="odigObrisi(r)">✕</button>
+                </div>
+              </template>
             </div>
           </template>
 

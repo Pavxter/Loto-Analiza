@@ -226,3 +226,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 .card input[type="range"] { accent-color: var(--accent); height: 20px; }
 .leaflet-tooltip { background: var(--bg-elev2); color: var(--text); border: 1px solid var(--border); box-shadow: none; }
 .leaflet-tooltip-top::before { border-top-color: var(--border); }
+
+/* Moji tiketi: jedan red dnevnika (kombinacija, ocena, izvor, napomena, brisanje) */
+.odig-red { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 0; }
+.odig-red + .odig-red { border-top: 1px solid var(--border-soft); }

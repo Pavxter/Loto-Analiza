@@ -1863,6 +1863,16 @@ function app() {
     },
     odigUvezeni() { return this.odig.redovi.filter(r => r.kolo == null); },
 
+    // Na krajevima zaokruživanje laže („100%" za 99,986%), pa se tu prikazuje granica.
+    odigPercentil(p) {
+      if (p == null) return '—';
+      if (p >= 0.9995) return '> 99,9%';
+      if (p < 0.0005) return '< 0,1%';
+      return (p * 100).toLocaleString('sr-RS', { maximumFractionDigits: 1 }) + '%';
+    },
+    // Iznad 90% zeleno, ispod 10% prigušeno; između neutralno — 50% je prosek slučaja.
+    odigBojaPercentila(p) { return p >= 0.9 ? '#7fe0a3' : p < 0.1 ? 'var(--text-faint)' : 'var(--text)'; },
+
     odigIzvor(izvor) {
       if (!izvor) return '';
       if (izvor.startsWith('prognoza:')) return 'Prognoza · ' + izvor.slice(9);
@@ -1875,7 +1885,7 @@ function app() {
       try {
         const brojevi = this.unos.brojevi.split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x));
         const d = await jsend('/api/istorija', 'POST', { kolo: this.unos.kolo, datum: this.unos.datum, brojevi });
-        this.toast(d.dodato ? `Kolo ${d.kolo} dodato. Provereno tiketa: ${d.provereno_tiketa}, bektestova: ${d.provereno_bektestova}, ocenjeno prognoza: ${d.ocenjeno_prognoza}.` : `Kolo već postoji; provere ažurirane.`, d.dodato ? 'ok' : 'warn');
+        this.toast(d.dodato ? `Kolo ${d.kolo} dodato. Ocenjeno tvojih tiketa: ${d.ocenjeno_odigranih}, bektestova: ${d.provereno_bektestova}, ocenjeno prognoza: ${d.ocenjeno_prognoza}.` : `Kolo već postoji; provere ažurirane.`, d.dodato ? 'ok' : 'warn');
         this.unos.brojevi = '';
         this.mapaZaboraviPodatke();
         this.ucitajSekvStanje();   // kartica koeficijenta se pomera bez ručne akcije

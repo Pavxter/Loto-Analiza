@@ -150,6 +150,12 @@ def dodaj_kolo_i_proveri(conn, kolo, datum, brojevi):
             continue
     conn.commit()
 
+    # 1b) Dnevnik odigranih kombinacija (PLAN_TIKETI_GRADITELJ §4): ocenjuju se iz
+    #     trenutnih kola, pa i tiketi tog kola koji su upisani pre izvlačenja.
+    from . import odigrano
+    odigrano.oceni_sve(conn)
+    ocenjeno_odigranih = odigrano.broj_za_kolo(conn, kolo)
+
     # 2) Provera bektestova za ovo kolo
     bektestovi = conn.execute("SELECT * FROM virtualne_igre WHERE kolo=?", (kolo,)).fetchall()
     provereno_bektestova = 0
@@ -217,6 +223,7 @@ def dodaj_kolo_i_proveri(conn, kolo, datum, brojevi):
         "dodato": uspeh,
         "kolo": kolo,
         "provereno_tiketa": provereno_tiketa,
+        "ocenjeno_odigranih": ocenjeno_odigranih,
         "provereno_bektestova": provereno_bektestova,
         "ocenjeno_prognoza": ocenjeno_prognoza,
         "sekv": sekv,

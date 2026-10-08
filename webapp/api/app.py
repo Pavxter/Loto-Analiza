@@ -34,6 +34,7 @@ def _startup():
     conn = baza.konekcija()
     try:
         bektest.migriraj_preklapanje_bektesta(conn)
+        odigrano.oceni_sve(conn)       # tiketi čija su kola izvučena dok app nije radio
     finally:
         conn.close()
 
@@ -58,6 +59,15 @@ def _analiza(period=0, granica=None):
             df = df[df["kolo"] <= granica]
         _kes[kljuc] = analitika.Analiza(df, period_analize=period)
     return _kes[kljuc]
+
+
+def _oceni_odigrano():
+    """Ocene dnevnika tiketa iz trenutnih kola — posle svake promene istorije."""
+    conn = baza.konekcija()
+    try:
+        odigrano.oceni_sve(conn)
+    finally:
+        conn.close()
 
 
 def _invalidiraj():
@@ -244,6 +254,8 @@ def api_dodaj_odigrano(z: OdigranoZahtev):
             raise HTTPException(409, f"Kolo {kolo} je već izvučeno.")
         novi = baza.dodaj_odigrano(conn, kolo, odigrano.u_csv(komb), z.izvor,
                                    (z.napomena or "").strip() or None)
+        if novi is not None and z.potvrdi:
+            odigrano.oceni_sve(conn)   # upis za već izvučeno kolo → odmah ocena
         return {"dodato": novi is not None, "id": novi, "kolo": kolo}
     finally:
         conn.close()
@@ -629,6 +641,7 @@ def api_izmeni_kolo(unos_id: int, z: KoloZahtev):
         baza.izmeni_kolo(conn, unos_id, z.kolo, z.datum, z.brojevi)
     finally:
         conn.close()
+    _oceni_odigrano()
     _invalidiraj()
     return {"ok": True}
 
@@ -640,6 +653,7 @@ def api_obrisi_kolo(unos_id: int):
         baza.obrisi_kolo(conn, unos_id)
     finally:
         conn.close()
+    _oceni_odigrano()
     _invalidiraj()
     return {"ok": True}
 
@@ -693,6 +707,7 @@ async def api_uvoz(fajl: UploadFile = File(...), zameni: bool = False):
                 uvezeno += 1
     finally:
         conn.close()
+    _oceni_odigrano()
     _invalidiraj()
     return {
         "uvezeno": uvezeno,

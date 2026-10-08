@@ -8,7 +8,11 @@ Kombinacija se gleda kao skup: čuva se sortirana, kao CSV (isti format kao
 `prognoze.kombinacija`).
 """
 
-from . import mapa
+from datetime import datetime
+
+import numpy as np
+
+from . import konfig, mapa
 from . import razlicitost_teorija as T
 
 # Upozorenje o sličnosti sa istorijom od ovoliko zajedničkih brojeva (§3.3). Na ~1.400
@@ -102,12 +106,105 @@ def slicnost(istorija, brojevi):
     }
 
 
-def lista(conn):
-    """Dnevnik, najnovije kolo prvo; uvezeni (bez kola) na kraju.
+# ----------------------------------------------------------------------------
+# Ocena tiketa posle izvlačenja (§4)
+# ----------------------------------------------------------------------------
 
-    Dok faza 2 ne upiše trajne mere, `pogoci` se za izvučena kola računa ovde —
-    jeftino je, a korisnik odmah vidi rezultat.
+def rastojanje(a, b):
+    """D = Σ |a₍ᵢ₎ − b₍ᵢ₎| nad sortiranim kombinacijama.
+
+    U 1D je sortirano uparivanje optimalno 1-na-1 uparivanje (Earth mover's), pa
+    jedan broj tiketa ne može „pokriti" dva dobitna kao u `promasaj_kombinacije`.
     """
+    return sum(abs(x - y) for x, y in zip(sorted(a), sorted(b)))
+
+
+def skoro_pogoci(tiket, izvuceni):
+    """Koliko izvučenih brojeva je promašeno za tačno ±1 (pogođeni se ne broje)."""
+    t = set(tiket)
+    return sum(1 for d in izvuceni if d not in t and (d - 1 in t or d + 1 in t))
+
+
+def raspodela_rastojanja(izvuceni, n=konfig.MAX_BROJ):
+    """Broj k-podskupova od 1..n za svako rastojanje D do `izvuceni` (k = len).
+
+    Dinamičko programiranje po sortiranim pozicijama: f[v, s] = broj načina da se
+    izaberu x₁ < … < xᵢ sa xᵢ = v i delimičnim zbirom s. Tačno, bez simulacije.
+    Zbir rezultata je C(n, k).
+    """
+    d = sorted(izvuceni)
+    k = len(d)
+    maks = k * (n - k)                       # |xᵢ − dᵢ| ≤ n − k za svaku poziciju
+    f = np.zeros((n + 1, maks + 1), dtype=np.int64)
+    for v in range(1, n + 1):
+        f[v, abs(v - d[0])] = 1
+    for i in range(1, k):
+        pref = np.cumsum(f, axis=0)          # pref[v] = Σ_{u ≤ v} f[u]
+        g = np.zeros_like(f)
+        for w in range(2, n + 1):
+            c = abs(w - d[i])
+            g[w, c:] = pref[w - 1, :maks + 1 - c]
+        f = g
+    return f.sum(axis=0)
+
+
+def percentil(D, raspodela):
+    """Udeo kombinacija DALJIH od izvučene + pola izjednačenih (srednji rang).
+
+    Sa srednjim rangom nasumičan tiket ima očekivani percentil tačno 0,5.
+    """
+    ukupno = int(raspodela.sum())
+    dalje = int(raspodela[D + 1:].sum())
+    return (dalje + 0.5 * int(raspodela[D])) / ukupno
+
+
+def oceni(tiket, izvuceni, raspodela=None):
+    """Sve mere jednog tiketa za jedno izvlačenje."""
+    if raspodela is None:
+        raspodela = raspodela_rastojanja(izvuceni)
+    D = rastojanje(tiket, izvuceni)
+    return {
+        "pogoci": len(set(tiket) & set(izvuceni)),
+        "skoro": skoro_pogoci(tiket, izvuceni),
+        "rastojanje": D,
+        "percentil": percentil(D, raspodela),
+    }
+
+
+def oceni_sve(conn):
+    """Preračunava ocene svih redova iz TRENUTNIH izvučenih kola.
+
+    Poziva se pri startu i posle svakog dodavanja, izmene ili brisanja kola. Ceo
+    prolaz je jeftin (jedan DP po kolu sa tiketima), a zato ocena ne može da
+    zastari kad se staro kolo ispravi. Redovi čije kolo nije (više) izvučeno se
+    vraćaju na neocenjeno. Vraća broj ocenjenih redova.
+    """
+    izvuceno = izvucena_kola(conn)
+    sad = datetime.now().isoformat(timespec="seconds")
+    raspodele = {}
+    ocenjeno = 0
+    for r in conn.execute("SELECT id, kolo, kombinacija FROM odigrano WHERE kolo IS NOT NULL").fetchall():
+        kolo = r["kolo"]
+        if kolo not in izvuceno:
+            conn.execute("UPDATE odigrano SET pogoci=NULL, skoro=NULL, rastojanje=NULL, "
+                         "percentil=NULL, ocenjeno=NULL WHERE id=?", (r["id"],))
+            continue
+        if kolo not in raspodele:
+            raspodele[kolo] = raspodela_rastojanja(izvuceno[kolo])
+        m = oceni(iz_csv(r["kombinacija"]), izvuceno[kolo], raspodele[kolo])
+        conn.execute("UPDATE odigrano SET pogoci=?, skoro=?, rastojanje=?, percentil=?, ocenjeno=? "
+                     "WHERE id=?", (m["pogoci"], m["skoro"], m["rastojanje"], m["percentil"], sad, r["id"]))
+        ocenjeno += 1
+    conn.commit()
+    return ocenjeno
+
+
+def broj_za_kolo(conn, kolo):
+    return conn.execute("SELECT COUNT(*) FROM odigrano WHERE kolo=?", (kolo,)).fetchone()[0]
+
+
+def lista(conn):
+    """Dnevnik, najnovije kolo prvo; uvezeni (bez kola) na kraju."""
     izvuceno = izvucena_kola(conn)
     redovi = conn.execute(
         "SELECT * FROM odigrano ORDER BY kolo IS NULL, kolo DESC, id ASC").fetchall()
@@ -120,8 +217,6 @@ def lista(conn):
         elif d["kolo"] in izvuceno:
             d["status"] = "izvuceno"
             d["izvuceni"] = sorted(izvuceno[d["kolo"]])
-            if d["pogoci"] is None:
-                d["pogoci"] = len(izvuceno[d["kolo"]] & set(d["brojevi"]))
         else:
             d["status"] = "ceka"
         out.append(d)
