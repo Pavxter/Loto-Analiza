@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
-                         prognoza, razlicitost, istorija, mapa, sinteza, sekvencijalni)
+                         prognoza, razlicitost, istorija, mapa, sinteza, sekvencijalni,
+                         odigrano)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -178,6 +179,81 @@ def api_obrisi_tiket(tiket_id: int):
     conn = baza.konekcija()
     try:
         baza.obrisi_tiket(conn, tiket_id)
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Dnevnik odigranih kombinacija (PLAN_TIKETI_GRADITELJ §3)
+# ---------------------------------------------------------------------------
+
+class OdigranoZahtev(BaseModel):
+    brojevi: list[int]
+    kolo: int | None = None          # None → sledeće kolo
+    izvor: str = "rucno"
+    napomena: str | None = None
+    potvrdi: bool = False            # upis za već izvučeno kolo traži potvrdu
+
+
+def _brojevi_iz_teksta(s):
+    delovi = [d for d in re.split(r"[^0-9]+", (s or "").strip()) if d]
+    return [int(d) for d in delovi]
+
+
+@app.get("/api/odigrano")
+def api_odigrano():
+    conn = baza.konekcija()
+    try:
+        return {"redovi": odigrano.lista(conn),
+                "sledece_kolo": odigrano.sledece_kolo(conn),
+                "poslednje_kolo": odigrano.poslednje_kolo(conn)}
+    finally:
+        conn.close()
+
+
+@app.get("/api/odigrano/slicnost")
+def api_odigrano_slicnost(brojevi: str):
+    """Poklapanje kombinacije sa svim izvučenim kolima — prikazuje se dok se kuca."""
+    conn = baza.konekcija()
+    try:
+        return odigrano.slicnost(razlicitost.istorija_iz_conn(conn), _brojevi_iz_teksta(brojevi))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    finally:
+        conn.close()
+
+
+@app.post("/api/odigrano")
+def api_dodaj_odigrano(z: OdigranoZahtev):
+    try:
+        komb = odigrano.normalizuj(z.brojevi)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if not odigrano.ispravan_izvor(z.izvor):
+        raise HTTPException(400, f"Nepoznat izvor: {z.izvor}")
+    conn = baza.konekcija()
+    try:
+        kolo = z.kolo if z.kolo is not None else odigrano.sledece_kolo(conn)
+        if kolo is None:
+            raise HTTPException(400, "Baza nema nijedno kolo — unesi kolo ručno.")
+        if not odigrano.ispravno_kolo(kolo):
+            raise HTTPException(400, "Kolo mora biti u obliku godina·1000 + broj (npr. 2026081).")
+        if kolo in odigrano.izvucena_kola(conn) and not z.potvrdi:
+            # 409: UI pita korisnika i šalje ponovo sa potvrdi=True
+            raise HTTPException(409, f"Kolo {kolo} je već izvučeno.")
+        novi = baza.dodaj_odigrano(conn, kolo, odigrano.u_csv(komb), z.izvor,
+                                   (z.napomena or "").strip() or None)
+        return {"dodato": novi is not None, "id": novi, "kolo": kolo}
+    finally:
+        conn.close()
+
+
+@app.delete("/api/odigrano/{red_id}")
+def api_obrisi_odigrano(red_id: int):
+    conn = baza.konekcija()
+    try:
+        baza.obrisi_odigrano(conn, red_id)
         return {"ok": True}
     finally:
         conn.close()
@@ -964,11 +1040,7 @@ def api_mapa_skokovi(granica: int | None = None, seed: int = mapa.SEED_KONTROLE)
 @app.get("/api/mapa/rang")
 def api_mapa_rang(brojevi: str):
     """„Gde je moj tiket": 7 brojeva -> rang, ćelija na mapi i isti detalj."""
-    delovi = [d for d in re.split(r"[^0-9]+", brojevi.strip()) if d]
-    try:
-        b = [int(d) for d in delovi]
-    except ValueError:
-        raise HTTPException(400, "Brojevi moraju biti celi brojevi.")
+    b = _brojevi_iz_teksta(brojevi)
     conn = baza.konekcija()
     try:
         return _mapa_detalj(conn, b)

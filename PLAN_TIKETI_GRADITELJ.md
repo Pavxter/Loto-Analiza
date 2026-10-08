@@ -65,7 +65,7 @@ vrednosti — inače su težine naštimovane prema istoriji i test gubi vrednost
 |---|---|---|
 | `id` | INTEGER PK | |
 | `kolo` | INTEGER NULL | godina*1000+broj; NULL samo za uvezene |
-| `kombinacija` | TEXT | JSON lista od 7 sortiranih brojeva |
+| `kombinacija` | TEXT | CSV 7 sortiranih brojeva (isti format kao `prognoze.kombinacija`) |
 | `izvor` | TEXT | `rucno`, `generator`, `sekv`, `prognoza:<metod>`, `graditelj`, `uvoz` |
 | `napomena` | TEXT NULL | slobodan tekst |
 | `uneto` | TEXT | vreme unosa |
@@ -118,6 +118,10 @@ popunjenim `izvor`. Stari endpoint `/api/tiketi` ostaje samo za kompatibilnost.
 ## 4. Faza 2 — Ocenjivanje pri unosu izvlačenja
 
 `dodaj_kolo_i_proveri` za uneto kolo ocenjuje **samo** redove `odigrano` sa tim kolom.
+Pri startu se jednom ocenjuju i svi neocenjeni redovi čije je kolo već izvučeno (tiketi
+upisani pre faze 2, ili naknadno za staro kolo).
+
+Faza 1 do tada računa samo `pogoci` u letu (`odigrano.lista`), bez upisa u bazu.
 
 | Mera | Definicija |
 |---|---|

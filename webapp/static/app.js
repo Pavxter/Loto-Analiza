@@ -64,7 +64,11 @@ window.addEventListener('resize', () => Object.values(grafikoni).forEach(g => { 
 async function jget(url) { const r = await fetch(url); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText); return r.json(); }
 async function jsend(url, method, body) {
   const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+  if (!r.ok) {
+    const e = new Error((await r.json().catch(() => ({}))).detail || r.statusText);
+    e.status = r.status;   // npr. 409 = traži potvrdu korisnika
+    throw e;
+  }
   return r.json();
 }
 
@@ -80,7 +84,7 @@ function app() {
       { id: 'prognoza', naziv: 'Prognoza', ico: '🔮', opis: 'Predviđanje jednog broja — statistički eksperiment sa kontrolnom grupom', period: true },
       { id: 'generator', naziv: 'Generator', ico: '⚙️', opis: 'Generiši kombinacije po filterima i bodovanju', period: true },
       { id: 'bektest', naziv: 'Bektest', ico: '🧪', opis: 'Uspešnost sačuvanih strategija', period: false },
-      { id: 'tiketi', naziv: 'Moji tiketi', ico: '🎟️', opis: 'Evidencija odigranih tiketa', period: false },
+      { id: 'tiketi', naziv: 'Moji tiketi', ico: '🎟️', opis: 'Dnevnik odigranih kombinacija po kolima', period: false },
       { id: 'sinteza', naziv: 'Sinteza', ico: '⚖️', opis: 'Svi metodi i testovi pod istim sudom — jedna tabela, jedna korekcija', period: false },
       { id: 'podaci', naziv: 'Podaci', ico: '🗄️', opis: 'Unos kola i uvoz istorije', period: false },
     ],
@@ -99,7 +103,9 @@ function app() {
            strategija: 'favorizuj', pristrasnost: true, unikati: false,
            diverzitet: false, max_slicnost: 4, radi: false, rezultati: [], rezime: '', razlicitost: null,
            granica: null },
-    bektestovi: [], tiketi: [], noviTiket: '',
+    bektestovi: [],
+    odig: { redovi: [], sledece: null, poslednje: null, kolo: null, brojevi: '', napomena: '',
+            slicnost: null, otvoriUvezene: false },
     istorija: [], unos: { kolo: null, datum: new Date().toISOString().slice(0, 10), brojevi: '' }, fajl: null, uvozZameni: false,
     prog: { tab: 'broj', ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
             filterMetod: '', prag: 0.00625, brojMetoda: 8, radi: false },
@@ -1152,10 +1158,12 @@ function app() {
       this.toast(`Broj ${broj} istaknut u tabu.`, 'ok');
     },
 
-    async dodajTiketIz(brojevi) {
-      const s = '(' + brojevi.join(', ') + ')';
-      try { const d = await jsend('/api/tiketi', 'POST', { kombinacija: s }); this.toast(d.dodato ? 'Tiket dodat.' : 'Tiket već postoji.', d.dodato ? 'ok' : 'warn'); }
-      catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    // „+ tiket" sa drugih strana: upis u dnevnik za sledeće kolo, uz izvor.
+    async dodajTiketIz(brojevi, izvor = 'rucno') {
+      try {
+        const d = await jsend('/api/odigrano', 'POST', { brojevi, izvor });
+        this.toast(d.dodato ? `Upisano u Moje tikete za kolo ${this.formatKolo(d.kolo)}.` : 'Već je upisana za to kolo.', d.dodato ? 'ok' : 'warn');
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },
 
     // ---------- PROGNOZA ----------
@@ -1792,15 +1800,74 @@ function app() {
     async obrisiBektest(id) { try { await jsend('/api/bektest/' + id, 'DELETE'); this.ucitajBektest(); this.toast('Obrisano.', 'ok'); } catch (e) { this.toast('Greška: ' + e.message, 'err'); } },
 
     // ---------- TIKETI ----------
-    async ucitajTikete() { try { this.tiketi = await jget('/api/tiketi'); } catch (e) { this.toast('Greška: ' + e.message, 'err'); } },
-    async dodajTiket() {
-      let t = this.noviTiket.trim();
-      if (!t) return;
-      if (!t.startsWith('(')) t = '(' + t.split(',').map(x => x.trim()).join(', ') + ')';
-      try { const d = await jsend('/api/tiketi', 'POST', { kombinacija: t }); this.noviTiket = ''; this.ucitajTikete(); this.toast(d.dodato ? 'Tiket dodat.' : 'Već postoji.', d.dodato ? 'ok' : 'warn'); }
+    // ---------- MOJI TIKETI (dnevnik odigranih kombinacija) ----------
+    async ucitajTikete() {
+      try {
+        const d = await jget('/api/odigrano');
+        this.odig.redovi = d.redovi;
+        this.odig.sledece = d.sledece_kolo;
+        this.odig.poslednje = d.poslednje_kolo;
+        if (this.odig.kolo == null) this.odig.kolo = d.sledece_kolo;
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    // Brojevi iz polja: bilo koji separator. Vraća i poruku dok unos nije potpun.
+    odigParsiraj() {
+      const b = (this.odig.brojevi.match(/\d+/g) || []).map(Number);
+      const jed = [...new Set(b)];
+      if (b.some(x => x < 1 || x > 39)) return { ok: false, poruka: 'Brojevi su od 1 do 39.' };
+      if (jed.length !== b.length) return { ok: false, poruka: 'Brojevi se ponavljaju.' };
+      if (b.length < 7) return { ok: false, poruka: b.length ? `Još ${7 - b.length}.` : '' };
+      if (b.length > 7) return { ok: false, poruka: 'Više od 7 brojeva.' };
+      return { ok: true, brojevi: b.sort((x, y) => x - y), poruka: '' };
+    },
+
+    async odigProveri() {
+      const p = this.odigParsiraj();
+      if (!p.ok) { this.odig.slicnost = null; return; }
+      try { this.odig.slicnost = await jget('/api/odigrano/slicnost?brojevi=' + p.brojevi.join(',')); }
+      catch (e) { this.odig.slicnost = null; }
+    },
+
+    async odigUpisi(potvrdi = false) {
+      const p = this.odigParsiraj();
+      if (!p.ok) { this.toast(p.poruka || 'Unesi 7 brojeva.', 'err'); return; }
+      const telo = { brojevi: p.brojevi, kolo: this.odig.kolo || null, napomena: this.odig.napomena, potvrdi };
+      try {
+        const d = await jsend('/api/odigrano', 'POST', telo);
+        this.toast(d.dodato ? `Upisano za kolo ${this.formatKolo(d.kolo)}.` : 'Ta kombinacija je već upisana za to kolo.', d.dodato ? 'ok' : 'warn');
+        if (d.dodato) { this.odig.brojevi = ''; this.odig.napomena = ''; this.odig.slicnost = null; }
+        this.ucitajTikete();
+      } catch (e) {
+        if (e.status === 409 && !potvrdi && confirm(e.message + ' Ipak upisati?')) return this.odigUpisi(true);
+        if (e.status !== 409) this.toast('Greška: ' + e.message, 'err');
+      }
+    },
+
+    async odigObrisi(r) {
+      if (!confirm(`Obrisati ${r.brojevi.join(' ')} iz kola ${this.formatKolo(r.kolo)}?`)) return;
+      try { await jsend('/api/odigrano/' + r.id, 'DELETE'); this.ucitajTikete(); }
       catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },
-    async obrisiTiket(id) { try { await jsend('/api/tiketi/' + id, 'DELETE'); this.ucitajTikete(); this.toast('Obrisano.', 'ok'); } catch (e) { this.toast('Greška: ' + e.message, 'err'); } },
+
+    // Redovi sa kolom, grupisani po kolu (lista već stiže sortirana, najnovije prvo).
+    odigGrupe() {
+      const grupe = [];
+      for (const r of this.odig.redovi) {
+        if (r.kolo == null) continue;
+        let g = grupe[grupe.length - 1];
+        if (!g || g.kolo !== r.kolo) { g = { kolo: r.kolo, status: r.status, izvuceni: r.izvuceni || [], redovi: [] }; grupe.push(g); }
+        g.redovi.push(r);
+      }
+      return grupe;
+    },
+    odigUvezeni() { return this.odig.redovi.filter(r => r.kolo == null); },
+
+    odigIzvor(izvor) {
+      if (!izvor) return '';
+      if (izvor.startsWith('prognoza:')) return 'Prognoza · ' + izvor.slice(9);
+      return { rucno: 'ručno', generator: 'Generator', sekv: 'Sekvencijalni', graditelj: 'Graditelj', uvoz: 'uvoz' }[izvor] || izvor;
+    },
 
     // ---------- PODACI ----------
     async ucitajIstoriju() { try { this.istorija = await jget('/api/istorija?limit=60'); } catch (e) { this.toast('Greška: ' + e.message, 'err'); } },

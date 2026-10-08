@@ -976,7 +976,7 @@
                       <td><div class="balls">
                         <template x-for="b in k.brojevi" :key="b"><div class="ball sm" x-text="b"></div></template>
                       </div></td>
-                      <td><button class="btn ghost sm" @click="dodajTiketIz(k.brojevi)">+ tiket</button></td>
+                      <td><button class="btn ghost sm" @click="dodajTiketIz(k.brojevi, 'generator')">+ tiket</button></td>
                     </tr>
                   </template>
                 </tbody>
@@ -1110,7 +1110,7 @@
             <div class="row" style="justify-content:space-between; align-items:center">
               <div>
                 <h3>Predlozi za sledeće kolo <span class="tag ok" x-show="progK.ciljnoKolo" x-text="'za kolo ' + progK.ciljnoKolo"></span></h3>
-                <p class="hint">Svaki metod predlaže jednu 7-torku. „+ tiket" dodaje je u Moje tikete.</p>
+                <p class="hint">Svaki metod predlaže jednu 7-torku. „+ tiket" je upisuje u Moje tikete za sledeće kolo.</p>
               </div>
               <button class="btn ghost sm" @click="progKPreracunaj()">Preračunaj predloge</button>
             </div>
@@ -1119,7 +1119,7 @@
                 <div class="card" style="box-shadow:none; border-color:var(--border-soft)" :title="p.opis">
                   <div class="row" style="justify-content:space-between; align-items:center">
                     <span class="label" x-text="p.naziv"></span>
-                    <button class="btn ghost sm" @click="dodajTiketIz(p.kombinacija)">+ tiket</button>
+                    <button class="btn ghost sm" @click="dodajTiketIz(p.kombinacija, 'prognoza:' + p.metod)">+ tiket</button>
                   </div>
                   <div class="balls" style="margin-top:8px">
                     <template x-for="b in p.kombinacija" :key="b"><div class="ball" :class="klasaBroja(b)" x-text="b"></div></template>
@@ -1305,6 +1305,8 @@
                           </div>
                           <div class="mono muted" style="font-size:12px; margin-top:6px"
                                x-text="sekvOsobine(sekvTiket().osobine) + '  ·  skor ' + sekvTiket().skor"></div>
+                          <button class="btn ghost sm" style="margin-top:8px"
+                                  @click="dodajTiketIz(sekvTiket().kombinacija, 'sekv')">+ tiket</button>
                         </div>
                       </template>
                       <template x-if="sekvTiket() && !sekvTiket().kombinacija">
@@ -1469,39 +1471,141 @@
         </div>
       </section>
 
-      <!-- ============ TIKETI ============ -->
+      <!-- ============ MOJI TIKETI: dnevnik odigranih kombinacija ============ -->
       <section x-show="strana==='tiketi'">
-        <div class="card">
-          <h3>Dodaj tiket</h3>
-          <div class="row">
-            <div class="field" style="flex:2"><label>Kombinacija (7 brojeva, zarezom)</label><input class="inp" x-model="noviTiket" placeholder="npr. 3, 8, 12, 19, 22, 30, 37"></div>
-            <button class="btn" @click="dodajTiket()">Dodaj</button>
+        <div class="grid g-2">
+          <div class="card">
+            <h3>Upiši kombinaciju</h3>
+            <p class="hint">Upisuje se pre izvlačenja. Kad se kolo unese na strani Podaci, tiket dobija rezultat.</p>
+            <div class="row">
+              <div class="field" style="flex:0 0 130px"><label>Kolo</label>
+                <input class="inp" type="number" x-model.number="odig.kolo">
+              </div>
+              <div class="field" style="flex:1; min-width:220px"><label>7 brojeva</label>
+                <input class="inp" x-model="odig.brojevi" placeholder="npr. 3 8 12 19 22 30 37"
+                       @input.debounce.300ms="odigProveri()" @keydown.enter="odigUpisi()">
+              </div>
+            </div>
+            <p class="muted" style="margin:-6px 0 10px; font-size:12px">
+              <span x-show="odig.sledece && odig.kolo !== odig.sledece">
+                Sledeće kolo je <span class="mono" x-text="formatKolo(odig.sledece)"></span>
+                (<a href="#" @click.prevent="odig.kolo = odig.sledece">vrati</a>).
+              </span>
+              <span x-show="odig.kolo && odig.poslednje && odig.kolo <= odig.poslednje" style="color:#f2c96b">
+                To kolo je već izvučeno.
+              </span>
+              <span x-text="odigParsiraj().poruka"></span>
+            </p>
+            <div class="field"><label>Napomena (opciono)</label>
+              <input class="inp" x-model="odig.napomena" placeholder="npr. zašto baš ova kombinacija">
+            </div>
+            <button class="btn" @click="odigUpisi()">Upiši</button>
+          </div>
+
+          <!-- Sličnost sa istorijom (PLAN_TIKETI_GRADITELJ §3.3) -->
+          <div class="card">
+            <h3>Sličnost sa izvučenim kolima</h3>
+            <template x-if="!odig.slicnost">
+              <p class="muted" style="font-size:13px">Unesi 7 brojeva — poređenje sa svim izvučenim kolima pojaviće se ovde.</p>
+            </template>
+            <template x-if="odig.slicnost">
+              <div>
+                <div class="balls" style="margin-bottom:10px">
+                  <template x-for="b in odig.slicnost.kombinacija" :key="b"><div class="ball sm" :class="klasaBroja(b)" x-text="b"></div></template>
+                </div>
+                <p x-show="odig.slicnost.ista.length" style="margin:0 0 8px">
+                  <span class="tag err">Već izvučena</span>
+                  <span class="mono" x-text="odig.slicnost.ista.map(k => formatKolo(k)).join(', ')"></span>
+                </p>
+                <p x-show="!odig.slicnost.ista.length" style="margin:0 0 8px">
+                  <span class="tag" :class="odig.slicnost.upozorenje ? 'warn' : 'ok'"
+                        x-text="'Najviše ' + odig.slicnost.maks + ' od 7'"></span>
+                  <span class="muted" style="font-size:12.5px"
+                        x-text="odig.slicnost.upozorenje ? 'Vrlo blizu nekom izvučenom kolu.' : 'Nijedno kolo nema ' + odig.slicnost.prag + ' ili više istih brojeva.'"></span>
+                </p>
+                <table class="tbl">
+                  <thead><tr><th>Istih brojeva</th><th class="num">Kola</th><th class="num">Očekivano za nasumičnu</th></tr></thead>
+                  <tbody>
+                    <template x-for="r in odig.slicnost.raspodela" :key="r.k">
+                      <tr>
+                        <td x-text="r.k + ' / 7'"></td>
+                        <td class="num" x-text="r.broj"></td>
+                        <td class="num muted" x-text="r.ocekivano < 0.01 ? '< 0,01' : r.ocekivano.toLocaleString('sr-RS', { maximumFractionDigits: 2 })"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+                <p class="muted" style="font-size:12px; margin:8px 0 0" x-show="odig.slicnost.najbliza.length">
+                  Najbliža kola:
+                  <span class="mono" x-text="odig.slicnost.najbliza.map(n => formatKolo(n.kolo) + ' (' + n.k + ')').join(', ')"></span>
+                </p>
+                <p class="hint" style="margin-top:8px">
+                  Poređeno sa <span x-text="odig.slicnost.broj_kola"></span> kola. 4–5 istih brojeva sa nekim kolom je
+                  uobičajeno i za potpuno nasumičnu kombinaciju. Izbegavanje istorijskih kombinacija ne menja šansu,
+                  ali smanjuje rizik da se dobitak deli sa onima koji igraju stara izvlačenja.
+                </p>
+              </div>
+            </template>
           </div>
         </div>
+
         <div class="card" style="margin-top:16px">
-          <h3>Moji tiketi</h3>
-          <div style="max-height:520px; overflow:auto">
-            <table class="tbl">
-              <thead><tr><th>ID</th><th>Kombinacija</th><th>Poslednji rezultat</th><th>Provereno</th><th></th></tr></thead>
+          <h3>Dnevnik</h3>
+          <p class="muted" x-show="!odigGrupe().length" style="text-align:center; padding:16px">Još nema upisanih kombinacija.</p>
+          <template x-for="g in odigGrupe()" :key="g.kolo">
+            <div style="padding:10px 0; border-top:1px solid var(--border-soft)">
+              <div class="row" style="align-items:center; gap:10px; margin-bottom:8px">
+                <span class="mono" style="font-weight:600" x-text="'Kolo ' + formatKolo(g.kolo)"></span>
+                <span class="tag" :class="g.status === 'ceka' ? 'neutralan' : 'ok'"
+                      x-text="g.status === 'ceka' ? 'čeka izvlačenje' : 'izvučeno'"></span>
+                <template x-if="g.status === 'izvuceno'">
+                  <div class="balls">
+                    <template x-for="b in g.izvuceni" :key="b"><div class="ball sm neutralan" x-text="b"></div></template>
+                  </div>
+                </template>
+              </div>
+              <table class="tbl">
+                <tbody>
+                  <template x-for="r in g.redovi" :key="r.id">
+                    <tr>
+                      <td style="width:1%">
+                        <div class="balls" style="flex-wrap:nowrap">
+                          <template x-for="b in r.brojevi" :key="b">
+                            <div class="ball sm" :class="g.izvuceni.includes(b) ? 'svez active' : 'neutralan'" x-text="b"></div>
+                          </template>
+                        </div>
+                      </td>
+                      <td style="white-space:nowrap">
+                        <span x-show="r.pogoci != null" class="tag" :class="r.pogoci >= 3 ? 'ok' : 'neutralan'"
+                              x-text="r.pogoci + ' pogod.'"></span>
+                      </td>
+                      <td><span class="tag neutralan" x-text="odigIzvor(r.izvor)"></span></td>
+                      <td class="muted" style="font-size:12.5px" x-text="r.napomena || ''"></td>
+                      <td style="width:1%"><button class="btn danger sm" @click="odigObrisi(r)">✕</button></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+            </div>
+          </template>
+
+          <div x-show="odigUvezeni().length" style="border-top:1px solid var(--border-soft); padding-top:10px">
+            <a href="#" class="muted" style="font-size:12.5px" @click.prevent="odig.otvoriUvezene = !odig.otvoriUvezene"
+               x-text="(odig.otvoriUvezene ? '▾' : '▸') + ' Stari tiketi bez kola (' + odigUvezeni().length + ')'"></a>
+            <table class="tbl" x-show="odig.otvoriUvezene" style="margin-top:8px">
               <tbody>
-                <template x-for="t in tiketi" :key="t.id">
+                <template x-for="r in odigUvezeni()" :key="r.id">
                   <tr>
-                    <td class="num" x-text="t.id"></td>
-                    <td class="mono" x-text="t.kombinacija"></td>
-                    <td><span x-show="t.poslednji_rezultat!=null" class="tag" :class="t.poslednji_rezultat>=4?'ok':'neutralan'" x-text="(t.poslednji_rezultat ?? 0)+' pogodaka'"></span><span class="muted" x-show="t.poslednji_rezultat==null">—</span></td>
-                    <td class="muted" x-text="t.datum_provere || '—'"></td>
-                    <td><button class="btn danger sm" @click="obrisiTiket(t.id)">✕</button></td>
+                    <td class="mono" x-text="r.brojevi.join('  ')"></td>
+                    <td style="width:1%"><button class="btn danger sm" @click="odigObrisi(r)">✕</button></td>
                   </tr>
                 </template>
-                <tr x-show="!tiketi.length"><td colspan="5" class="muted" style="text-align:center; padding:24px">Nema tiketa.</td></tr>
               </tbody>
             </table>
           </div>
         </div>
       </section>
 
-      <!-- ============ PODACI ============ -->
-      <!-- ============ SINTEZA ============ -->
       <section x-show="strana==='sinteza'">
         <template x-if="loading && !sin.podaci"><div class="center-load"><div class="spinner"></div>Učitavam…</div></template>
         <template x-if="sin.podaci">
@@ -1685,7 +1789,7 @@
         <div class="grid g-2">
           <div class="card">
             <h3>Unesi novo kolo</h3>
-            <p class="hint">Automatski proverava sve tikete i bektestove za to kolo.</p>
+            <p class="hint">Automatski proverava tikete tog kola i bektestove.</p>
             <div class="field"><label>Broj kola</label><input class="inp" type="number" x-model.number="unos.kolo"></div>
             <div class="field"><label>Datum</label><input class="inp" type="date" x-model="unos.datum"></div>
             <div class="field"><label>7 brojeva (zarezom)</label><input class="inp" x-model="unos.brojevi" placeholder="npr. 2, 4, 6, 10, 12, 18, 37"></div>

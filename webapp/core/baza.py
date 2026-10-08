@@ -13,6 +13,7 @@ Time baza pada sa ~59 MB na ~2 MB.
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 from datetime import datetime
@@ -60,6 +61,26 @@ def postavi_bazu(putanja=None):
             id INTEGER PRIMARY KEY AUTOINCREMENT, kombinacija TEXT UNIQUE,
             status TEXT DEFAULT 'aktivan', poslednji_rezultat INTEGER,
             datum_provere TEXT, dodatne_metrike TEXT)""")
+        # Dnevnik odigranih kombinacija (PLAN_TIKETI_GRADITELJ §3.1): jedan red = jedna
+        # kombinacija u jednom kolu. Mere su NULL dok kolo nije izvučeno i ocenjeno.
+        # kolo je NULL samo za tikete uvezene iz odigrani_tiketi (kolo nepoznato).
+        nova_odigrano = not c.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='odigrano'").fetchone()
+        c.execute("""CREATE TABLE IF NOT EXISTS odigrano (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            kolo        INTEGER,
+            kombinacija TEXT    NOT NULL,
+            izvor       TEXT    NOT NULL DEFAULT 'rucno',
+            napomena    TEXT,
+            uneto       TEXT    NOT NULL,
+            pogoci      INTEGER,
+            skoro       INTEGER,
+            rastojanje  INTEGER,
+            percentil   REAL,
+            ocenjeno    TEXT,
+            UNIQUE (kolo, kombinacija))""")
+        if nova_odigrano:
+            _uvezi_stare_tikete(c)
         c.execute("""CREATE TABLE IF NOT EXISTS ai_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, datum_vreme TEXT,
             tip_zahteva TEXT, prompt TEXT, odgovor TEXT)""")
@@ -155,6 +176,24 @@ def _dodaj_kolone_ako_nema(cursor, tabela, kolone):
             cursor.execute(f"ALTER TABLE {tabela} ADD COLUMN {ime} {tip}")
 
 
+def _uvezi_stare_tikete(cursor):
+    """Jednokratno kopira odigrani_tiketi u odigrano kao „bez kola" (§2.2).
+
+    Poziva se samo kad se odigrano tek pravi: SQLite u UNIQUE smatra NULL-ove
+    različitim, pa bi ponovni uvoz duplirao redove. Stara tabela ostaje (desktop).
+    Neispravne stare kombinacije se preskaču.
+    """
+    sad = datetime.now().isoformat(timespec="seconds")
+    for (s,) in cursor.execute("SELECT kombinacija FROM odigrani_tiketi ORDER BY id").fetchall():
+        bez_prefiksa = re.sub(r"^\(\w+\)", "", s or "")     # (ML)/(GEN)/(POOL), kao bektest
+        b = sorted({int(x) for x in re.findall(r"\d+", bez_prefiksa)})
+        if len(b) != 7 or b[0] < 1 or b[-1] > konfig.MAX_BROJ:
+            continue
+        cursor.execute(
+            "INSERT INTO odigrano (kolo, kombinacija, izvor, uneto) VALUES (NULL, ?, 'uvoz', ?)",
+            (",".join(map(str, b)), sad))
+
+
 def _prognoze_broj_nullable(cursor):
     """Rekonstruiše tabelu prognoze da 'broj' bude nullable (SQLite ne može ALTER-om).
 
@@ -241,6 +280,26 @@ def promeni_status_tiketa(conn, tiket_id, status):
 
 def obrisi_tiket(conn, tiket_id):
     conn.execute("DELETE FROM odigrani_tiketi WHERE id=?", (tiket_id,))
+    conn.commit()
+
+
+# ----------------------------------------------------------------------------
+# Dnevnik odigranih kombinacija (odigrano)
+# ----------------------------------------------------------------------------
+
+def dodaj_odigrano(conn, kolo, kombinacija_csv, izvor="rucno", napomena=None):
+    """Upisuje kombinaciju za kolo. Vraća id novog reda ili None ako već postoji."""
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO odigrano (kolo, kombinacija, izvor, napomena, uneto) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (kolo, kombinacija_csv, izvor, napomena or None,
+         datetime.now().isoformat(timespec="seconds")))
+    conn.commit()
+    return cur.lastrowid if cur.rowcount > 0 else None
+
+
+def obrisi_odigrano(conn, red_id):
+    conn.execute("DELETE FROM odigrano WHERE id=?", (red_id,))
     conn.commit()
 
 
