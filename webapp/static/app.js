@@ -74,19 +74,21 @@ async function jsend(url, method, body) {
 
 function app() {
   return {
+    // Meni u grupama (PLAN_TIKETI_GRADITELJ §6): opisne analize odvojene od onih koje
+    // grade predlog. Naslov grupe se crta kad se `grupa` promeni u odnosu na prethodnu stranu.
     strane: [
-      { id: 'dashboard', naziv: 'Dashboard', ico: '🏠', opis: 'Ključni pokazatelji i predlog bazena', period: true },
-      { id: 'istorija', naziv: 'Istraži istoriju', ico: '🕰️', opis: 'Vremeplov kroz kola — šta je sistem znao u svakom trenutku', period: false },
-      { id: 'mapa', naziv: 'Mapa kombinacija', ico: '🗺️', opis: 'Ceo prostor od 15.380.937 kombinacija — gde je koja i gde je tvoj tiket', period: false },
-      { id: 'statistika', naziv: 'Statistika', ico: '📊', opis: 'Frekvencija, srednje vrednosti, dekade, poziciona analiza', period: true },
-      { id: 'razlicitost', naziv: 'Različitost', ico: '🧬', opis: 'Koliko se izvučene kombinacije razlikuju — poređenje sa čistom slučajnošću', period: true },
-      { id: 'rangiranje', naziv: 'Rangiranje', ico: '🎯', opis: 'Rangiranje brojeva: Frekvencija / Bajes / Hibrid', period: false },
-      { id: 'prognoza', naziv: 'Prognoza', ico: '🔮', opis: 'Predviđanje jednog broja — statistički eksperiment sa kontrolnom grupom', period: true },
-      { id: 'generator', naziv: 'Generator', ico: '⚙️', opis: 'Generiši kombinacije po filterima i bodovanju', period: true },
-      { id: 'bektest', naziv: 'Bektest', ico: '🧪', opis: 'Uspešnost sačuvanih strategija', period: false },
-      { id: 'tiketi', naziv: 'Moji tiketi', ico: '🎟️', opis: 'Dnevnik odigranih kombinacija po kolima', period: false },
-      { id: 'sinteza', naziv: 'Sinteza', ico: '⚖️', opis: 'Svi metodi i testovi pod istim sudom — jedna tabela, jedna korekcija', period: false },
-      { id: 'podaci', naziv: 'Podaci', ico: '🗄️', opis: 'Unos kola i uvoz istorije', period: false },
+      { grupa: null, id: 'dashboard', naziv: 'Dashboard', ico: '🏠', opis: 'Ključni pokazatelji i predlog bazena', period: true },
+      { grupa: 'Istorija i statistika', id: 'statistika', naziv: 'Statistika', ico: '📊', opis: 'Frekvencija, srednje vrednosti, dekade, poziciona analiza', period: true },
+      { grupa: 'Istorija i statistika', id: 'razlicitost', naziv: 'Različitost', ico: '🧬', opis: 'Koliko se izvučene kombinacije razlikuju — poređenje sa čistom slučajnošću', period: true },
+      { grupa: 'Istorija i statistika', id: 'mapa', naziv: 'Mapa kombinacija', ico: '🗺️', opis: 'Ceo prostor od 15.380.937 kombinacija — gde je koja i gde je tvoj tiket', period: false },
+      { grupa: 'Istorija i statistika', id: 'istorija', naziv: 'Istraži istoriju', ico: '🕰️', opis: 'Vremeplov kroz kola — šta je sistem znao u svakom trenutku', period: false },
+      { grupa: 'Predviđanje', id: 'rangiranje', naziv: 'Rangiranje', ico: '🎯', opis: 'Rangiranje brojeva: Frekvencija / Bajes / Hibrid', period: false },
+      { grupa: 'Predviđanje', id: 'prognoza', naziv: 'Prognoza', ico: '🔮', opis: 'Predviđanje jednog broja — statistički eksperiment sa kontrolnom grupom', period: true },
+      { grupa: 'Predviđanje', id: 'generator', naziv: 'Generator', ico: '⚙️', opis: 'Generiši kombinacije po filterima i bodovanju', period: true },
+      { grupa: 'Predviđanje', id: 'bektest', naziv: 'Bektest', ico: '🧪', opis: 'Uspešnost sačuvanih strategija', period: false },
+      { grupa: 'Predviđanje', id: 'sinteza', naziv: 'Sinteza', ico: '⚖️', opis: 'Svi metodi i testovi pod istim sudom — jedna tabela, jedna korekcija', period: false },
+      { grupa: 'Moja igra', id: 'tiketi', naziv: 'Moji tiketi', ico: '🎟️', opis: 'Dnevnik odigranih kombinacija po kolima', period: false },
+      { grupa: null, id: 'podaci', naziv: 'Podaci', ico: '🗄️', opis: 'Unos kola i uvoz istorije', period: false },
     ],
     strana: 'dashboard',
     period: 0,

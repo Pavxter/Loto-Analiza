@@ -23,16 +23,20 @@
         <small>7 / 39 &middot; web v1</small>
       </div>
     </div>
-    <template x-for="s in strane" :key="s.id">
-      <div class="nav-item" :class="{active: strana === s.id}" @click="idi(s.id)">
-        <span class="ico" x-text="s.ico"></span>
-        <span x-text="s.naziv"></span>
+    <template x-for="(s, i) in strane" :key="s.id">
+      <div>
+        <div class="nav-grupa" x-show="s.grupa && (i === 0 || strane[i - 1].grupa !== s.grupa)" x-text="s.grupa"></div>
+        <div class="nav-razmak" x-show="!s.grupa && i > 0"></div>
+        <div class="nav-item" :class="{active: strana === s.id}" @click="idi(s.id)">
+          <span class="ico" x-text="s.ico"></span>
+          <span x-text="s.naziv"></span>
+        </div>
       </div>
     </template>
     <div class="nav-spacer"></div>
     <div class="nav-foot">
       <span x-text="brojKola"></span> kola u bazi<br>
-      Analiza istorije, ne predviđanje.
+      Svaki predlog se proverava naspram slučaja.
     </div>
   </aside>
 
@@ -40,6 +44,7 @@
   <div class="main">
     <div class="topbar">
       <div>
+        <div class="nadnaslov" x-show="aktivna().grupa" x-text="aktivna().grupa"></div>
         <h2 x-text="aktivna().naziv"></h2>
         <div class="sub" x-text="aktivna().opis"></div>
       </div>

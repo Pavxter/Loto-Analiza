@@ -174,15 +174,25 @@ Testovi: kalibracija na nasumičnim tiketima (|z| < 3,5), otkrivanje tiketa koji
 
 ## 6. Faza 4 — Reorganizacija menija
 
-| Grupa | Strane |
+| Grupa | Strane (redosled u meniju) |
 |---|---|
-| **Istorija i statistika** | Istorija, Statistika, Mapa kombinacija, Različitost |
-| **Predviđanje** | Rangiranje, Prognoza, Sinteza, Generator, Bektest, *Graditelj (faza 5)* |
+| — | Dashboard |
+| **Istorija i statistika** | Statistika, Različitost, Mapa kombinacija, Istraži istoriju |
+| **Predviđanje** | Rangiranje, Prognoza, Generator, *Graditelj (faza 5)*, Bektest, Sinteza |
 | **Moja igra** | Moji tiketi |
-| — | Kontrolna tabla, Podaci |
+| — | Podaci |
 
-Pre premeštanja proveriti sadržaj svake strane; ako strana meša opisno i prediktivno, deli se
-ili se prediktivni deo seli. Rute (`strana===...`) se ne menjaju, menja se samo meni.
+Redosled u Predviđanju prati tok: signali (Rangiranje, Prognoza) → sklapanje (Generator,
+Graditelj) → provera (Bektest, Sinteza).
+
+Provera sadržaja — nijedna strana se ne deli:
+- „Predikcija tada" u Istraži istoriju je pogled unazad na prognoze, pa ostaje u istoriji.
+- „Testovi slučajnosti" u Sintezi su merilo po kom se sude metode, pa ostaju u Predviđanju.
+- Dashboard ima i „Predlog bazena", ali ostaje samostalan na vrhu.
+
+Rute (`strana===...`) se ne menjaju. Grupa je polje `grupa` u `strane`; isti naziv se
+prikazuje i kao nadnaslov strane. Tekst u dnu menija „Analiza istorije, ne predviđanje"
+zamenjen sa „Svaki predlog se proverava naspram slučaja", jer meni sada ima grupu Predviđanje.
 
 ---
 

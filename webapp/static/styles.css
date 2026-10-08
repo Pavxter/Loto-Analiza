@@ -42,6 +42,7 @@ body {
   width: 232px; flex-shrink: 0; background: var(--bg-elev);
   border-right: 1px solid var(--border); padding: 20px 14px;
   display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh;
+  overflow-y: auto;   /* sa naslovima grupa meni je viši; nizak prozor ne sme da ga odseče */
 }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; }
 .brand .logo {
@@ -59,6 +60,10 @@ body {
 .nav-item.active { background: var(--accent-soft); color: #cfe0ff; }
 .nav-item .ico { width: 18px; text-align: center; font-size: 15px; }
 .nav-spacer { flex: 1; }
+/* Naslov grupe u meniju (Istorija i statistika / Predviđanje / Moja igra) */
+.nav-grupa { color: var(--text-faint); font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .7px; padding: 14px 12px 4px; }
+.nav-razmak { height: 10px; }
 .nav-foot { color: var(--text-faint); font-size: 11px; padding: 8px; border-top: 1px solid var(--border-soft); }
 
 .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -69,6 +74,7 @@ body {
 }
 .topbar h2 { margin: 0; font-size: 18px; font-weight: 700; }
 .topbar .sub { color: var(--text-faint); font-size: 12px; }
+.topbar .nadnaslov { color: var(--text-faint); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; margin-bottom: 2px; }
 .topbar .spacer { flex: 1; }
 .content { padding: 24px 28px 60px; max-width: 1280px; width: 100%; }
 
