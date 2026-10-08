@@ -12,10 +12,11 @@
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
 </head>
 <body>
-<div class="app" x-data="app()" x-init="init()" x-cloak>
+<div class="app" x-data="app()" x-init="init()" x-cloak
+     :class="{'meni-otvoren': meniOtvoren}" @keydown.escape.window="meniOtvoren = false">
 
-  <!-- Sidebar -->
-  <aside class="sidebar">
+  <!-- Sidebar (ispod 720 px postaje fioka koju otvara ☰ u topbar-u) -->
+  <aside class="sidebar" id="glavni-meni">
     <div class="brand">
       <div class="logo">L</div>
       <div>
@@ -39,10 +40,13 @@
       Svaki predlog se proverava naspram slučaja.
     </div>
   </aside>
+  <div class="meni-zastor" @click="meniOtvoren = false"></div>
 
   <!-- Main -->
   <div class="main">
     <div class="topbar">
+      <button class="meni-dugme" type="button" @click="meniOtvoren = !meniOtvoren"
+              aria-controls="glavni-meni" :aria-expanded="meniOtvoren" aria-label="Meni">☰</button>
       <div>
         <div class="nadnaslov" x-show="aktivna().grupa" x-text="aktivna().grupa"></div>
         <h2 x-text="aktivna().naziv"></h2>

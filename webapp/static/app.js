@@ -92,6 +92,7 @@ function app() {
       { grupa: null, id: 'podaci', naziv: 'Podaci', ico: '🗄️', opis: 'Unos kola i uvoz istorije', period: false },
     ],
     strana: 'dashboard',
+    meniOtvoren: false,   // fioka sa menijem na uskom ekranu (<720 px)
     period: 0,
     loading: false,
     brojKola: '…',
@@ -143,6 +144,7 @@ function app() {
     idi(id) {
       if (this.strana === 'mapa' && id !== 'mapa') this.mapaStani();   // animacija ne sme da radi u pozadini
       this.strana = id;
+      this.meniOtvoren = false;
       this.ucitajStranu();
     },
 
