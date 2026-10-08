@@ -14,7 +14,7 @@ Garancije (identične jednobrojnim, testira se u tests/test_prognoza.py):
 
 import random as _random
 
-from . import konfig, sekvencijalni
+from . import graditelj, konfig, sekvencijalni
 from .prediktori import (_prozor, _frekvencija_i_poslednji, _bajes_skorovi, _povezanost,
                          skor_ansambla)
 
@@ -191,6 +191,17 @@ def k_sekv(istorija, period, ciljno_kolo=None):
     return sekvencijalni.predlog_za(istorija)
 
 
+def k_graditelj(istorija, period, ciljno_kolo=None):
+    """Graditelj kombinacije sa ZAKLJUČANIM podešavanjima (PLAN_TIKETI_GRADITELJ §8).
+
+    Potencijal u prozoru obrta (22) bira bazen od 15, ritam i parovi na celoj istoriji
+    ocenjuju, pravila oblika isključuju. `period` se ignoriše iz istog razloga kao kod
+    `k_sekv`: Graditelj ima sopstvene prozore u konfiguraciji, a podešavanje na
+    istoriji je zabranjeno (§2.5). Funkcija dobija istoriju STROGO PRE ciljnog kola.
+    """
+    return graditelj.predlog_za(istorija)
+
+
 def k_random(istorija, period, ciljno_kolo=None):
     """Kontrolna grupa: 7 nasumičnih jedinstvenih brojeva, seed = kolo*2
     (različit od jednobrojnog random prediktora da ne dele slučajnost)."""
@@ -207,6 +218,7 @@ PREDIKTORI_KOMB = {
     "k_rhythm7": ("Top-7 po ritmu", k_rhythm7, "7 brojeva sa najvećim odnosom kašnjenja i ritma (D/R)."),
     "k_cooc":    ("Ko-okurencijski", k_cooc,   "Pohlepno bira brojeve koji najčešće izlaze zajedno."),
     "k_ensemble": ("Ansambl (7)",    k_ensemble, "Top-7 po težinskom zbiru ocena šest komponenti; iste težine kao jednobrojni ansambl."),
+    "k_graditelj": ("Graditelj",    k_graditelj, "Potencijal u prozoru obrta bira bazen od 15; ritam (D/R) i parovi biraju 7; pravila oblika isključuju (podrazumevana podešavanja)."),
     "k_sekv":    ("Sekvencijalni",  k_sekv,    "Top-7 iz mešavine 11 eksperata koja posle svakog kola pomera težine prema sopstvenoj grešci."),
     "k_random":  ("Nasumični (kontrola)", k_random, "Kontrolna grupa: 7 nasumičnih brojeva (seed = kolo·2)."),
 }

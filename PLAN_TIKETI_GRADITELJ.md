@@ -258,12 +258,27 @@ Modul `core/graditelj.py`; postojeće funkcije se uvoze, ne kopiraju.
 
 ## 8. Faza 6 — `k_graditelj` u Prognozi
 
-- Dodaje se u `PREDIKTORI_KOMB` sa **zaključanim** parametrima (§2.5, `konfig.GRADITELJ_*`):
-  W=22, bazen 15, a=b=c=1, dekada max 3, uzastopnih max 1, istorija max 5.
-- Ulazi u retro-bektest i kontrolnu grupu kao i ostale metode.
-- `PRAG_KOMB` se automatski pooštrava (Bonferroni nad jednim prediktorom više) — navesti u
-  commitu.
-- Test: `k_graditelj` ne gleda u ciljno kolo (isti test curenja kao za ostale prediktore).
+- Dodat u `PREDIKTORI_KOMB` sa **zaključanim** parametrima (§2.5, `konfig.GRADITELJ_*`):
+  W=22, bazen 15, a=b=c=1, dekada max 3, uzastopnih max 1, istorija max 5. `period` se
+  ignoriše (kao kod `k_sekv`): Graditelj ima sopstvene prozore.
+- Ulazi u retro-bektest, kontrolnu grupu i Sintezu kao i ostale metode. Prag za kombinacije
+  je sada 0,05 / 18 = 0,00278 (8 jednobrojnih + 10 kombinacijskih metoda).
+- Postojeći testovi Prognoze ga automatski pokrivaju (ispravnost, bez curenja, determinizam,
+  kontrolni pojas, brzina). Dodato: inkrementalni brojači = `prediktori._primitivi`
+  (i posle ispravke starog kola), `predlog_za` = prvi predlog strane, bitmaske = teorija.
+
+**Brzina.** Retro zove Graditelja ~1.380 puta. Prva verzija: ~10 ms po pozivu (+7 s na
+retro). Posle: brojači cele istorije se produžavaju za jedno kolo (ključ = otisak cele
+istorije, pa ispravka starog kola ne vraća zastarele podatke); kombinacije kao matrica 0/1
+(broj × kombinacija, float32), pa su skor i pravila množenje matrica; uzastopni samo preko
+susednih parova u bazenu; izbor preko argmax petlje umesto sortiranja svih kandidata; pravilo
+istorije preko bitmaski, u bektestu samo nad kandidatima redom. Rezultat: ~1,3 ms po pozivu.
+Test brzine celog retroa (sintetika 1.400 kola): 14,5 s (granica 15 s; bez Graditelja 12,4 s).
+
+**Rezultat (retro, 1.381 kolo, 2026-10-08):** prosečno preklapanje 1,266 naspram očekivanih
+1,256, z = +0,37, p = 0,71, korigovano p = 1,00 → **nerazlučivo od slučajnosti**. Nijedan
+kombinacijski metod ne prelazi prag; najveće odstupanje ima kontrolna grupa (`k_random`,
+z = +2,57, p = 0,010, korigovano 0,28) — primer koliko šum sam proizvodi.
 
 ---
 

@@ -117,7 +117,7 @@ function app() {
     prog: { tab: 'broj', ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
             filterMetod: '', prag: 0.00625, brojMetoda: 8, radi: false },
     progK: { ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
-             filterMetod: '', histMetod: '', hist: null, prag: 0.00313, brojMetoda: 16,
+             filterMetod: '', histMetod: '', hist: null, prag: 0.00278, brojMetoda: 18,
              ocekivano: 1.256, sigma: 0.9317, ucitano: false },
     razl: { podaci: null, profilTip: 'sredina', prikaziParove: false, detaljPar: null },
     mapa: { info: null, sloj: '', detalj: null, tiket: '', zum: 0, uklopljeno: false,

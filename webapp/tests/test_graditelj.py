@@ -72,7 +72,7 @@ def test_pravila_maska_kao_generator():
     B = np.array(sorted({tuple(sorted(rng.sample(range(1, 40), 7))) for _ in range(5000)}))
     for pravila in ({"dekada_max": 3}, {"uzastopni_max": 1}, {"dekada_max": 2, "uzastopni_max": 0},
                     {"zbir_min": 120, "zbir_max": 160, "parni_min": 3, "parni_max": 4}):
-        maska = G._pravila_maska(B, pravila, [])
+        maska = G._pravila_maska(G.matrica_kombinacija(B - 1, 39), np.arange(1, 40), pravila)
         for red, ok in zip(B, maska):
             k = [int(x) for x in red]
             ocek = True
@@ -94,8 +94,9 @@ def test_istorija_se_iskljucuje():
                   [3, 9, 14, 20, 27, 33, 39],     # 6
                   [3, 9, 14, 20, 27, 32, 39],     # 5 — prolazi
                   [4, 8, 15, 21, 26, 34, 39]])    # 0
-    maska = G._pravila_maska(B, {"istorija_max": 5}, istorija)
-    assert maska.tolist() == [False, False, True, True]
+    H = G.brojaci(istorija).H()
+    assert G._istorija_ok(B, H, 5).tolist() == [False, False, True, True]
+    assert G._istorija_ok(B, H, 6).tolist() == [False, True, True, True]
     print("test_istorija_se_iskljucuje: OK")
 
 
@@ -148,6 +149,68 @@ def test_prestroga_pravila():
     print("test_prestroga_pravila: OK")
 
 
+# ----------------------------------------------------------------------------
+# Faza 6 — k_graditelj (§8)
+# ----------------------------------------------------------------------------
+
+def _isto_kao_primitivi(ist):
+    from webapp.core import prediktori
+    prim = prediktori._primitivi(ist)
+    br = G.brojaci(ist)
+    assert br.n == prim["n"]
+    for b in range(1, 40):
+        assert br.kasnjenje(b) == prim["kasnjenje"][b], b
+        assert br.ritam(b) == prim["ritam"][b], (b, br.ritam(b), prim["ritam"][b])
+    assert br.parovi == prim["parovi"]
+    from webapp.core import razlicitost_teorija as T
+    assert [int(x) for x in br.H()] == [T.maska(b) for _k, b in ist]
+
+
+def test_brojaci_kao_primitivi():
+    """Inkrementalni brojači = `prediktori._primitivi`: od nule, produženo i posle ispravke."""
+    ist = sinteticka_istorija(300, seme=36)
+    G._brojaci_kes.update(otisak=None, duzina=0, brojaci=None)
+    _isto_kao_primitivi(ist[:120])
+    for n in range(121, 140):                       # produžavanje po jedno kolo
+        _isto_kao_primitivi(ist[:n])
+    ispravljena = list(ist[:139])
+    ispravljena[50] = (ispravljena[50][0], (1, 2, 3, 4, 5, 6, 7))   # ispravka starog kola
+    _isto_kao_primitivi(ispravljena)
+    _isto_kao_primitivi(ist[:30])                   # skraćena istorija
+    print("test_brojaci_kao_primitivi: OK")
+
+
+def test_maske_kao_teorija():
+    from webapp.core import razlicitost_teorija as T
+    rng = random.Random(5)
+    B = np.array([sorted(rng.sample(range(1, 40), 7)) for _ in range(200)])
+    assert [int(x) for x in G._maske(B)] == [T.maska(r) for r in B.tolist()]
+    print("test_maske_kao_teorija: OK")
+
+
+def test_predlog_za_je_najbolji_sa_strane():
+    """k_graditelj (lenja provera istorije) = prvi predlog strane (puna provera)."""
+    ist = sinteticka_istorija(800, seme=37)
+    for n in (100, 400, 800):
+        strana = G.sklopi(ist[:n], sa_slicnoscu=False)
+        assert G.predlog_za(ist[:n]) == tuple(strana["predlozi"][0]["brojevi"]), n
+    assert G.predlog_za(ist[:1]) is None
+    print("test_predlog_za_je_najbolji_sa_strane: OK")
+
+
+def test_k_graditelj_brzina():
+    """Retro poziva k_graditelj ~1.350 puta; mora da stane u nekoliko sekundi."""
+    import time
+    from webapp.core.prediktori_komb import k_graditelj
+    ist = sinteticka_istorija(1400, seme=38)
+    t = time.perf_counter()
+    for n in range(50, 1400):
+        k_graditelj(ist[:n], 100)
+    trajanje = time.perf_counter() - t
+    assert trajanje < 4, trajanje
+    print(f"test_k_graditelj_brzina: OK ({trajanje:.1f} s za 1.350 kola)")
+
+
 def main():
     test_obrt_tacan()
     test_potencijal()
@@ -157,6 +220,10 @@ def main():
     test_sklapanje()
     test_samo_jedna_tezina()
     test_prestroga_pravila()
+    test_brojaci_kao_primitivi()
+    test_maske_kao_teorija()
+    test_predlog_za_je_najbolji_sa_strane()
+    test_k_graditelj_brzina()
     print("\nSVI TESTOVI GRADITELJA PROSLI [OK]")
 
 
