@@ -90,6 +90,18 @@ def broj_uzastopnih(komb):
     return sum(1 for i in range(len(b) - 1) if b[i + 1] == b[i] + 1)
 
 
+def najvise_u_dekadi(komb):
+    """Najveći broj brojeva kombinacije u jednoj dekadi 1–9 / 10–19 / 20–29 / 30–39.
+
+    Pravilo `dekada_max` Generatora i Graditelja. Napomena: `mapa.osobine["dekade"]` je
+    DRUGA veličina (broj različitih dekada, granice 1–10 / 11–20 / …) i ne sme se mešati.
+    """
+    dekade = [0, 0, 0, 0]
+    for b in komb:
+        dekade[min(b // 10, 3)] += 1
+    return max(dekade)
+
+
 def osobine_kombinacije(komb):
     """Zbir, raspon, parni, dekade i uzastopni — osobine CELE kombinacije.
 
@@ -156,19 +168,8 @@ def generisi(analiza, bazen=None, filteri=None):
             continue
         if uzastopni is not None and broj_uzastopnih(komb) != uzastopni:
             continue
-        if dekada_max is not None:
-            dekade = {"1-9": 0, "10-19": 0, "20-29": 0, "30-39": 0}
-            for b in komb:
-                if b <= 9:
-                    dekade["1-9"] += 1
-                elif b <= 19:
-                    dekade["10-19"] += 1
-                elif b <= 29:
-                    dekade["20-29"] += 1
-                else:
-                    dekade["30-39"] += 1
-            if max(dekade.values()) > dekada_max:
-                continue
+        if dekada_max is not None and najvise_u_dekadi(komb) > dekada_max:
+            continue
         validne.append(komb)
 
     strategija = f.get("strategija_svezine", "favorizuj")

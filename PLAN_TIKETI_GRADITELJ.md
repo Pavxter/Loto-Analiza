@@ -236,15 +236,30 @@ Modul `core/graditelj.py`; postojeće funkcije se uvoze, ne kopiraju.
 
 ### 7.4. API
 
-- `GET /api/graditelj/potencijal?w=22`
-- `POST /api/graditelj/sklopi` — `{w, bazen, a, b, c, pravila}`
+- `POST /api/graditelj/sklopi` — `{w, bazen, tezine: [a, b, c], pravila}` vraća ceo tok
+  (potencijal, signali bazena, lift matricu, predloge) i zaključana podrazumevana podešavanja.
+  Jedan poziv (~70 ms za bazen 15, ~340 ms za 20), pa zaseban endpoint za potencijal nije potreban.
+
+### 7.5. Odstupanja od v1.0 (implementacija)
+
+- **Pravilo „izbegni istoriju"** (`istorija_max = 5`, podrazumevano uključeno): izbacuje
+  kombinacije sa 6+ istih brojeva kao neko izvučeno kolo — isti prag kao upozorenje u dnevniku.
+- **Dekada** = Generatorova definicija (1–9 / 10–19 / 20–29 / 30–39, najviše u jednoj),
+  izdvojena u `generator.najvise_u_dekadi` i deljena. `mapa.osobine["dekade"]` je druga
+  veličina (broj različitih dekada, granice 1–10 / 11–20 / …) i ne koristi se ovde.
+- **Alternative** se od svih prethodnih predloga razlikuju u bar 2 broja (≤ 5 zajedničkih),
+  inače bi bile varijacije jednog broja.
+- **Ritam** dolazi iz `prediktori._primitivi` (kašnjenje D i prosečan razmak R), ne iz
+  `k_rhythm7`, koji isti račun drži u sebi.
+- **Opažanje:** u prozoru od 22 kola z ima samo nekoliko nivoa (0, 1, 2… pojava), pa granica
+  bazena često pada usred izjednačenih brojeva i bira tie-break; UI to kaže.
 
 ---
 
 ## 8. Faza 6 — `k_graditelj` u Prognozi
 
-- Dodaje se u `PREDIKTORI_KOMB` sa **zaključanim** parametrima (§2.5): W=22, bazen 15,
-  a=b=c=1, dekada max 3, uzastopnih max 1.
+- Dodaje se u `PREDIKTORI_KOMB` sa **zaključanim** parametrima (§2.5, `konfig.GRADITELJ_*`):
+  W=22, bazen 15, a=b=c=1, dekada max 3, uzastopnih max 1, istorija max 5.
 - Ulazi u retro-bektest i kontrolnu grupu kao i ostale metode.
 - `PRAG_KOMB` se automatski pooštrava (Bonferroni nad jednim prediktorom više) — navesti u
   commitu.

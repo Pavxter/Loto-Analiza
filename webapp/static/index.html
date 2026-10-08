@@ -992,6 +992,151 @@
       </section>
 
       <!-- ============ PROGNOZA ============ -->
+      <!-- ============ GRADITELJ KOMBINACIJE (PLAN_TIKETI_GRADITELJ §7) ============ -->
+      <section x-show="strana==='graditelj'">
+        <div class="notice" style="margin-bottom:16px">
+          <span>🧱</span>
+          <span>Tri koraka: <b>potencijal</b> bira bazen brojeva, <b>ritam i parovi</b> ih dodatno ocenjuju,
+          a <b>sklapanje</b> pravi kombinaciju uz pravila oblika. Potencijal, ritam i parovi su signali koje
+          tek bektest može da potvrdi; pravila oblika ne menjaju šansu, samo biraju „tipične" kombinacije.</span>
+        </div>
+
+        <!-- 1. Potencijal -->
+        <div class="card">
+          <div class="row" style="justify-content:space-between; align-items:center">
+            <h3 style="margin:0">1. Potencijal brojeva</h3>
+            <div class="row" style="gap:6px; align-items:center">
+              <span class="muted" style="font-size:12px">Prozor:</span>
+              <template x-for="w in [22, 50, 100, 500, 0]" :key="w">
+                <button class="btn sm" :class="gr.w === w ? '' : 'ghost'" @click="gr.w = w; grSklopi()"
+                        x-text="w === 0 ? 'sva kola' : (w === 22 ? '22 (obrt)' : w)"></button>
+              </template>
+            </div>
+          </div>
+          <p class="hint" x-show="gr.podaci">
+            <span x-text="'Svih 39 brojeva se u proseku pojavi bar jednom za ' + (gr.podaci ? gr.podaci.w_obrt.toFixed(1).replace('.', ',') : '') + ' kola — to je prozor „obrta“. '"></span>
+            <span x-text="gr.podaci ? 'U poslednjih ' + gr.podaci.w + ' kola svaki broj bi trebalo da izađe ' + gr.podaci.potencijal.ocekivano.toFixed(1).replace('.', ',') + ' puta. ' : ''"></span>
+            Potencijal = koliko broj kasni za tim očekivanjem, u standardnim devijacijama (z). Plavi stubovi su bazen.
+          </p>
+          <div id="gr-pot" style="height:280px"></div>
+          <p class="muted" style="font-size:12px; margin:6px 0 0" x-show="gr.podaci && gr.podaci.w <= 50">
+            U kratkom prozoru z ima samo nekoliko nivoa (0, 1, 2… pojava), pa granica bazena često pada usred
+            izjednačenih brojeva — tada među njima bira reproducibilan slučajan izbor, ne signal.
+            Isprekidane linije su ±2σ: unutar njih je uobičajeno slučajno odstupanje.
+          </p>
+        </div>
+
+        <!-- 2. Signali bazena -->
+        <div class="grid g-2" style="margin-top:16px" x-show="gr.podaci">
+          <div class="card">
+            <h3>2. Ritam brojeva iz bazena</h3>
+            <p class="hint">Na celoj istoriji. <b>D</b> = koliko kola broj nije izašao, <b>R</b> = njegov prosečan razmak
+              između dva izlaska. D/R iznad 1 znači da kasni u odnosu na sopstveni ritam.</p>
+            <table class="tbl">
+              <thead><tr><th>Broj</th><th class="num">Pojava u prozoru</th><th class="num">z</th>
+                <th class="num">D</th><th class="num">R</th><th class="num">D/R</th></tr></thead>
+              <tbody>
+                <template x-for="x in (gr.podaci ? gr.podaci.bazen : [])" :key="x.broj">
+                  <tr>
+                    <td><div class="ball sm" :class="klasaBroja(x.broj)" x-text="x.broj"></div></td>
+                    <td class="num" x-text="x.pojava"></td>
+                    <td class="num" x-text="grBroj(x.z, 2)"></td>
+                    <td class="num" x-text="x.kasnjenje"></td>
+                    <td class="num" x-text="x.ritam != null ? grBroj(x.ritam, 1) : '—'"></td>
+                    <td class="num" :style="x.odnos > 1 ? 'color:#f2c96b' : ''" x-text="grBroj(x.odnos, 2)"></td>
+                  </tr>
+                </template>
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h3>Parovi u bazenu</h3>
+            <p class="hint" x-text="gr.podaci ? 'Lift = koliko puta je par izašao zajedno / očekivano (' + grBroj(gr.podaci.ocekivano_par, 1) + ' na ' + gr.podaci.broj_kola + ' kola). Crveno češće od očekivanog, plavo ređe.' : ''"></p>
+            <div id="gr-lift" style="height:380px"></div>
+          </div>
+        </div>
+
+        <!-- 3. Sklapanje -->
+        <div class="grid g-2" style="margin-top:16px" x-show="gr.podaci">
+          <div class="card">
+            <h3>3. Sklapanje — podešavanja</h3>
+            <div class="field">
+              <label x-text="'Veličina bazena: ' + gr.bazen + ' brojeva'"></label>
+              <input type="range" min="10" max="20" step="1" x-model.number="gr.bazen" @change="grSklopi()">
+            </div>
+            <div class="label" style="margin:4px 0 6px">Težine signala</div>
+            <template x-for="t in [['a', 'Potencijal'], ['b', 'Ritam (D/R)'], ['c', 'Parovi (lift)']]" :key="t[0]">
+              <div class="field" style="margin-bottom:6px">
+                <label x-text="t[1] + ': ' + gr[t[0]]"></label>
+                <input type="range" min="0" max="3" step="0.5" x-model.number="gr[t[0]]" @change="grSklopi()">
+              </div>
+            </template>
+            <div class="label" style="margin:10px 0 6px">Pravila oblika <span class="muted" style="font-weight:400; text-transform:none; letter-spacing:0">— isključuju, ne boduju</span></div>
+            <div class="row">
+              <div class="field"><label class="check"><input type="checkbox" x-model="gr.f.dekada" @change="grSklopi()"> Max po dekadi</label>
+                <input class="inp" type="number" min="1" max="7" x-model.number="gr.p.dekada_max" :disabled="!gr.f.dekada" @change="grSklopi()"></div>
+              <div class="field"><label class="check"><input type="checkbox" x-model="gr.f.uzastopni" @change="grSklopi()"> Max uzastopnih</label>
+                <input class="inp" type="number" min="0" max="6" x-model.number="gr.p.uzastopni_max" :disabled="!gr.f.uzastopni" @change="grSklopi()"></div>
+            </div>
+            <div class="row">
+              <div class="field"><label class="check"><input type="checkbox" x-model="gr.f.zbir" @change="grSklopi()"> Zbir od–do</label>
+                <div class="row" style="gap:6px">
+                  <input class="inp" type="number" x-model.number="gr.p.zbir_min" :disabled="!gr.f.zbir" @change="grSklopi()">
+                  <input class="inp" type="number" x-model.number="gr.p.zbir_max" :disabled="!gr.f.zbir" @change="grSklopi()">
+                </div></div>
+              <div class="field"><label class="check"><input type="checkbox" x-model="gr.f.parni" @change="grSklopi()"> Parnih od–do</label>
+                <div class="row" style="gap:6px">
+                  <input class="inp" type="number" min="0" max="7" x-model.number="gr.p.parni_min" :disabled="!gr.f.parni" @change="grSklopi()">
+                  <input class="inp" type="number" min="0" max="7" x-model.number="gr.p.parni_max" :disabled="!gr.f.parni" @change="grSklopi()">
+                </div></div>
+            </div>
+            <div class="field"><label class="check"><input type="checkbox" x-model="gr.f.istorija" @change="grSklopi()">
+              Izbaci kombinacije sa 6+ istih brojeva kao neko izvučeno kolo</label></div>
+            <div class="row" style="gap:8px; align-items:center">
+              <button class="btn ghost sm" @click="grPodrazumevano()">Vrati podrazumevano</button>
+              <span class="muted" style="font-size:12px" x-show="grIzmenjeno()">Izmenjeno — bektest (Prognoza) ocenjuje samo podrazumevana podešavanja.</span>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="row" style="justify-content:space-between; align-items:center">
+              <h3 style="margin:0">Predlog</h3>
+              <span class="muted" style="font-size:12px" x-show="gr.podaci"
+                    x-text="gr.podaci ? (gr.podaci.prolazi_pravila.toLocaleString('sr-RS') + ' od ' + gr.podaci.ukupno_kombinacija.toLocaleString('sr-RS') + ' kombinacija prolazi pravila') : ''"></span>
+            </div>
+            <p class="muted" x-show="gr.podaci && !gr.podaci.predlozi.length" style="margin-top:12px">
+              Nijedna kombinacija iz bazena ne prolazi pravila — popusti pravila ili povećaj bazen.</p>
+            <template x-for="(p, i) in (gr.podaci ? gr.podaci.predlozi : [])" :key="p.brojevi.join('-')">
+              <div style="padding:12px 0; border-top:1px solid var(--border-soft)" :style="i === 0 ? 'border-top:none' : ''">
+                <div class="row" style="justify-content:space-between; align-items:center">
+                  <span class="label" x-text="i === 0 ? 'Najbolja' : 'Alternativa ' + i"></span>
+                  <button class="btn sm" :class="i === 0 ? '' : 'ghost'" @click="dodajTiketIz(p.brojevi, 'graditelj')">Odigraj</button>
+                </div>
+                <div class="balls" style="margin-top:8px">
+                  <template x-for="b in p.brojevi" :key="b">
+                    <div class="ball" :class="klasaBroja(b)" :style="i === 0 ? 'width:42px;height:42px;font-size:16px' : ''" x-text="b"></div>
+                  </template>
+                </div>
+                <div class="mono muted" style="font-size:12px; margin-top:6px"
+                     x-text="'skor ' + grBroj(p.skor, 2) + ' = potencijal ' + grBroj(p.komponente.potencijal, 2) + ' + ritam ' + grBroj(p.komponente.ritam, 2) + ' + parovi ' + grBroj(p.komponente.parovi, 2)"></div>
+                <div class="muted" style="font-size:12px; margin-top:3px"
+                     x-text="'zbir ' + p.osobine.zbir + ' · parnih ' + p.osobine.parni + ' · uzastopnih ' + p.osobine.uzastopni + ' · najviše u dekadi ' + p.osobine.u_dekadi
+                       + ' · najjači par ' + p.najjaci_parovi[0].a + '–' + p.najjaci_parovi[0].b + ' (lift ' + grBroj(p.najjaci_parovi[0].lift, 2) + ')'"></div>
+                <div style="font-size:12px; margin-top:3px" x-show="p.slicnost">
+                  <span class="tag" :class="p.slicnost && p.slicnost.upozorenje ? 'warn' : 'neutralan'"
+                        x-text="p.slicnost ? 'istorija: najviše ' + p.slicnost.maks + ' od 7' : ''"></span>
+                  <span class="muted" x-show="p.slicnost && p.slicnost.najbliza.length"
+                        x-text="p.slicnost && p.slicnost.najbliza.length ? ' (kolo ' + formatKolo(p.slicnost.najbliza[0].kolo) + ')' : ''"></span>
+                </div>
+              </div>
+            </template>
+            <p class="hint" style="margin-top:10px" x-show="gr.podaci && gr.podaci.predlozi.length > 1">
+              Alternative se od svih prethodnih predloga razlikuju u bar 2 broja. „Odigraj" upisuje kombinaciju
+              u Moje tikete za sledeće kolo.</p>
+          </div>
+        </div>
+      </section>
+
       <section x-show="strana==='prognoza'">
         <div class="seg" style="margin-bottom:16px">
           <button :class="{active: prog.tab==='broj'}" @click="prog.tab='broj'">Jedan broj</button>

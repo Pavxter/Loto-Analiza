@@ -85,6 +85,7 @@ function app() {
       { grupa: 'Predviđanje', id: 'rangiranje', naziv: 'Rangiranje', ico: '🎯', opis: 'Rangiranje brojeva: Frekvencija / Bajes / Hibrid', period: false },
       { grupa: 'Predviđanje', id: 'prognoza', naziv: 'Prognoza', ico: '🔮', opis: 'Predviđanje jednog broja — statistički eksperiment sa kontrolnom grupom', period: true },
       { grupa: 'Predviđanje', id: 'generator', naziv: 'Generator', ico: '⚙️', opis: 'Generiši kombinacije po filterima i bodovanju', period: true },
+      { grupa: 'Predviđanje', id: 'graditelj', naziv: 'Graditelj', ico: '🧱', opis: 'Potencijal → ritam i parovi → kombinacija, korak po korak', period: false },
       { grupa: 'Predviđanje', id: 'bektest', naziv: 'Bektest', ico: '🧪', opis: 'Uspešnost sačuvanih strategija', period: false },
       { grupa: 'Predviđanje', id: 'sinteza', naziv: 'Sinteza', ico: '⚖️', opis: 'Svi metodi i testovi pod istim sudom — jedna tabela, jedna korekcija', period: false },
       { grupa: 'Moja igra', id: 'tiketi', naziv: 'Moji tiketi', ico: '🎟️', opis: 'Dnevnik odigranih kombinacija po kolima', period: false },
@@ -106,6 +107,10 @@ function app() {
            diverzitet: false, max_slicnost: 4, radi: false, rezultati: [], rezime: '', razlicitost: null,
            granica: null },
     bektestovi: [],
+    // Graditelj: f = koje pravilo je uključeno, p = vrednosti; podrazumevano dolazi sa servera.
+    gr: { podaci: null, radi: false, ucitano: false, w: 22, bazen: 15, a: 1, b: 1, c: 1,
+          f: { dekada: true, uzastopni: true, zbir: false, parni: false, istorija: true },
+          p: { dekada_max: 3, uzastopni_max: 1, zbir_min: 100, zbir_max: 180, parni_min: 2, parni_max: 5 } },
     odig: { redovi: [], sledece: null, poslednje: null, kolo: null, brojevi: '', napomena: '',
             slicnost: null, otvoriUvezene: false, pregled: null, pregledRadi: false },
     istorija: [], unos: { kolo: null, datum: new Date().toISOString().slice(0, 10), brojevi: '' }, fajl: null, uvozZameni: false,
@@ -151,6 +156,7 @@ function app() {
         rangiranje: () => this.ucitajRang(),
         prognoza: () => this.ucitajPrognozu(),
         generator: () => {},
+        graditelj: () => this.ucitajGraditelj(),
         sinteza: () => this.ucitajSintezu(),
         bektest: () => this.ucitajBektest(),
         tiketi: () => this.ucitajTikete(),
@@ -1166,6 +1172,101 @@ function app() {
         const d = await jsend('/api/odigrano', 'POST', { brojevi, izvor });
         this.toast(d.dodato ? `Upisano u Moje tikete za kolo ${this.formatKolo(d.kolo)}.` : 'Već je upisana za to kolo.', d.dodato ? 'ok' : 'warn');
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+    },
+
+    // ---------- GRADITELJ ----------
+    ucitajGraditelj() { if (!this.gr.ucitano) this.grSklopi(); else this.$nextTick(() => this.crtajGraditelj()); },
+
+    grPravila() {
+      const f = this.gr.f, p = this.gr.p, out = {};
+      if (f.dekada) out.dekada_max = p.dekada_max;
+      if (f.uzastopni) out.uzastopni_max = p.uzastopni_max;
+      if (f.zbir) { out.zbir_min = p.zbir_min; out.zbir_max = p.zbir_max; }
+      if (f.parni) { out.parni_min = p.parni_min; out.parni_max = p.parni_max; }
+      if (f.istorija) out.istorija_max = 5;
+      return out;
+    },
+
+    async grSklopi() {
+      this.gr.radi = true;
+      try {
+        this.gr.podaci = await jsend('/api/graditelj/sklopi', 'POST', {
+          w: this.gr.w, bazen: this.gr.bazen, tezine: [this.gr.a, this.gr.b, this.gr.c], pravila: this.grPravila() });
+        this.gr.ucitano = true;
+        this.$nextTick(() => this.crtajGraditelj());
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.gr.radi = false;
+    },
+
+    grPodrazumevano() {
+      const d = this.gr.podaci && this.gr.podaci.podrazumevano;
+      if (!d) return;
+      Object.assign(this.gr, { w: d.w, bazen: d.bazen, a: d.tezine[0], b: d.tezine[1], c: d.tezine[2] });
+      Object.assign(this.gr.f, { dekada: 'dekada_max' in d.pravila, uzastopni: 'uzastopni_max' in d.pravila,
+                                 zbir: false, parni: false, istorija: 'istorija_max' in d.pravila });
+      if ('dekada_max' in d.pravila) this.gr.p.dekada_max = d.pravila.dekada_max;
+      if ('uzastopni_max' in d.pravila) this.gr.p.uzastopni_max = d.pravila.uzastopni_max;
+      this.grSklopi();
+    },
+
+    // Da li se podešavanja razlikuju od zaključanih (§2.5) — samo ta ulaze u bektest.
+    grIzmenjeno() {
+      const d = this.gr.podaci && this.gr.podaci.podrazumevano;
+      if (!d) return false;
+      return JSON.stringify([this.gr.w, this.gr.bazen, this.gr.a, this.gr.b, this.gr.c, this.grPravila()])
+        !== JSON.stringify([d.w, d.bazen, ...d.tezine, d.pravila]);
+    },
+
+    grBroj(v, dec) { return v == null ? '—' : Number(v).toLocaleString('sr-RS', { minimumFractionDigits: dec, maximumFractionDigits: dec }); },
+
+    crtajGraditelj() {
+      const d = this.gr.podaci;
+      if (!d) return;
+      // Potencijal: 39 stubova sortiranih po z, bazen istaknut; ±2σ kao referentne linije.
+      const pot = d.potencijal.brojevi.slice().sort((x, y) => y.z - x.z);
+      crtaj('gr-pot', {
+        ...bazaOpcija(),
+        grid: { left: 44, right: 18, top: 20, bottom: 40 },
+        tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: '#1c2330', borderColor: '#262d3a',
+                   textStyle: { color: '#e6edf3' },
+                   formatter: ps => { const x = pot[ps[0].dataIndex];
+                     return `broj ${x.broj}${x.u_bazenu ? ' · u bazenu' : ''}<br>izašao ${x.pojava}× u ${d.w} kola `
+                       + `(očekivano ${this.grBroj(d.potencijal.ocekivano, 1)})<br>z = ${this.grBroj(x.z, 2)}`; } },
+        xAxis: { type: 'category', data: pot.map(x => x.broj), name: 'broj (sortirano po potencijalu)',
+                 nameLocation: 'middle', nameGap: 26, axisLabel: { fontSize: 9, interval: 0 },
+                 axisLine: { lineStyle: { color: BOJE.mreza } } },
+        yAxis: { type: 'value', name: 'z', splitLine: { lineStyle: { color: BOJE.mreza } } },
+        series: [{
+          type: 'bar', barCategoryGap: '25%',
+          data: pot.map(x => ({ value: x.z, itemStyle: { color: x.u_bazenu ? BOJE.accent : BOJE.neutralan,
+                                                         borderRadius: x.z >= 0 ? [3, 3, 0, 0] : [0, 0, 3, 3] } })),
+          markLine: { silent: true, symbol: 'none', label: { color: BOJE.tekst, fontSize: 10, formatter: p => p.value > 0 ? '+2σ' : '−2σ' },
+                      lineStyle: { color: BOJE.tekst, type: 'dashed', width: 1 }, data: [{ yAxis: 2 }, { yAxis: -2 }] },
+        }],
+      });
+
+      // Lift parova u bazenu: dvobojna skala oko 1 (isti stil kao Ko-okurencija na strani Različitost).
+      const brojevi = d.bazen.map(x => x.broj);
+      const podaci = [];
+      let odst = 0;
+      d.lift.forEach((red, i) => red.forEach((v, j) => {
+        if (v == null) return;
+        podaci.push([j, i, Number(v.toFixed(3))]);
+        odst = Math.max(odst, Math.abs(v - 1));
+      }));
+      odst = Math.max(odst, 0.05);
+      crtaj('gr-lift', {
+        backgroundColor: BOJE.pozadina, textStyle: { color: BOJE.tekst },
+        tooltip: { position: 'top', backgroundColor: '#1c2330', borderColor: '#262d3a', textStyle: { color: '#e6edf3' },
+                   formatter: p => `par ${brojevi[p.data[1]]} – ${brojevi[p.data[0]]}<br>lift ${this.grBroj(p.data[2], 2)}` },
+        grid: { left: 34, right: 12, top: 8, bottom: 70 },
+        xAxis: { type: 'category', data: brojevi, axisLabel: { fontSize: 9, interval: 0 }, axisLine: { lineStyle: { color: BOJE.mreza } } },
+        yAxis: { type: 'category', data: brojevi, axisLabel: { fontSize: 9, interval: 0 }, axisLine: { lineStyle: { color: BOJE.mreza } } },
+        visualMap: { min: 1 - odst, max: 1 + odst, calculable: true, orient: 'horizontal', left: 'center', bottom: 6,
+                     inRange: { color: ['#4f8cff', '#161b22', '#ff6b4a'] }, textStyle: { color: BOJE.tekst },
+                     text: ['češće', 'ređe'], formatter: v => this.grBroj(v, 2) },
+        series: [{ type: 'heatmap', data: podaci, emphasis: { itemStyle: { borderColor: '#e6edf3', borderWidth: 1 } } }],
+      });
     },
 
     // ---------- PROGNOZA ----------

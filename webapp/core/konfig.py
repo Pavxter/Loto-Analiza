@@ -47,6 +47,15 @@ PRAG_RASPONA = 0.0814        # 95. percentil na 7.250 koraka čistog šuma
                              # Za poređenje: medijana šuma je 0,0597, a raspon
                              # izmeren na kolu 2026072 je 0,057 — ispod medijane.
 
+# --- Graditelj kombinacije (PLAN_TIKETI_GRADITELJ §7, §2.5) ---
+# Podrazumevane vrednosti su ZAKLJUČANE pre prvog retro-bektesta k_graditelj: korisnik ih
+# menja na strani, ali bektest uvek koristi ove. Štelovanje prema istoriji bi obesmislilo test.
+GRADITELJ_W = 22             # prozor potencijala = očekivano vreme „obrta" svih 39 brojeva
+                             # (22,24 kola, inkluzija-ekskluzija; vidi graditelj.ocekivani_obrt)
+GRADITELJ_BAZEN = 15         # brojeva sa najvećim potencijalom → C(15,7) = 6.435 kombinacija
+GRADITELJ_TEZINE = (1.0, 1.0, 1.0)   # potencijal, ritam, parovi
+GRADITELJ_PRAVILA = {"dekada_max": 3, "uzastopni_max": 1, "istorija_max": 5}
+
 # --- Dva testa režima: klizni K i skan prozora (PLAN §3.2 C) ---
 # Zajedničko pitanje oba: „je li signala ikad bilo u NEKOM periodu", za razliku od
 # zbirnih testova koji ceo period usrednje i time sakriju efekat koji traje kratko.

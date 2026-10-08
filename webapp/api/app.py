@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from webapp.core import (konfig, baza, analitika, rangiranje, generator, bektest,
                          prognoza, razlicitost, istorija, mapa, sinteza, sekvencijalni,
-                         odigrano)
+                         odigrano, graditelj)
 
 STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
@@ -279,6 +279,46 @@ def api_obrisi_odigrano(red_id: int):
         return {"ok": True}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Graditelj kombinacije (PLAN_TIKETI_GRADITELJ §7)
+# ---------------------------------------------------------------------------
+
+_PRAVILA_GRADITELJA = ("dekada_max", "uzastopni_max", "istorija_max",
+                       "zbir_min", "zbir_max", "parni_min", "parni_max")
+
+
+class GraditeljZahtev(BaseModel):
+    w: int = konfig.GRADITELJ_W            # 0 = sva kola
+    bazen: int = konfig.GRADITELJ_BAZEN
+    tezine: list[float] = list(konfig.GRADITELJ_TEZINE)
+    pravila: dict[str, int | None] | None = None   # None → podrazumevana (konfig)
+
+
+@app.post("/api/graditelj/sklopi")
+def api_graditelj_sklopi(z: GraditeljZahtev):
+    """Ceo tok: potencijal → signali bazena → sklapanje. Jedan poziv, ~0,1 s."""
+    if z.w < 0 or len(z.tezine) != 3 or any(t < 0 for t in z.tezine):
+        raise HTTPException(400, "Neispravan prozor ili težine.")
+    pravila = None
+    if z.pravila is not None:
+        nepoznata = set(z.pravila) - set(_PRAVILA_GRADITELJA)
+        if nepoznata:
+            raise HTTPException(400, f"Nepoznata pravila: {', '.join(sorted(nepoznata))}")
+        pravila = {k: v for k, v in z.pravila.items() if v is not None}
+    conn = baza.konekcija()
+    try:
+        istorija_ = razlicitost.istorija_iz_conn(conn)
+    finally:
+        conn.close()
+    if len(istorija_) < 2:
+        raise HTTPException(400, "Premalo kola u bazi.")
+    rez = graditelj.sklopi(istorija_, z.w, z.bazen, z.tezine, pravila)
+    rez["podrazumevano"] = {"w": konfig.GRADITELJ_W, "bazen": konfig.GRADITELJ_BAZEN,
+                            "tezine": list(konfig.GRADITELJ_TEZINE),
+                            "pravila": konfig.GRADITELJ_PRAVILA}
+    return rez
 
 
 # ---------------------------------------------------------------------------
