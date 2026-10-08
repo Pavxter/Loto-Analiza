@@ -244,6 +244,98 @@ def test_ocena_prati_izmenu_i_brisanje_kola():
     print("test_ocena_prati_izmenu_i_brisanje_kola: OK")
 
 
+# ----------------------------------------------------------------------------
+# Faza 3 — kumulativni pregled (§5)
+# ----------------------------------------------------------------------------
+
+def _baza_sa_tiketima(istorija, tiketi):
+    """tiketi: lista (kolo, brojevi, izvor). Vraća conn, putanja sa ocenjenim dnevnikom."""
+    conn, putanja = nova_baza(istorija)
+    for kolo, br, izvor in tiketi:
+        baza.dodaj_odigrano(conn, kolo, odigrano.u_csv(sorted(br)), izvor)
+    odigrano.oceni_sve(conn)
+    return conn, putanja
+
+
+def test_ocekivanje_zavisi_od_tiketa():
+    """Zašto se ne poredi sa 50%: kombinacija sa ivice ima nizak percentil i pod H₀."""
+    ist = sinteticka_istorija(1400, seme=21)
+    osnova = odigrano._null_osnova({k: frozenset(b) for k, b in ist})
+    ivica = odigrano.null_vektori([1, 2, 3, 4, 5, 6, 7], osnova)
+    sredina = odigrano.null_vektori([4, 10, 15, 20, 25, 30, 36], osnova)
+    assert ivica["percentil"].mean() < 0.05, ivica["percentil"].mean()
+    assert sredina["percentil"].mean() > 0.6, sredina["percentil"].mean()
+    # pogoci ne zavise od položaja: hipergeometrijsko 49/39 za svaki tiket
+    for v in (ivica, sredina):
+        assert abs(v["pogoci"].mean() - 49 / 39) < 0.08, v["pogoci"].mean()
+    print(f"test_ocekivanje_zavisi_od_tiketa: OK (ivica {ivica['percentil'].mean():.3f}, "
+          f"sredina {sredina['percentil'].mean():.3f})")
+
+
+def test_pregled_kalibrisan_na_slucaju():
+    """Nasumični tiketi (2 po kolu, 40 kola) → nijedna mera ne sme da odstupa."""
+    import random
+    rng = random.Random(8)
+    ist = sinteticka_istorija(1400, seme=22)
+    tiketi = []
+    for kolo, _b in ist[-40:]:
+        for izvor in ("rucno", "generator"):
+            tiketi.append((kolo, rng.sample(range(1, 40), 7), izvor))
+    conn, putanja = _baza_sa_tiketima(ist, tiketi)
+    try:
+        p = odigrano.pregled(conn)
+        assert p["n_tiketa"] == 80 and p["n_kola"] == 40
+        for mera, t in p["ukupno"].items():
+            assert abs(t["z"]) < 3.5, (mera, t)
+        assert abs(p["prag"] - 0.025) < 1e-12 and len(p["po_izvoru"]) == 2
+        assert not any(g["znacajno"] for g in p["po_izvoru"])
+        assert len(p["tacke"]) == 80
+    finally:
+        _ukloni(conn, putanja)
+    print("test_pregled_kalibrisan_na_slucaju: OK (z: " +
+          ", ".join(f"{m} {t['z']:+.2f}" for m, t in p["ukupno"].items()) + ")")
+
+
+def test_pregled_otkriva_signal():
+    """Tiketi koji „znaju" 4 broja izvlačenja moraju dati veliki pozitivan z."""
+    import random
+    rng = random.Random(9)
+    ist = sinteticka_istorija(1400, seme=23)
+    tiketi = []
+    for kolo, b in ist[-15:]:
+        znani = rng.sample(list(b), 4)
+        ostali = rng.sample([x for x in range(1, 40) if x not in b], 3)
+        tiketi.append((kolo, znani + ostali, "prognoza:k_hot7"))
+    conn, putanja = _baza_sa_tiketima(ist, tiketi)
+    try:
+        p = odigrano.pregled(conn)
+        assert p["ukupno"]["pogoci"]["z"] > 6, p["ukupno"]["pogoci"]
+        assert p["ukupno"]["percentil"]["z"] > 3, p["ukupno"]["percentil"]
+        g = p["po_izvoru"]
+        assert [x["izvor"] for x in g] == ["prognoza"] and g[0]["znacajno"]
+    finally:
+        _ukloni(conn, putanja)
+    print(f"test_pregled_otkriva_signal: OK (percentil z {p['ukupno']['percentil']['z']:+.1f})")
+
+
+def test_isti_tiket_dvaput_u_kolu_ne_dupla_dokaz():
+    """Kovarijansa: dva ISTA tiketa u kolu nisu dva nezavisna dokaza — z ostaje isti."""
+    import random
+    rng = random.Random(10)
+    ist = sinteticka_istorija(400, seme=24)
+    osnova = odigrano._null_osnova({k: frozenset(b) for k, b in ist})
+    redovi = []
+    for kolo, b in ist[-12:]:
+        t = sorted(rng.sample(range(1, 40), 7))
+        m = odigrano.oceni(t, b)
+        redovi.append({"kolo": kolo, "brojevi": t, **m})
+    jednom = odigrano._test(redovi, osnova)
+    dvaput = odigrano._test(redovi + [dict(r) for r in redovi], osnova)
+    for mera in odigrano.MERE:
+        assert abs(jednom[mera]["z"] - dvaput[mera]["z"]) < 1e-9, mera
+    print("test_isti_tiket_dvaput_u_kolu_ne_dupla_dokaz: OK")
+
+
 def main():
     test_uvoz_starih_tiketa()
     test_upis_jedinstven_po_kolu()
@@ -257,6 +349,10 @@ def main():
     test_percentil_kalibrisan()
     test_ocenjivanje_pri_unosu_kola()
     test_ocena_prati_izmenu_i_brisanje_kola()
+    test_ocekivanje_zavisi_od_tiketa()
+    test_pregled_kalibrisan_na_slucaju()
+    test_pregled_otkriva_signal()
+    test_isti_tiket_dvaput_u_kolu_ne_dupla_dokaz()
     print("\nSVI TESTOVI DNEVNIKA PROSLI [OK]")
 
 

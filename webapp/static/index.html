@@ -1551,6 +1551,87 @@
           </div>
         </div>
 
+        <!-- Kumulativni pregled (PLAN_TIKETI_GRADITELJ §5) -->
+        <div class="card" style="margin-top:16px">
+          <div class="row" style="justify-content:space-between; align-items:center">
+            <h3 style="margin:0">Pregled igre</h3>
+            <span class="muted" style="font-size:12.5px" x-show="odig.pregled && odig.pregled.n_tiketa"
+                  x-text="odig.pregled ? odig.pregled.n_tiketa + ' ocenjenih tiketa u ' + odig.pregled.n_kola + ' kola' : ''"></span>
+          </div>
+          <p class="muted" style="font-size:13px" x-show="odig.pregledRadi && !odig.pregled">Računam očekivanja naspram cele istorije…</p>
+          <p class="muted" style="font-size:13px" x-show="odig.pregled && !odig.pregled.n_tiketa">
+            Pregled se pojavljuje kad prvi tiket bude ocenjen (posle unosa izvlačenja njegovog kola).</p>
+
+          <template x-if="odig.pregled && odig.pregled.ukupno">
+            <div>
+              <p style="margin:10px 0" x-show="odig.pregled.n_tiketa < odig.pregled.min_tiketa">
+                <span class="tag warn">Premalo tiketa</span>
+                <span class="muted" style="font-size:12.5px"
+                      x-text="'Ispod ' + odig.pregled.min_tiketa + ' tiketa razlike su skoro uvek slučajne — brojevi su informativni.'"></span>
+              </p>
+              <p style="margin:10px 0" x-show="odig.pregled.n_tiketa >= odig.pregled.min_tiketa">
+                <span class="tag" :class="odig.pregled.ukupno.percentil.p < 0.05 ? 'warn' : 'ok'"
+                      x-text="odig.pregled.ukupno.percentil.p < 0.05 ? 'Odstupa od slučaja' : 'U granicama slučaja'"></span>
+                <span class="muted" style="font-size:12.5px"
+                      x-text="odig.pregled.ukupno.percentil.p < 0.05
+                        ? (odig.pregled.ukupno.percentil.z > 0 ? 'Tvoji tiketi su bliži izvlačenjima nego što bi bili slučajno.' : 'Tvoji tiketi su dalji od izvlačenja nego što bi bili slučajno.')
+                        : 'Blizina tvojih tiketa se ne razlikuje od onoga što bi dao slučaj.'"></span>
+              </p>
+
+              <table class="tbl">
+                <thead><tr><th>Mera (prosek po tiketu)</th><th class="num">Tvoj</th><th class="num">Očekivano</th>
+                  <th class="num">z</th><th class="num">p</th></tr></thead>
+                <tbody>
+                  <template x-for="m in ['percentil', 'pogoci', 'skoro']" :key="m">
+                    <tr>
+                      <td x-text="{ percentil: 'Percentil blizine', pogoci: 'Pogoci', skoro: 'Promašaji za ±1' }[m]"></td>
+                      <td class="num" x-text="odigMera(m, odig.pregled.ukupno[m].prosek)"></td>
+                      <td class="num muted" x-text="odigMera(m, odig.pregled.ukupno[m].ocekivano)"></td>
+                      <td class="num" x-text="odigZ(odig.pregled.ukupno[m].z)"></td>
+                      <td class="num" x-text="odigP(odig.pregled.ukupno[m].p)"></td>
+                    </tr>
+                  </template>
+                </tbody>
+              </table>
+
+              <div id="odig-graf" style="height:260px; margin-top:14px" x-show="odig.pregled.tacke.length >= 2"></div>
+
+              <template x-if="odig.pregled.po_izvoru.length">
+                <div style="margin-top:14px">
+                  <div class="label" style="margin-bottom:6px">Po izvoru — percentil blizine</div>
+                  <table class="tbl">
+                    <thead><tr><th>Izvor</th><th class="num">Tiketa</th><th class="num">Tvoj</th><th class="num">Očekivano</th>
+                      <th class="num">z</th><th class="num">p</th><th></th></tr></thead>
+                    <tbody>
+                      <template x-for="g in odig.pregled.po_izvoru" :key="g.izvor">
+                        <tr>
+                          <td x-text="odigIzvor(g.izvor)"></td>
+                          <td class="num" x-text="g.n"></td>
+                          <td class="num" x-text="odigMera('percentil', g.prosek)"></td>
+                          <td class="num muted" x-text="odigMera('percentil', g.ocekivano)"></td>
+                          <td class="num" x-text="odigZ(g.z)"></td>
+                          <td class="num" x-text="odigP(g.p)"></td>
+                          <td><span class="tag" :class="g.znacajno ? 'warn' : 'neutralan'"
+                                    x-text="g.znacajno ? 'odstupa' : 'slučaj'"></span></td>
+                        </tr>
+                      </template>
+                    </tbody>
+                  </table>
+                  <p class="muted" style="font-size:12px; margin:6px 0 0" x-show="odig.pregled.po_izvoru.length > 1"
+                     x-text="'Prag sa Bonferroni korekcijom za ' + odig.pregled.po_izvoru.length + ' izvora: p < ' + odigP(odig.pregled.prag) + '.'"></p>
+                </div>
+              </template>
+
+              <p class="hint" style="margin-top:12px">
+                <b>Očekivano</b> je računato posebno za svaku tvoju kombinaciju: kako bi prošla naspram svih
+                istorijskih izvlačenja da je izbor slučajan. Zato nije uvek 50% — kombinacija sa ivice (npr. 1–7)
+                skoro uvek je daleko od izvlačenja i pod čistim slučajem. Tiketi iz istog kola dele izvlačenje,
+                pa se ne broje kao nezavisni dokazi. p je dvostrano, normalna aproksimacija.
+              </p>
+            </div>
+          </template>
+        </div>
+
         <div class="card" style="margin-top:16px">
           <h3>Dnevnik</h3>
           <p class="muted" x-show="!odigGrupe().length" style="text-align:center; padding:16px">Još nema upisanih kombinacija.</p>

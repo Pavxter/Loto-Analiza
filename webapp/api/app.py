@@ -234,6 +234,16 @@ def api_odigrano_slicnost(brojevi: str):
         conn.close()
 
 
+@app.get("/api/odigrano/pregled")
+def api_odigrano_pregled():
+    """Kumulativni pregled ocenjenih tiketa (§5). Prvi poziv posle promene istorije ~3 s."""
+    conn = baza.konekcija()
+    try:
+        return odigrano.pregled(conn)
+    finally:
+        conn.close()
+
+
 @app.post("/api/odigrano")
 def api_dodaj_odigrano(z: OdigranoZahtev):
     try:

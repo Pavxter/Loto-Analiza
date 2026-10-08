@@ -105,7 +105,7 @@ function app() {
            granica: null },
     bektestovi: [],
     odig: { redovi: [], sledece: null, poslednje: null, kolo: null, brojevi: '', napomena: '',
-            slicnost: null, otvoriUvezene: false },
+            slicnost: null, otvoriUvezene: false, pregled: null, pregledRadi: false },
     istorija: [], unos: { kolo: null, datum: new Date().toISOString().slice(0, 10), brojevi: '' }, fajl: null, uvozZameni: false,
     prog: { tab: 'broj', ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
             filterMetod: '', prag: 0.00625, brojMetoda: 8, radi: false },
@@ -1809,7 +1809,62 @@ function app() {
         this.odig.poslednje = d.poslednje_kolo;
         if (this.odig.kolo == null) this.odig.kolo = d.sledece_kolo;
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.ucitajPregledIgre();
     },
+
+    // Prvi poziv posle promene istorije traje ~3 s (očekivanja nad svim kolima), pa ne blokira listu.
+    async ucitajPregledIgre() {
+      this.odig.pregledRadi = true;
+      try {
+        this.odig.pregled = await jget('/api/odigrano/pregled');
+        this.$nextTick(() => this.crtajPregledIgre());
+      } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
+      this.odig.pregledRadi = false;
+    },
+
+    // Svaki tiket je tačka; linije su kumulativni proseci — tvoj i očekivani za iste kombinacije.
+    crtajPregledIgre() {
+      const t = this.odig.pregled && this.odig.pregled.tacke;
+      if (!t || t.length < 2) return;
+      let s1 = 0, s2 = 0;
+      const tvoj = [], ocek = [];
+      t.forEach((x, i) => { s1 += x.percentil; s2 += x.ocekivano; tvoj.push(s1 / (i + 1)); ocek.push(s2 / (i + 1)); });
+      const pct = v => (100 * v).toFixed(1).replace('.', ',') + '%';
+      crtaj('odig-graf', {
+        ...bazaOpcija(),
+        legend: { top: 4, textStyle: { color: BOJE.tekst, fontSize: 11 },
+                  data: ['percentil tiketa', 'tvoj kumulativni prosek', 'očekivano pod slučajem'] },
+        grid: { left: 52, right: 18, top: 40, bottom: 46 },
+        tooltip: { ...bazaOpcija().tooltip, formatter: ps => {
+          const i = ps[0].dataIndex, x = t[i];
+          return `kolo ${this.formatKolo(x.kolo)} · ${x.brojevi.join(' ')}<br>`
+            + `percentil ${pct(x.percentil)} (očekivano ${pct(x.ocekivano)}) · ${x.pogoci} pogod.<br>`
+            + `kumulativno: ${pct(tvoj[i])} naspram ${pct(ocek[i])}`;
+        } },
+        xAxis: { type: 'category', data: t.map(x => this.formatKolo(x.kolo)), name: 'kolo',
+                 nameLocation: 'middle', nameGap: 28,
+                 axisLine: { lineStyle: { color: BOJE.mreza } }, axisLabel: { fontSize: 9 } },
+        yAxis: { type: 'value', min: 0, max: 1, splitLine: { lineStyle: { color: BOJE.mreza } },
+                 axisLabel: { formatter: v => Math.round(100 * v) + '%' } },
+        series: [
+          { name: 'percentil tiketa', type: 'scatter', data: t.map(x => x.percentil), symbolSize: 8,
+            itemStyle: { color: BOJE.accent, opacity: 0.55 } },
+          // itemStyle nosi boju u legendu; bez njega legenda uzima podrazumevanu paletu
+          { name: 'očekivano pod slučajem', type: 'line', data: ocek, symbol: 'none',
+            itemStyle: { color: BOJE.tekst }, lineStyle: { color: BOJE.tekst, type: 'dashed', width: 1.5 } },
+          { name: 'tvoj kumulativni prosek', type: 'line', data: tvoj, symbol: 'none',
+            itemStyle: { color: BOJE.accent }, lineStyle: { color: BOJE.accent, width: 2 } },
+        ],
+      });
+    },
+
+    odigMera(m, v) {
+      if (v == null) return '—';
+      if (m === 'percentil') return (100 * v).toLocaleString('sr-RS', { maximumFractionDigits: 1 }) + '%';
+      return v.toLocaleString('sr-RS', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    },
+    odigZ(z) { return (z >= 0 ? '+' : '') + z.toLocaleString('sr-RS', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); },
+    odigP(p) { return p < 0.001 ? '< 0,001' : p.toLocaleString('sr-RS', { maximumFractionDigits: 3 }); },
 
     // Brojevi iz polja: bilo koji separator. Vraća i poruku dok unos nije potpun.
     odigParsiraj() {

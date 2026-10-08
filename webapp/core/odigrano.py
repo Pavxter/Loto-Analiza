@@ -8,6 +8,7 @@ Kombinacija se gleda kao skup: čuva se sortirana, kao CSV (isti format kao
 `prognoze.kombinacija`).
 """
 
+import math
 from datetime import datetime
 
 import numpy as np
@@ -197,6 +198,133 @@ def oceni_sve(conn):
         ocenjeno += 1
     conn.commit()
     return ocenjeno
+
+
+# ----------------------------------------------------------------------------
+# Kumulativni pregled (§5)
+# ----------------------------------------------------------------------------
+# H₀: izbor tiketa nema veze sa ishodom, tj. izvlačenje je slučajno nezavisno od
+# tiketa. Očekivanje NIJE 50% percentila za svaki tiket: D zavisi od položaja
+# brojeva, pa kombinacija sa ivice (1–7) skoro uvek ispada daleko. Zato se svaki
+# tiket poredi sa SVOJIM očekivanjem — ocenom naspram svih istorijskih izvlačenja,
+# koja su uzorak raspodele izvlačenja pod H₀. Tiketi istog kola dele izvlačenje,
+# pa se po kolu sabira ceo vektor i varijansa uzima sa kovarijansama.
+
+MERE = ("pogoci", "skoro", "percentil")
+MIN_TIKETA = 10        # ispod ovoga se pregled označava kao premali uzorak
+
+_osnova_kes = {"kljuc": None, "vrednost": None}
+
+
+def _null_osnova(izvuceno):
+    """Matrice nad svim izvučenim kolima, keširane dok se istorija ne promeni.
+
+    S: sortirana izvlačenja (H×7); M: maska prisutnosti (H×(n+2)); PCT[h, D]: percentil
+    rastojanja D u kolu h. PCT traži jedan DP po kolu (~2 ms) — ~3 s za celu istoriju,
+    zato keš.
+    """
+    kljuc = hash(tuple(sorted((k, tuple(sorted(v))) for k, v in izvuceno.items())))
+    if _osnova_kes["kljuc"] == kljuc:
+        return _osnova_kes["vrednost"]
+    kola = sorted(izvuceno)
+    n = konfig.MAX_BROJ
+    S = np.array([sorted(izvuceno[k]) for k in kola], dtype=np.int64)
+    M = np.zeros((len(kola), n + 2), dtype=np.int64)
+    for i, k in enumerate(kola):
+        M[i, list(izvuceno[k])] = 1
+    PCT = []
+    for k in kola:
+        r = raspodela_rastojanja(izvuceno[k]).astype(np.float64)
+        dalje = np.concatenate([np.cumsum(r[::-1])[::-1][1:], [0.0]])   # Σ r[D+1:]
+        PCT.append((dalje + 0.5 * r) / r.sum())
+    osnova = {"S": S, "M": M, "PCT": np.array(PCT)}
+    _osnova_kes.update(kljuc=kljuc, vrednost=osnova)
+    return osnova
+
+
+def null_vektori(tiket, osnova):
+    """Vrednost svake mere za `tiket` u svakom istorijskom kolu (raspodela pod H₀)."""
+    t = sorted(tiket)
+    M = osnova["M"]
+    susedi = sorted(({b - 1 for b in t} | {b + 1 for b in t}) - set(t))
+    D = np.abs(osnova["S"] - np.array(t)).sum(axis=1)
+    return {
+        "pogoci": M[:, t].sum(axis=1).astype(np.float64),
+        "skoro": M[:, susedi].sum(axis=1).astype(np.float64),
+        "percentil": osnova["PCT"][np.arange(len(D)), D],
+    }
+
+
+def _test(redovi, osnova):
+    """z-test zbira odstupanja od sopstvenog očekivanja, po meri.
+
+    redovi: ocenjeni redovi (dict sa kolo, brojevi i merama). Za svako kolo se
+    centrirani null-vektori tiketa saberu; varijansa tog zbira nad istorijom je
+    Σ kovarijansi tiketa tog kola. Kola su međusobno nezavisna pod H₀.
+    """
+    po_kolu = {}
+    for r in redovi:
+        po_kolu.setdefault(r["kolo"], []).append(r)
+    out = {}
+    for mera in MERE:
+        odstupanje, varijansa, posmatrano, ocekivano = 0.0, 0.0, 0.0, 0.0
+        for grupa in po_kolu.values():
+            zbir = None
+            for r in grupa:
+                v = null_vektori(r["brojevi"], osnova)[mera]
+                mu = float(v.mean())
+                posmatrano += r[mera]
+                ocekivano += mu
+                odstupanje += r[mera] - mu
+                zbir = v - mu if zbir is None else zbir + (v - mu)
+            varijansa += float((zbir ** 2).mean())
+        n = len(redovi)
+        z = odstupanje / math.sqrt(varijansa) if varijansa > 0 else 0.0
+        out[mera] = {
+            "prosek": posmatrano / n,
+            "ocekivano": ocekivano / n,
+            "z": z,
+            "p": math.erfc(abs(z) / math.sqrt(2)),     # dvostrano, normalna aproksimacija
+        }
+    return out
+
+
+def _grupa_izvora(izvor):
+    """Sve metode Prognoze su jedna grupa — inače bi Bonferroni rastao sa brojem metoda."""
+    return "prognoza" if (izvor or "").startswith("prognoza:") else (izvor or "rucno")
+
+
+def pregled(conn):
+    """Kumulativni pregled ocenjenih tiketa: ukupno, po izvoru i tačke za grafikon."""
+    redovi = [r for r in lista(conn) if r["kolo"] is not None and r["percentil"] is not None]
+    rezultat = {"n_tiketa": len(redovi), "n_kola": len({r["kolo"] for r in redovi}),
+                "min_tiketa": MIN_TIKETA, "ukupno": None, "po_izvoru": [], "tacke": []}
+    if not redovi:
+        return rezultat
+    osnova = _null_osnova(izvucena_kola(conn))
+
+    rezultat["ukupno"] = _test(redovi, osnova)
+
+    grupe = {}
+    for r in redovi:
+        grupe.setdefault(_grupa_izvora(r["izvor"]), []).append(r)
+    prag = 0.05 / len(grupe)                          # Bonferroni po broju grupa
+    for izvor, gr in sorted(grupe.items(), key=lambda x: -len(x[1])):
+        t = _test(gr, osnova)["percentil"]
+        rezultat["po_izvoru"].append({
+            "izvor": izvor, "n": len(gr), "kola": len({r["kolo"] for r in gr}),
+            **t, "znacajno": t["p"] < prag,
+        })
+    rezultat["prag"] = prag
+
+    # Tačke hronološki, sa očekivanjem svakog tiketa — UI crta kumulativne proseke.
+    for r in sorted(redovi, key=lambda r: (r["kolo"], r["id"])):
+        rezultat["tacke"].append({
+            "kolo": r["kolo"], "percentil": r["percentil"], "pogoci": r["pogoci"],
+            "izvor": r["izvor"], "brojevi": r["brojevi"],
+            "ocekivano": float(null_vektori(r["brojevi"], osnova)["percentil"].mean()),
+        })
+    return rezultat
 
 
 def broj_za_kolo(conn, kolo):

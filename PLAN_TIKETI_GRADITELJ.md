@@ -147,12 +147,28 @@ Testovi (`tests/test_odigrano.py`):
 
 ## 5. Faza 3 — Kumulativni pregled tiketa
 
-- Tabela po kolima: kolo, kombinacija, izvlačenje, pogoci, skoro, percentil, izvor, napomena.
-- Prosečan percentil. Pod H₀ (izbor bez veze sa ishodom) percentili su ~ravnomerni na [0,1]:
-  test srednje vrednosti (normalna aproksimacija, var = 1/12n) i — od 20+ tiketa — KS test.
-  Prikazuje se n i upozorenje kad je n malo.
-- Pogoci prema očekivanju: očekivano 7·7/39 = 1,256 po tiketu.
-- Poređenje po izvoru (isti test po grupi, Bonferroni po broju grupa).
+- Tabela mera (percentil, pogoci, promašaji za ±1): tvoj prosek, očekivano, z, p.
+- Grafikon: percentil svakog tiketa po kolu + kumulativni prosek i kumulativno očekivanje.
+- Poređenje po izvoru (percentil), Bonferroni po broju grupa; sve metode Prognoze su jedna
+  grupa `prognoza`, da prag ne bi rastao sa brojem metoda.
+- Ispod 10 tiketa oznaka „premalo tiketa".
+
+**Izmena u odnosu na v1.0 — očekivanje po tiketu, ne 50%.** Percentil je kalibrisan na 0,5
+za *nasumičnu* kombinaciju, ali za konkretnu kombinaciju pod slučajnim izvlačenjem nije: na
+sintetici kombinacija 1–7 ima očekivani percentil 3,8%, a 4-10-15-20-25-30-36 čak 74,9%.
+Poređenje sa 50% bi merilo stil izbora, ne vezu sa ishodom. Zato:
+
+- H₀: izvlačenje je slučajno i nezavisno od tiketa. Raspodela pod H₀ za tiket T dobija se
+  ocenom T naspram **svih istorijskih izvlačenja** (uzorak raspodele izvlačenja):
+  μ_T i vektor vrednosti po kolu.
+- Tiketi istog kola dele izvlačenje → po kolu se sabiraju centrirani null-vektori, a
+  varijansa zbira uključuje kovarijanse. Kola su nezavisna. z = Σ(x − μ) / √Σ Var.
+- PCT[h, D] za sva kola se računa jednom (DP po kolu) i kešira dok se istorija ne promeni
+  (~0,5 s prvi poziv, ~30 ms posle).
+- p dvostrano, normalna aproksimacija.
+
+Testovi: kalibracija na nasumičnim tiketima (|z| < 3,5), otkrivanje tiketa koji „znaju"
+4 broja (z > 3), zavisnost očekivanja od položaja, i da dva ista tiketa u kolu ne menjaju z.
 
 ---
 
