@@ -138,6 +138,36 @@ def test_ensemble_walk_forward():
     print(f"test_ensemble_walk_forward: OK (tezine={ {k: round(v, 3) for k, v in tezine_700.items()} })")
 
 
+def test_kes_tezina_zavisi_od_brojeva():
+    """Keš težina razlikuje istorije koje dele numeraciju kola, a ne i brojeve.
+
+    Sve sintetičke istorije kreću od kola 2020001, pa bi ključ građen samo od
+    dužine i prvog/poslednjeg kola izjednačio dve različite istorije: druga bi u
+    istom procesu dobila težine naučene nad prvom. Isto važi kad korisnik ispravi
+    brojeve nekog od prvih UCENJE_DO kola.
+    """
+    period = prognoza.RETRO_PERIOD
+    prva = sinteticka_istorija(P.UCENJE_DO + 20, seme=101)
+    druga = sinteticka_istorija(P.UCENJE_DO + 20, seme=202)
+    assert prva[0][0] == druga[0][0] and prva[-1][0] == druga[-1][0]   # isti otisak numeracije
+
+    P._KES_TEZINA.clear()
+    tezine_prva = P.nauci_tezine(prva, period)
+    iz_kesa = P.nauci_tezine(druga, period)
+    P._KES_TEZINA.clear()
+    sveze = P.nauci_tezine(druga, period)
+    assert iz_kesa == sveze, (iz_kesa, sveze)
+    assert sveze != tezine_prva, "test ne meri nista: obe istorije daju iste tezine"
+
+    # Ispravka kola unutar skupa za ucenje mora odmah da se vidi, bez restarta.
+    ispravljena = list(prva)
+    ispravljena[5] = (ispravljena[5][0], tuple(range(1, K + 1)))
+    assert P.nauci_tezine(ispravljena, period) != tezine_prva
+
+    P._KES_TEZINA.clear()
+    print("test_kes_tezina_zavisi_od_brojeva: OK")
+
+
 def test_ensemble_na_slucajnim_podacima():
     """Na čistom šumu ansambl ne sme da ispadne značajan posle korekcije."""
     conn, putanja = nova_baza(sinteticka_istorija(700, seme=31))
@@ -285,6 +315,7 @@ def main():
     test_bonferroni_preko_svih()
     test_zakljucak_tri_ishoda()
     test_ensemble_walk_forward()
+    test_kes_tezina_zavisi_od_brojeva()
     test_ensemble_na_slucajnim_podacima()
     test_rang_uniformnost_sintetika()
     test_rang_rastojanje_teorija()

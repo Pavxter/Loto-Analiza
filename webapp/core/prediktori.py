@@ -187,12 +187,16 @@ UCENJE_DO = 400      # posle ovog kola su tezine zamrznute (~30% tipicne istorij
 UCENJE_KORAK = 5     # proredjivanje skupa za ucenje (60 tacaka je dovoljno za 6 tezina)
 
 # Kesevi: ucenje i bodovanje su ciste funkcije podataka, pa se smeju kesirati.
-# Kljuc je jeftin otisak isecka (duzina + prvo i poslednje kolo) umesto celog
-# sadrzaja — kola su jedinstvena i rastuca, pa taj trojac odredjuje isecak. Bez
-# ovoga bi retro-bektest hesirao 400 kola na svakom od 1.400 koraka.
-_KES_TEZINA = {}     # otisak isecka za ucenje -> tezine
+# Kljuc mora da bude sam sadrzaj isecka, ukljucujuci izvucene brojeve. Jeftin
+# otisak (duzina + prvo i poslednje kolo) nije dovoljan: dve istorije sa istom
+# numeracijom kola a razlicitim brojevima dobile bi isti kljuc, pa bi kes vratio
+# tezine naucene nad tudjim podacima — i u testovima nad vise sintetickih
+# istorija, i u aplikaciji kad korisnik ispravi brojeve nekog od prvih UCENJE_DO
+# kola. Hesiranje isecka je red velicine jeftinije od ucenja koje se time
+# preskace, pa retro-bektest i dalje uci tacno jednom.
+_KES_TEZINA = {}     # sadrzaj isecka za ucenje -> tezine
 _KES_MAX = 8
-_KES_SKOR = {}       # otisak poslednjeg poziva -> (skor, tezine); deli ga ensemble i k_ensemble
+_KES_SKOR = {}       # sadrzaj poslednjeg poziva -> (skor, tezine); deli ga ensemble i k_ensemble
 
 
 def _primitivi(prozor):
@@ -311,11 +315,9 @@ def _tezine_iz_lifta(zbir, n):
     return {k: round(x / ukupno, 9) for k, x in pozitivni.items()}
 
 
-def _otisak(istorija, granica, period):
-    """Jeftin identitet isečka istorija[:granica] za keš (vidi komentar uz keševe)."""
-    if granica <= 0:
-        return (0, None, None, period)
-    return (granica, istorija[0][0], istorija[granica - 1][0], period)
+def _kljuc_isecka(isecak, period):
+    """Identitet isečka za keš: njegov ceo sadržaj (vidi komentar uz keševe)."""
+    return (period, tuple(isecak))
 
 
 def nauci_tezine(istorija, period):
@@ -329,7 +331,7 @@ def nauci_tezine(istorija, period):
         return _tezine_iz_lifta({k: 0.0 for k in KOMPONENTE}, 0)
 
     granica = UCENJE_DO
-    kljuc = _otisak(istorija, granica, period)
+    kljuc = _kljuc_isecka(istorija[:granica], period)
     if kljuc in _KES_TEZINA:
         return _KES_TEZINA[kljuc]
 
@@ -360,11 +362,13 @@ def skor_ansambla(istorija, period):
     prozor = _prozor(istorija, period)
     if not prozor:
         return None, None
-    kljuc = _otisak(istorija, len(istorija), period)
+    # Skor je funkcija samo prozora i tezina, pa je i kljuc sastavljen od njih;
+    # tezine se traze prvo jer ih vec cuva sopstveni kes.
+    tezine = nauci_tezine(istorija, period)
+    kljuc = (_kljuc_isecka(prozor, period), tuple(tezine[k] for k in KOMPONENTE))
     if _KES_SKOR.get("kljuc") == kljuc:
         return _KES_SKOR["skor"], _KES_SKOR["tezine"]
 
-    tezine = nauci_tezine(istorija, period)
     skorovi = skorovi_za_prozor(prozor)
     skor = {b: round(sum(tezine[k] * skorovi[k][b] for k in KOMPONENTE), 9)
             for b in range(1, MAX_BROJ + 1)}
