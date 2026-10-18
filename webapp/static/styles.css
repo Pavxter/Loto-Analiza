@@ -268,3 +268,10 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
 /* Moji tiketi: jedan red dnevnika (kombinacija, ocena, izvor, napomena, brisanje) */
 .odig-red { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px 0; }
 .odig-red + .odig-red { border-top: 1px solid var(--border-soft); }
+.odig-plus { display: flex; align-items: center; gap: 6px; }
+.tag.plus { background: #3a2e14; color: var(--warn); }
+/* Loto plus po tiketu: prigušen dok nije uplaćen, žut kad jeste (ista boja kao oznaka igre) */
+.tag.plus-prekidac { border: 1px dashed var(--border); background: transparent; color: var(--text-faint);
+  cursor: pointer; font-family: inherit; }
+.tag.plus-prekidac:hover { color: var(--text); }
+.tag.plus-prekidac.on { border: 1px solid transparent; background: #3a2e14; color: var(--warn); }

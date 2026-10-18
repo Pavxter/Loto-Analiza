@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import sqlite3
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, File
@@ -56,11 +57,11 @@ def _startup():
             conn = baza.konekcija()
             try:
                 bektest.migriraj_preklapanje_bektesta(conn)
-                odigrano.oceni_sve(conn)       # tiketi čija su kola izvučena dok app nije radio
             finally:
                 conn.close()
         finally:
             konfig.vrati_igru(token)
+    _oceni_odigrano()       # tiketi čija su kola izvučena dok app nije radio
 
 
 @app.get("/api/igre")
@@ -101,11 +102,27 @@ def _analiza(period=0, granica=None):
     return _kes()[kljuc]
 
 
-def _oceni_odigrano():
-    """Ocene dnevnika tiketa iz trenutnih kola — posle svake promene istorije."""
-    conn = baza.konekcija()
+def _konekcija_tiketa():
+    """Dnevnik tiketa je jedan, u bazi Lota, koja god igra da je izabrana."""
+    return baza.konekcija(konfig.putanja_baze(konfig.IGRA_TIKETA))
+
+
+def _izvucena_plus():
+    """Loto plus izvlačenja {kolo: brojevi}, za ocenu tiketa sa uplaćenim Loto plusom."""
+    conn = baza.konekcija(konfig.putanja_baze(konfig.LOTO_PLUS))
     try:
-        odigrano.oceni_sve(conn)
+        return odigrano.izvucena_kola(conn)
+    except sqlite3.OperationalError:
+        return {}           # baza Loto plusa još nije napravljena
+    finally:
+        conn.close()
+
+
+def _oceni_odigrano():
+    """Ocene dnevnika tiketa iz trenutnih kola obe igre — posle svake promene istorije."""
+    conn = _konekcija_tiketa()
+    try:
+        odigrano.oceni_sve(conn, _izvucena_plus())
     finally:
         conn.close()
 
@@ -245,6 +262,7 @@ class OdigranoZahtev(BaseModel):
     izvor: str = "rucno"
     napomena: str | None = None
     potvrdi: bool = False            # upis za već izvučeno kolo traži potvrdu
+    loto_plus: bool = False          # uplaćen i Loto plus: isti tiket u drugom izvlačenju
 
 
 def _brojevi_iz_teksta(s):
@@ -254,9 +272,9 @@ def _brojevi_iz_teksta(s):
 
 @app.get("/api/odigrano")
 def api_odigrano():
-    conn = baza.konekcija()
+    conn = _konekcija_tiketa()
     try:
-        return {"redovi": odigrano.lista(conn),
+        return {"redovi": odigrano.lista(conn, _izvucena_plus()),
                 "sledece_kolo": odigrano.sledece_kolo(conn),
                 "poslednje_kolo": odigrano.poslednje_kolo(conn)}
     finally:
@@ -266,7 +284,7 @@ def api_odigrano():
 @app.get("/api/odigrano/slicnost")
 def api_odigrano_slicnost(brojevi: str):
     """Poklapanje kombinacije sa svim izvučenim kolima — prikazuje se dok se kuca."""
-    conn = baza.konekcija()
+    conn = _konekcija_tiketa()
     try:
         return odigrano.slicnost(razlicitost.istorija_iz_conn(conn), _brojevi_iz_teksta(brojevi))
     except ValueError as e:
@@ -278,7 +296,7 @@ def api_odigrano_slicnost(brojevi: str):
 @app.get("/api/odigrano/pregled")
 def api_odigrano_pregled():
     """Kumulativni pregled ocenjenih tiketa (§5). Prvi poziv posle promene istorije ~3 s."""
-    conn = baza.konekcija()
+    conn = _konekcija_tiketa()
     try:
         return odigrano.pregled(conn)
     finally:
@@ -293,7 +311,7 @@ def api_dodaj_odigrano(z: OdigranoZahtev):
         raise HTTPException(400, str(e))
     if not odigrano.ispravan_izvor(z.izvor):
         raise HTTPException(400, f"Nepoznat izvor: {z.izvor}")
-    conn = baza.konekcija()
+    conn = _konekcija_tiketa()
     try:
         kolo = z.kolo if z.kolo is not None else odigrano.sledece_kolo(conn)
         if kolo is None:
@@ -304,9 +322,10 @@ def api_dodaj_odigrano(z: OdigranoZahtev):
             # 409: UI pita korisnika i šalje ponovo sa potvrdi=True
             raise HTTPException(409, f"Kolo {kolo} je već izvučeno.")
         novi = baza.dodaj_odigrano(conn, kolo, odigrano.u_csv(komb), z.izvor,
-                                   (z.napomena or "").strip() or None)
-        if novi is not None and z.potvrdi:
-            odigrano.oceni_sve(conn)   # upis za već izvučeno kolo → odmah ocena
+                                   (z.napomena or "").strip() or None, z.loto_plus)
+        if novi is not None:
+            # upis za već izvučeno kolo (ili već izvučen Loto plus) → odmah ocena
+            odigrano.oceni_sve(conn, _izvucena_plus())
         return {"dodato": novi is not None, "id": novi, "kolo": kolo}
     finally:
         conn.close()
@@ -314,9 +333,26 @@ def api_dodaj_odigrano(z: OdigranoZahtev):
 
 @app.delete("/api/odigrano/{red_id}")
 def api_obrisi_odigrano(red_id: int):
-    conn = baza.konekcija()
+    conn = _konekcija_tiketa()
     try:
         baza.obrisi_odigrano(conn, red_id)
+        return {"ok": True}
+    finally:
+        conn.close()
+
+
+class LotoPlusZahtev(BaseModel):
+    loto_plus: bool
+
+
+@app.put("/api/odigrano/{red_id}/loto-plus")
+def api_odigrano_loto_plus(red_id: int, z: LotoPlusZahtev):
+    """Naknadno označavanje da je za tiket uplaćen Loto plus (ili ispravka)."""
+    conn = _konekcija_tiketa()
+    try:
+        if not baza.postavi_loto_plus(conn, red_id, z.loto_plus):
+            raise HTTPException(404, "Tiket ne postoji.")
+        odigrano.oceni_sve(conn, _izvucena_plus())
         return {"ok": True}
     finally:
         conn.close()
@@ -718,6 +754,15 @@ def api_dodaj_kolo(z: KoloZahtev):
     conn = baza.konekcija()
     try:
         rezime = bektest.dodaj_kolo_i_proveri(conn, z.kolo, z.datum, z.brojevi)
+    finally:
+        conn.close()
+    # Dnevnik je zajednički (baza Lota) i ocenjuje se protiv oba izvlačenja; bektest
+    # gleda samo bazu izabrane igre, pa broj ocenjenih tiketa daje ovaj prolaz.
+    _oceni_odigrano()
+    conn = _konekcija_tiketa()
+    try:
+        rezime["ocenjeno_odigranih"] = odigrano.broj_za_kolo(
+            conn, z.kolo, samo_plus=konfig.aktivna_igra() == konfig.LOTO_PLUS)
     finally:
         conn.close()
     _invalidiraj()

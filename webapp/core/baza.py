@@ -82,6 +82,13 @@ def postavi_bazu(putanja=None):
             UNIQUE (kolo, kombinacija))""")
         if nova_odigrano:
             _uvezi_stare_tikete(c)
+        # Loto plus je doplata na isti tiket: ista kombinacija učestvuje i u drugom
+        # izvlačenju istog kola (koje stoji u bazi igre loto_plus).
+        _dodaj_kolone_ako_nema(c, "odigrano", {
+            "loto_plus": "INTEGER NOT NULL DEFAULT 0",
+            "pogoci_plus": "INTEGER",
+            "skoro_plus": "INTEGER",
+        })
         c.execute("""CREATE TABLE IF NOT EXISTS ai_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, datum_vreme TEXT,
             tip_zahteva TEXT, prompt TEXT, odgovor TEXT)""")
@@ -288,15 +295,22 @@ def obrisi_tiket(conn, tiket_id):
 # Dnevnik odigranih kombinacija (odigrano)
 # ----------------------------------------------------------------------------
 
-def dodaj_odigrano(conn, kolo, kombinacija_csv, izvor="rucno", napomena=None):
+def dodaj_odigrano(conn, kolo, kombinacija_csv, izvor="rucno", napomena=None, loto_plus=False):
     """Upisuje kombinaciju za kolo. Vraća id novog reda ili None ako već postoji."""
     cur = conn.execute(
-        "INSERT OR IGNORE INTO odigrano (kolo, kombinacija, izvor, napomena, uneto) "
-        "VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO odigrano (kolo, kombinacija, izvor, napomena, uneto, loto_plus) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
         (kolo, kombinacija_csv, izvor, napomena or None,
-         datetime.now().isoformat(timespec="seconds")))
+         datetime.now().isoformat(timespec="seconds"), int(bool(loto_plus))))
     conn.commit()
     return cur.lastrowid if cur.rowcount > 0 else None
+
+
+def postavi_loto_plus(conn, red_id, loto_plus):
+    """Uključuje/isključuje Loto plus za tiket. Vraća False ako red ne postoji."""
+    cur = conn.execute("UPDATE odigrano SET loto_plus=? WHERE id=?", (int(bool(loto_plus)), red_id))
+    conn.commit()
+    return cur.rowcount > 0
 
 
 def obrisi_odigrano(conn, red_id):

@@ -82,6 +82,10 @@ PUTANJA_BAZE = os.path.join(KOREN_PROJEKTA, "loto_baza.db")
 # (zaglavlje X-Igra); van zahteva (skripte, testovi) važi podrazumevana.
 IGRE = {"loto": "Loto", "loto_plus": "Loto plus"}
 PODRAZUMEVANA_IGRA = "loto"
+LOTO_PLUS = "loto_plus"
+# Tiket je jedan (Loto plus je doplata na njega), pa dnevnik „Moji tiketi" stoji samo
+# u bazi Lota, bez obzira na izabranu igru; Loto plus izvlačenja se čitaju iz svoje baze.
+IGRA_TIKETA = PODRAZUMEVANA_IGRA
 _igra = contextvars.ContextVar("igra", default=PODRAZUMEVANA_IGRA)
 
 

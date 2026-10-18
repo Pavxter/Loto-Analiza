@@ -120,7 +120,9 @@ function app() {
           f: { dekada: true, uzastopni: true, zbir: false, parni: false, istorija: true },
           p: { dekada_max: 3, uzastopni_max: 1, zbir_min: 100, zbir_max: 180, parni_min: 2, parni_max: 5 } },
     odig: { redovi: [], sledece: null, poslednje: null, kolo: null, brojevi: '', napomena: '',
-            slicnost: null, otvoriUvezene: false, pregled: null, pregledRadi: false },
+            slicnost: null, otvoriUvezene: false, pregled: null, pregledRadi: false,
+            // Da li se uz tiket uplaćuje i Loto plus; pamti se kao poslednji izbor.
+            lotoPlus: (() => { try { return localStorage.getItem('odigLotoPlus') === '1'; } catch (e) { return false; } })() },
     istorija: [], unos: { kolo: null, datum: new Date().toISOString().slice(0, 10), brojevi: '' }, fajl: null, uvozZameni: false,
     prog: { tab: 'broj', ciljnoKolo: null, predlozi: [], izvor: 'uzivo', statistika: [], istorija: [],
             filterMetod: '', prag: 0.00625, brojMetoda: 8, radi: false },
@@ -1187,8 +1189,9 @@ function app() {
     // „+ tiket" sa drugih strana: upis u dnevnik za sledeće kolo, uz izvor.
     async dodajTiketIz(brojevi, izvor = 'rucno') {
       try {
-        const d = await jsend('/api/odigrano', 'POST', { brojevi, izvor });
-        this.toast(d.dodato ? `Upisano u Moje tikete za kolo ${this.formatKolo(d.kolo)}.` : 'Već je upisana za to kolo.', d.dodato ? 'ok' : 'warn');
+        const d = await jsend('/api/odigrano', 'POST', { brojevi, izvor, loto_plus: this.odig.lotoPlus });
+        const plus = this.odig.lotoPlus ? ' (uz Loto plus)' : '';
+        this.toast(d.dodato ? `Upisano u Moje tikete za kolo ${this.formatKolo(d.kolo)}${plus}.` : 'Već je upisana za to kolo.', d.dodato ? 'ok' : 'warn');
       } catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },
 
@@ -2008,7 +2011,8 @@ function app() {
     async odigUpisi(potvrdi = false) {
       const p = this.odigParsiraj();
       if (!p.ok) { this.toast(p.poruka || 'Unesi 7 brojeva.', 'err'); return; }
-      const telo = { brojevi: p.brojevi, kolo: this.odig.kolo || null, napomena: this.odig.napomena, potvrdi };
+      const telo = { brojevi: p.brojevi, kolo: this.odig.kolo || null, napomena: this.odig.napomena,
+                     loto_plus: this.odig.lotoPlus, potvrdi };
       try {
         const d = await jsend('/api/odigrano', 'POST', telo);
         this.toast(d.dodato ? `Upisano za kolo ${this.formatKolo(d.kolo)}.` : 'Ta kombinacija je već upisana za to kolo.', d.dodato ? 'ok' : 'warn');
@@ -2018,6 +2022,14 @@ function app() {
         if (e.status === 409 && !potvrdi && confirm(e.message + ' Ipak upisati?')) return this.odigUpisi(true);
         if (e.status !== 409) this.toast('Greška: ' + e.message, 'err');
       }
+    },
+
+    odigZapamtiPlus() { try { localStorage.setItem('odigLotoPlus', this.odig.lotoPlus ? '1' : '0'); } catch (e) {} },
+
+    // Naknadno uključi/isključi Loto plus za već upisan tiket.
+    async odigPlus(r) {
+      try { await jsend(`/api/odigrano/${r.id}/loto-plus`, 'PUT', { loto_plus: !r.loto_plus }); this.ucitajTikete(); }
+      catch (e) { this.toast('Greška: ' + e.message, 'err'); }
     },
 
     async odigObrisi(r) {
@@ -2032,7 +2044,12 @@ function app() {
       for (const r of this.odig.redovi) {
         if (r.kolo == null) continue;
         let g = grupe[grupe.length - 1];
-        if (!g || g.kolo !== r.kolo) { g = { kolo: r.kolo, status: r.status, izvuceni: r.izvuceni || [], redovi: [] }; grupe.push(g); }
+        if (!g || g.kolo !== r.kolo) {
+          g = { kolo: r.kolo, status: r.status, izvuceni: r.izvuceni || [], izvuceniPlus: r.izvuceni_plus || null,
+                imaPlus: false, redovi: [] };
+          grupe.push(g);
+        }
+        if (r.loto_plus) g.imaPlus = true;
         g.redovi.push(r);
       }
       return grupe;

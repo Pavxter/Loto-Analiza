@@ -1,4 +1,5 @@
-"""Dve igre (Loto / Loto plus): svaka ima svoju bazu i svoj keš analize.
+"""Dve igre (Loto / Loto plus): svaka ima svoju bazu i svoj keš analize, a dnevnik
+tiketa je zajednički (u bazi Lota) — Loto plus je doplata na isti tiket.
 
 Zahtev bira igru zaglavljem X-Igra; bez zaglavlja važi Loto. Ovde se proverava da
 kolo uneto u jednu igru ne curi u drugu, ni kroz bazu ni kroz keš `app.py`, i da
@@ -99,6 +100,67 @@ def test_igra_vracena_posle_zahteva():
     print("  posle zahteva važi podrazumevana igra")
 
 
+def _tiketi(igra=None):
+    status, d = _zahtev("GET", "/api/odigrano", igra)
+    assert status == 200
+    return {tuple(r["brojevi"]): r for r in d["redovi"]}
+
+
+def test_tiket_igra_u_oba_izvlacenja():
+    # Loto plus kolo KOLO je već uneto (BROJEVI), Loto kolo još nije.
+    sa_plusom = [3, 7, 12, 13, 14, 15, 17]     # Loto plus: 3, 7, 12 pogođeni; 18 promašen za 1
+    bez_plusa = [1, 2, 4, 5, 6, 8, 9]
+    # Upis dok je izabran Loto plus mora da završi u ISTOM dnevniku (baza Lota).
+    status, d = _zahtev("POST", "/api/odigrano", "loto_plus",
+                        {"brojevi": sa_plusom, "kolo": KOLO, "loto_plus": True})
+    assert status == 200 and d["dodato"]
+    status, _ = _zahtev("POST", "/api/odigrano", None, {"brojevi": bez_plusa, "kolo": KOLO})
+    assert status == 200
+
+    t = _tiketi()
+    assert _tiketi("loto_plus").keys() == t.keys() == {tuple(sa_plusom), tuple(bez_plusa)}
+    r = t[tuple(sa_plusom)]
+    assert r["loto_plus"] == 1 and r["status"] == "ceka"      # Loto još nije izvučen
+    assert r["pogoci_plus"] == 3 and r["skoro_plus"] == 1
+    assert r["izvuceni_plus"] == sorted(BROJEVI)
+    r = t[tuple(bez_plusa)]
+    assert r["loto_plus"] == 0 and r["pogoci_plus"] is None
+
+    # Kad stigne i Loto izvlačenje, tiket ima obe ocene.
+    status, _ = _zahtev("POST", "/api/istorija", None,
+                        {"kolo": KOLO, "datum": "2026-10-16", "brojevi": [14, 1, 22, 33, 15, 2, 38]})
+    assert status == 200
+    r = _tiketi()[tuple(sa_plusom)]
+    assert r["status"] == "izvuceno" and r["pogoci"] == 2 and r["pogoci_plus"] == 3
+    assert _tiketi()[tuple(bez_plusa)]["pogoci"] == 2
+
+    # Naknadno uključivanje/isključivanje Loto plusa odmah menja ocenu.
+    id_bez = _tiketi()[tuple(bez_plusa)]["id"]
+    assert _zahtev("PUT", f"/api/odigrano/{id_bez}/loto-plus", None, {"loto_plus": True})[0] == 200
+    r = _tiketi()[tuple(bez_plusa)]
+    assert r["loto_plus"] == 1 and r["pogoci_plus"] == 0 and r["skoro_plus"] == 2   # 3 i 7 su susedi
+    assert _zahtev("PUT", f"/api/odigrano/{id_bez}/loto-plus", None, {"loto_plus": False})[0] == 200
+    assert _tiketi()[tuple(bez_plusa)]["pogoci_plus"] is None
+    assert _zahtev("PUT", "/api/odigrano/999999/loto-plus", None, {"loto_plus": True})[0] == 404
+
+    # Baza Loto plusa nema svoj dnevnik.
+    conn = baza.konekcija(konfig.putanja_baze("loto_plus"))
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM odigrano").fetchone()[0] == 0
+    finally:
+        conn.close()
+    print("  tiket sa Loto plusom ocenjen u oba izvlačenja; dnevnik zajednički")
+
+
+def test_brisanje_plus_kola_vraca_tiket_na_cekanje():
+    plus = {r["kolo"]: r for r in _zahtev("GET", "/api/istorija", "loto_plus")[1]}
+    assert _zahtev("DELETE", f"/api/istorija/{plus[KOLO]['id']}", "loto_plus")[0] == 200
+    r = _tiketi()[(3, 7, 12, 13, 14, 15, 17)]
+    assert r["pogoci_plus"] is None and "izvuceni_plus" not in r
+    assert r["pogoci"] == 2                     # Loto ocena ostaje
+    print("  brisanje Loto plus kola vraća Loto plus ocenu na čekanje")
+
+
 def test_backup_nosi_ime_igre():
     token = konfig.postavi_igru("loto_plus")
     try:
@@ -117,6 +179,8 @@ def main():
     test_kolo_ne_curi_medju_igrama()
     test_nepoznata_igra_je_400()
     test_igra_vracena_posle_zahteva()
+    test_tiket_igra_u_oba_izvlacenja()
+    test_brisanje_plus_kola_vraca_tiket_na_cekanje()
     test_backup_nosi_ime_igre()
     print("\nSVI TESTOVI IGARA PROSLI [OK]")
 

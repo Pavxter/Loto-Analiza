@@ -1641,7 +1641,8 @@
             <h3>Upiši kombinaciju</h3>
             <p class="hint">Upisuje se pre izvlačenja. Kad se kolo unese na strani Podaci, tiket dobija ocenu:
               pogotke, promašaje za ±1 i <b>percentil blizine</b> — od koliko svih mogućih kombinacija
-              je tvoja bila bliža izvučenoj (50% je prosek nasumičnog izbora).</p>
+              je tvoja bila bliža izvučenoj (50% je prosek nasumičnog izbora). Dnevnik je zajednički za
+              Loto i Loto plus: tiket sa uplaćenim Loto plusom dobija i pogotke iz Loto plus izvlačenja istog kola.</p>
             <div class="row">
               <div class="field" style="flex:0 0 130px"><label>Kolo</label>
                 <input class="inp" type="number" x-model.number="odig.kolo">
@@ -1664,7 +1665,11 @@
             <div class="field"><label>Napomena (opciono)</label>
               <input class="inp" x-model="odig.napomena" placeholder="npr. zašto baš ova kombinacija">
             </div>
-            <button class="btn" @click="odigUpisi()">Upiši</button>
+            <div class="row" style="align-items:center; gap:14px">
+              <button class="btn" @click="odigUpisi()">Upiši</button>
+              <label class="check" title="Ista kombinacija igra i u Loto plus izvlačenju istog kola">
+                <input type="checkbox" x-model="odig.lotoPlus" @change="odigZapamtiPlus()"> Uplaćen i Loto plus</label>
+            </div>
           </div>
 
           <!-- Sličnost sa istorijom (PLAN_TIKETI_GRADITELJ §3.3) -->
@@ -1809,6 +1814,14 @@
                     <template x-for="b in g.izvuceni" :key="b"><div class="ball sm neutralan" x-text="b"></div></template>
                   </div>
                 </template>
+                <template x-if="g.imaPlus && g.izvuceniPlus">
+                  <div class="row" style="align-items:center; gap:6px">
+                    <span class="tag plus">Loto plus</span>
+                    <div class="balls">
+                      <template x-for="b in g.izvuceniPlus" :key="b"><div class="ball sm neutralan" x-text="b"></div></template>
+                    </div>
+                  </div>
+                </template>
               </div>
               <!-- flex umesto tabele: red se prelama u uskom prozoru umesto da beži udesno -->
               <template x-for="r in g.redovi" :key="r.id">
@@ -1826,6 +1839,18 @@
                       <span :style="'color:' + odigBojaPercentila(r.percentil)" x-text="'bliža od ' + odigPercentil(r.percentil)"></span>
                       <span class="muted"> kombinacija</span>
                     </div>
+                  </div>
+                  <div class="odig-plus">
+                    <button type="button" class="tag plus-prekidac" :class="{on: r.loto_plus}" @click="odigPlus(r)"
+                            :title="r.loto_plus ? 'Isključi Loto plus za ovaj tiket' : 'Označi da je uplaćen i Loto plus'"
+                            x-text="r.loto_plus ? 'Loto plus' : '+ Loto plus'"></button>
+                    <template x-if="r.loto_plus && r.pogoci_plus != null">
+                      <span>
+                        <span class="tag" :class="r.pogoci_plus >= 3 ? 'ok' : 'neutralan'" x-text="r.pogoci_plus + ' pogod.'"></span>
+                        <span class="muted" style="font-size:12px" x-show="r.skoro_plus" x-text="'+ ' + r.skoro_plus + ' za ±1'"></span>
+                      </span>
+                    </template>
+                    <span class="muted" style="font-size:12px" x-show="r.loto_plus && r.pogoci_plus == null">čeka izvlačenje</span>
                   </div>
                   <span class="tag neutralan" x-text="odigIzvor(r.izvor)"></span>
                   <span class="muted" style="font-size:12.5px; flex:1; min-width:80px" x-text="r.napomena || ''"></span>

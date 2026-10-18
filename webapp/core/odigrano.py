@@ -172,27 +172,38 @@ def oceni(tiket, izvuceni, raspodela=None):
     }
 
 
-def oceni_sve(conn):
+def oceni_sve(conn, izvuceno_plus=None):
     """Preračunava ocene svih redova iz TRENUTNIH izvučenih kola.
 
-    Poziva se pri startu i posle svakog dodavanja, izmene ili brisanja kola. Ceo
-    prolaz je jeftin (jedan DP po kolu sa tiketima), a zato ocena ne može da
-    zastari kad se staro kolo ispravi. Redovi čije kolo nije (više) izvučeno se
-    vraćaju na neocenjeno. Vraća broj ocenjenih redova.
+    Poziva se pri startu i posle svakog dodavanja, izmene ili brisanja kola (u bilo
+    kojoj igri). Ceo prolaz je jeftin (jedan DP po kolu sa tiketima), a zato ocena ne
+    može da zastari kad se staro kolo ispravi. Redovi čije kolo nije (više) izvučeno
+    se vraćaju na neocenjeno. Vraća broj ocenjenih redova.
+
+    izvuceno_plus: {kolo: brojevi} Loto plus izvlačenja (iz baze te igre). Tiket sa
+    uplaćenim Loto plusom dobija i pogotke za to izvlačenje istog kola. None znači
+    „nepoznato" (pozivalac nema bazu Loto plusa) — tada se te ocene ne diraju.
     """
     izvuceno = izvucena_kola(conn)
     sad = datetime.now().isoformat(timespec="seconds")
     raspodele = {}
     ocenjeno = 0
-    for r in conn.execute("SELECT id, kolo, kombinacija FROM odigrano WHERE kolo IS NOT NULL").fetchall():
+    for r in conn.execute("SELECT id, kolo, kombinacija, loto_plus FROM odigrano "
+                          "WHERE kolo IS NOT NULL").fetchall():
         kolo = r["kolo"]
+        tiket = iz_csv(r["kombinacija"])
+        if izvuceno_plus is not None:
+            plus = izvuceno_plus.get(kolo) if r["loto_plus"] else None
+            conn.execute("UPDATE odigrano SET pogoci_plus=?, skoro_plus=? WHERE id=?",
+                         (len(set(tiket) & plus) if plus else None,
+                          skoro_pogoci(tiket, plus) if plus else None, r["id"]))
         if kolo not in izvuceno:
             conn.execute("UPDATE odigrano SET pogoci=NULL, skoro=NULL, rastojanje=NULL, "
                          "percentil=NULL, ocenjeno=NULL WHERE id=?", (r["id"],))
             continue
         if kolo not in raspodele:
             raspodele[kolo] = raspodela_rastojanja(izvuceno[kolo])
-        m = oceni(iz_csv(r["kombinacija"]), izvuceno[kolo], raspodele[kolo])
+        m = oceni(tiket, izvuceno[kolo], raspodele[kolo])
         conn.execute("UPDATE odigrano SET pogoci=?, skoro=?, rastojanje=?, percentil=?, ocenjeno=? "
                      "WHERE id=?", (m["pogoci"], m["skoro"], m["rastojanje"], m["percentil"], sad, r["id"]))
         ocenjeno += 1
@@ -327,13 +338,19 @@ def pregled(conn):
     return rezultat
 
 
-def broj_za_kolo(conn, kolo):
-    return conn.execute("SELECT COUNT(*) FROM odigrano WHERE kolo=?", (kolo,)).fetchone()[0]
+def broj_za_kolo(conn, kolo, samo_plus=False):
+    uslov = " AND loto_plus=1" if samo_plus else ""
+    return conn.execute(f"SELECT COUNT(*) FROM odigrano WHERE kolo=?{uslov}", (kolo,)).fetchone()[0]
 
 
-def lista(conn):
-    """Dnevnik, najnovije kolo prvo; uvezeni (bez kola) na kraju."""
+def lista(conn, izvuceno_plus=None):
+    """Dnevnik, najnovije kolo prvo; uvezeni (bez kola) na kraju.
+
+    `izvuceni_plus` (Loto plus izvlačenje istog kola) stoji na svakom redu čije je
+    kolo izvučeno i u Loto plusu, i kad red nema Loto plus — kolo je zajedničko.
+    """
     izvuceno = izvucena_kola(conn)
+    izvuceno_plus = izvuceno_plus or {}
     redovi = conn.execute(
         "SELECT * FROM odigrano ORDER BY kolo IS NULL, kolo DESC, id ASC").fetchall()
     out = []
@@ -347,5 +364,7 @@ def lista(conn):
             d["izvuceni"] = sorted(izvuceno[d["kolo"]])
         else:
             d["status"] = "ceka"
+        if d["kolo"] in izvuceno_plus:
+            d["izvuceni_plus"] = sorted(izvuceno_plus[d["kolo"]])
         out.append(d)
     return out
