@@ -52,6 +52,18 @@ body {
 .brand h1 { font-size: 15px; margin: 0; font-weight: 700; letter-spacing: .2px; }
 .brand small { color: var(--text-faint); font-size: 11px; }
 
+/* Prekidač igre: Loto / Loto plus — svaka igra ima svoju bazu */
+.igra-prekidac { display: flex; gap: 4px; padding: 4px; margin: 0 0 10px;
+  background: var(--bg); border: 1px solid var(--border-soft); border-radius: var(--radius-sm); }
+.igra-prekidac button { flex: 1; padding: 7px 6px; border: 0; border-radius: 7px; cursor: pointer;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: 12.5px; font-weight: 600; }
+.igra-prekidac button:hover { color: var(--text); }
+.igra-prekidac button.aktivna { background: var(--accent-soft); color: #cfe0ff; }
+.igra-oznaka { display: inline-block; vertical-align: middle; margin-left: 8px; padding: 2px 8px;
+  border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: .2px;
+  background: var(--neutralan-bg); color: var(--text-dim); }
+.igra-oznaka.plus { background: #3a2e14; color: var(--warn); }
+
 .nav-item {
   display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm);
   color: var(--text-dim); cursor: pointer; font-weight: 500; user-select: none; transition: .12s;

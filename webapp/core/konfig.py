@@ -4,6 +4,7 @@ Konstante su izvučene iz analiza.py i parametrizovane tako da aplikacija može 
 podrži i druge formate igre (npr. 6/45) bez menjanja logike.
 """
 
+import contextvars
 import os
 
 # --- Pravila igre (podrazumevano Loto 7/39) ---
@@ -73,6 +74,40 @@ SKAN_SEME = 12345              # fiksirano: isti ulaz mora dati isti izlaz
 # Koren projekta je roditelj foldera 'webapp'
 KOREN_PROJEKTA = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PUTANJA_BAZE = os.path.join(KOREN_PROJEKTA, "loto_baza.db")
+
+# --- Igre ---
+# Loto plus je drugo izvlačenje 7/39 u istom kolu: ista pravila, ista numeracija kola,
+# pa ima SVOJU bazu — prognoze, sekvencijalni model i dnevnik tiketa su vezani za
+# broj kola i iz dve igre bi se gazili u jednoj tabeli. Igru bira svaki HTTP zahtev
+# (zaglavlje X-Igra); van zahteva (skripte, testovi) važi podrazumevana.
+IGRE = {"loto": "Loto", "loto_plus": "Loto plus"}
+PODRAZUMEVANA_IGRA = "loto"
+_igra = contextvars.ContextVar("igra", default=PODRAZUMEVANA_IGRA)
+
+
+def aktivna_igra():
+    """Igra tekućeg zahteva (ili podrazumevana van zahteva)."""
+    return _igra.get()
+
+
+def postavi_igru(igra):
+    """Postavlja igru za tekući kontekst; vraća token za `vrati_igru`."""
+    if igra not in IGRE:
+        raise ValueError(f"Nepoznata igra: {igra}")
+    return _igra.set(igra)
+
+
+def vrati_igru(token):
+    _igra.reset(token)
+
+
+def putanja_baze(igra=None):
+    """Baza igre. Druge igre stoje pored PUTANJA_BAZE, pa test koji nju preusmeri
+    preusmerava i njih."""
+    igra = igra or aktivna_igra()
+    if igra == PODRAZUMEVANA_IGRA:
+        return PUTANJA_BAZE
+    return os.path.join(os.path.dirname(PUTANJA_BAZE), f"{igra}.db")
 
 
 def sve_brojeve():

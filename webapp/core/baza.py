@@ -23,11 +23,12 @@ from . import konfig
 
 def napravi_backup(putanja=None):
     """Pravi vremenski označenu rezervnu kopiju baze. Vraća putanju kopije."""
-    izvor = putanja or konfig.PUTANJA_BAZE
+    izvor = putanja or konfig.putanja_baze()
     if not os.path.exists(izvor):
         return None
     oznaka = datetime.now().strftime("%Y%m%d_%H%M%S")
-    cilj = os.path.join(konfig.KOREN_PROJEKTA, f"loto_baza_backup_{oznaka}.db")
+    ime = os.path.splitext(os.path.basename(izvor))[0]     # loto_baza / loto_plus
+    cilj = os.path.join(konfig.KOREN_PROJEKTA, f"{ime}_backup_{oznaka}.db")
     shutil.copy2(izvor, cilj)
     return cilj
 
@@ -43,7 +44,7 @@ def obrisi_svu_istoriju(conn):
 
 def konekcija(putanja=None):
     """Vraća novu SQLite konekciju sa row_factory za pristup po imenu kolone."""
-    conn = sqlite3.connect(putanja or konfig.PUTANJA_BAZE)
+    conn = sqlite3.connect(putanja or konfig.putanja_baze())
     conn.row_factory = sqlite3.Row
     return conn
 

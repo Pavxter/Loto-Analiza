@@ -24,6 +24,14 @@
         <small>7 / 39 &middot; web v1</small>
       </div>
     </div>
+    <div class="igra-prekidac" role="group" aria-label="Igra">
+      <template x-for="g in igre" :key="g.id">
+        <button type="button" :class="{aktivna: igra === g.id}" :aria-pressed="igra === g.id"
+                @click="promeniIgru(g.id)" :title="g.broj_kola != null ? g.broj_kola + ' kola u bazi' : ''">
+          <span x-text="g.naziv"></span>
+        </button>
+      </template>
+    </div>
     <template x-for="(s, i) in strane" :key="s.id">
       <div>
         <div class="nav-grupa" x-show="s.grupa && (i === 0 || strane[i - 1].grupa !== s.grupa)" x-text="s.grupa"></div>
@@ -49,7 +57,8 @@
               aria-controls="glavni-meni" :aria-expanded="meniOtvoren" aria-label="Meni">☰</button>
       <div>
         <div class="nadnaslov" x-show="aktivna().grupa" x-text="aktivna().grupa"></div>
-        <h2 x-text="aktivna().naziv"></h2>
+        <h2><span x-text="aktivna().naziv"></span>
+          <span class="igra-oznaka" :class="{plus: igra !== 'loto'}" x-text="nazivIgre()"></span></h2>
         <div class="sub" x-text="aktivna().opis"></div>
       </div>
       <div class="spacer"></div>

@@ -61,9 +61,14 @@ function crtaj(id, opcija) {
 
 window.addEventListener('resize', () => Object.values(grafikoni).forEach(g => { if (!g.isDisposed()) g.resize(); }));
 
-async function jget(url) { const r = await fetch(url); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText); return r.json(); }
+// Igra (Loto / Loto plus) ide uz svaki zahtev; server po njoj bira bazu. Izbor se pamti
+// u ovom browseru, a promena ponovo učitava stranu da ne ostane stanje druge igre.
+const IGRA = (() => { try { return localStorage.getItem('igra') || 'loto'; } catch (e) { return 'loto'; } })();
+const ZAGLAVLJE_IGRE = { 'X-Igra': IGRA };
+
+async function jget(url) { const r = await fetch(url, { headers: ZAGLAVLJE_IGRE }); if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.statusText); return r.json(); }
 async function jsend(url, method, body) {
-  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json', ...ZAGLAVLJE_IGRE }, body: body ? JSON.stringify(body) : undefined });
   if (!r.ok) {
     const e = new Error((await r.json().catch(() => ({}))).detail || r.statusText);
     e.status = r.status;   // npr. 409 = traži potvrdu korisnika
@@ -96,6 +101,8 @@ function app() {
     period: 0,
     loading: false,
     brojKola: '…',
+    igra: IGRA,
+    igre: [{ id: 'loto', naziv: 'Loto' }, { id: 'loto_plus', naziv: 'Loto plus' }],
     toasts: [],
 
     // podaci strana
@@ -135,8 +142,17 @@ function app() {
             tiket: null, tiketFilteri: false, otvoriZasto: false },
 
     aktivna() { return this.strane.find(s => s.id === this.strana) || this.strane[0]; },
+    nazivIgre() { return (this.igre.find(g => g.id === this.igra) || this.igre[0]).naziv; },
+
+    promeniIgru(id) {
+      if (id === this.igra) return;
+      try { localStorage.setItem('igra', id); } catch (e) { return this.toast('Browser ne dozvoljava pamćenje izbora igre.', 'err'); }
+      location.reload();
+    },
 
     async init() {
+      document.title = this.nazivIgre() + ' · Loto Analizator';
+      jget('/api/igre').then(g => { this.igre = g; }).catch(() => {});
       try { const d = await jget('/api/dashboard?period=0'); this.brojKola = d.broj_kola; } catch (e) {}
       this.ucitajStranu();
     },
@@ -2058,7 +2074,7 @@ function app() {
       if (this.uvozZameni && !confirm(`Ovo će obrisati svih ${this.brojKola} kola i uvesti nova iz fajla.\nPre brisanja se pravi rezervna kopija.\n\nNastaviti?`)) return;
       const fd = new FormData(); fd.append('fajl', this.fajl);
       try {
-        const r = await fetch('/api/uvoz?zameni=' + (this.uvozZameni ? 'true' : 'false'), { method: 'POST', body: fd });
+        const r = await fetch('/api/uvoz?zameni=' + (this.uvozZameni ? 'true' : 'false'), { method: 'POST', headers: ZAGLAVLJE_IGRE, body: fd });
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || 'Greška');
         const poruka = d.zamenjeno

@@ -11,7 +11,7 @@ import re
 
 import pandas as pd
 from fastapi import FastAPI, HTTPException, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -23,20 +23,60 @@ STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 
 app = FastAPI(title="Loto Analizator Web", version="1.0")
 
-# Jednostavan keš analize po periodu (invalidira se pri promeni podataka)
-_kes = {}
+# Jednostavan keš analize po periodu (invalidira se pri promeni podataka), zaseban
+# za svaku igru — ključevi su isti (period, kolo…), a podaci nisu.
+_kes_po_igri = {}
+
+
+def _kes():
+    return _kes_po_igri.setdefault(konfig.aktivna_igra(), {})
+
+
+@app.middleware("http")
+async def _igra_zahteva(request, call_next):
+    """Igra (Loto / Loto plus) dolazi uz svaki zahtev u zaglavlju X-Igra."""
+    igra = request.headers.get("x-igra") or konfig.PODRAZUMEVANA_IGRA
+    if igra not in konfig.IGRE:
+        return JSONResponse({"detail": f"Nepoznata igra: {igra}"}, status_code=400)
+    token = konfig.postavi_igru(igra)
+    try:
+        return await call_next(request)
+    finally:
+        konfig.vrati_igru(token)
 
 
 @app.on_event("startup")
 def _startup():
-    """Osigurava šemu (nove kolone) i doračunava preklapanje starih bektestova (§8)."""
-    baza.postavi_bazu()
-    conn = baza.konekcija()
-    try:
-        bektest.migriraj_preklapanje_bektesta(conn)
-        odigrano.oceni_sve(conn)       # tiketi čija su kola izvučena dok app nije radio
-    finally:
-        conn.close()
+    """Osigurava šemu (nove kolone) i doračunava preklapanje starih bektestova (§8),
+    za bazu svake igre."""
+    for igra in konfig.IGRE:
+        token = konfig.postavi_igru(igra)
+        try:
+            baza.postavi_bazu()
+            conn = baza.konekcija()
+            try:
+                bektest.migriraj_preklapanje_bektesta(conn)
+                odigrano.oceni_sve(conn)       # tiketi čija su kola izvučena dok app nije radio
+            finally:
+                conn.close()
+        finally:
+            konfig.vrati_igru(token)
+
+
+@app.get("/api/igre")
+def igre():
+    """Igre za prekidač u meniju, sa brojem kola u bazi svake."""
+    rezultat = []
+    for igra, naziv in konfig.IGRE.items():
+        conn = baza.konekcija(konfig.putanja_baze(igra))
+        try:
+            broj = conn.execute("SELECT COUNT(*) FROM istorijski_rezultati").fetchone()[0]
+        except Exception:
+            broj = 0      # baza još nije napravljena
+        finally:
+            conn.close()
+        rezultat.append({"id": igra, "naziv": naziv, "broj_kola": int(broj)})
+    return rezultat
 
 
 def _osvezi_df():
@@ -52,13 +92,13 @@ def _analiza(period=0, granica=None):
 
     granica=None → cela baza (podrazumevano, ponašanje nepromenjeno).
     """
-    kljuc = ("analiza", period, granica, _kes.get("verzija", 0))
-    if kljuc not in _kes:
+    kljuc = ("analiza", period, granica, _kes().get("verzija", 0))
+    if kljuc not in _kes():
         df = _osvezi_df()
         if granica is not None:
             df = df[df["kolo"] <= granica]
-        _kes[kljuc] = analitika.Analiza(df, period_analize=period)
-    return _kes[kljuc]
+        _kes()[kljuc] = analitika.Analiza(df, period_analize=period)
+    return _kes()[kljuc]
 
 
 def _oceni_odigrano():
@@ -71,9 +111,10 @@ def _oceni_odigrano():
 
 
 def _invalidiraj():
-    _kes["verzija"] = _kes.get("verzija", 0) + 1
-    for k in [k for k in _kes if isinstance(k, tuple)]:
-        del _kes[k]
+    kes = _kes()
+    kes["verzija"] = kes.get("verzija", 0) + 1
+    for k in [k for k in kes if isinstance(k, tuple)]:
+        del kes[k]
 
 
 # ---------------------------------------------------------------------------
@@ -498,14 +539,14 @@ def api_prognoza_komb_istorija(izvor: str = "", metod: str = "", limit: int = 50
 @app.get("/api/razlicitost")
 def api_razlicitost(period: int = 0):
     """Sve analize različitosti (keširano po periodu; rekordi uvek cela istorija)."""
-    kljuc = ("razlicitost", period, _kes.get("verzija", 0))
-    if kljuc not in _kes:
+    kljuc = ("razlicitost", period, _kes().get("verzija", 0))
+    if kljuc not in _kes():
         conn = baza.konekcija()
         try:
-            _kes[kljuc] = razlicitost.sve_analize(conn, period)
+            _kes()[kljuc] = razlicitost.sve_analize(conn, period)
         finally:
             conn.close()
-    return _kes[kljuc]
+    return _kes()[kljuc]
 
 
 @app.get("/api/razlicitost/profil")
@@ -782,14 +823,14 @@ def api_sinteza(izvor: str = "retro", period: int = 0):
     """
     if izvor not in ("retro", "uzivo"):
         raise HTTPException(400, "Izvor mora biti 'retro' ili 'uzivo'.")
-    kljuc = ("sinteza", izvor, period, _kes.get("verzija", 0))
-    if kljuc not in _kes:
+    kljuc = ("sinteza", izvor, period, _kes().get("verzija", 0))
+    if kljuc not in _kes():
         conn = baza.konekcija()
         try:
-            _kes[kljuc] = sinteza.sakupi(conn, izvor, period)
+            _kes()[kljuc] = sinteza.sakupi(conn, izvor, period)
         finally:
             conn.close()
-    return _kes[kljuc]
+    return _kes()[kljuc]
 
 
 @app.get("/api/sinteza/metod/{metod}")
@@ -797,8 +838,8 @@ def api_sinteza_metod(metod: str, izvor: str = "retro"):
     """Detalj jednog reda: krivulja kroz vreme ili histogram testa."""
     if izvor not in ("retro", "uzivo"):
         raise HTTPException(400, "Izvor mora biti 'retro' ili 'uzivo'.")
-    kljuc = ("sinteza_metod", metod, izvor, _kes.get("verzija", 0))
-    if kljuc not in _kes:
+    kljuc = ("sinteza_metod", metod, izvor, _kes().get("verzija", 0))
+    if kljuc not in _kes():
         conn = baza.konekcija()
         try:
             rezultat = sinteza.detalj_metoda(conn, metod, izvor)
@@ -806,8 +847,8 @@ def api_sinteza_metod(metod: str, izvor: str = "retro"):
             conn.close()
         if rezultat is None:
             raise HTTPException(404, f"Nepoznat red Sinteze: {metod}")
-        _kes[kljuc] = rezultat
-    return _kes[kljuc]
+        _kes()[kljuc] = rezultat
+    return _kes()[kljuc]
 
 
 @app.get("/api/sinteza/rang")
@@ -847,14 +888,14 @@ def api_sekv_stanje():
     keširan. Kad korisnik promeni filtere na tabu Generator, UI traži tiket ponovo
     preko /api/sekv/tiket — ista funkcija, drugi filteri.
     """
-    kljuc = ("sekv_stanje", _kes.get("verzija", 0))
-    if kljuc not in _kes:
+    kljuc = ("sekv_stanje", _kes().get("verzija", 0))
+    if kljuc not in _kes():
         conn = baza.konekcija()
         try:
-            _kes[kljuc] = sekvencijalni.stanje_api(conn, analiza=_analiza(0))
+            _kes()[kljuc] = sekvencijalni.stanje_api(conn, analiza=_analiza(0))
         finally:
             conn.close()
-    return _kes[kljuc]
+    return _kes()[kljuc]
 
 
 class SekvTiketZahtev(BaseModel):
@@ -890,14 +931,14 @@ def api_sekv_tiket(z: SekvTiketZahtev):
 @app.get("/api/sekv/istorija")
 def api_sekv_istorija():
     """K_t kroz vreme sa pojasom, plus K po ekspertu i težine kroz vreme."""
-    kljuc = ("sekv_istorija", _kes.get("verzija", 0))
-    if kljuc not in _kes:
+    kljuc = ("sekv_istorija", _kes().get("verzija", 0))
+    if kljuc not in _kes():
         conn = baza.konekcija()
         try:
-            _kes[kljuc] = sekvencijalni.istorija_api(conn)
+            _kes()[kljuc] = sekvencijalni.istorija_api(conn)
         finally:
             conn.close()
-    return _kes[kljuc]
+    return _kes()[kljuc]
 
 
 @app.get("/api/sekv/korak")
@@ -949,6 +990,8 @@ def _mapa_slojevi():
         if (meta.get("red_krive") != mapa.RED_KRIVE
                 or meta.get("dimenzija") != mapa.DIMENZIJA):
             continue    # stare pločice za drugi raspored — ne nudi ih
+        if osobina.get("iz_baze") and konfig.aktivna_igra() != konfig.PODRAZUMEVANA_IGRA:
+            continue    # pločice su pečene iz baze glavnog Lota (generisi_mapu.py)
         sloj = {"sloj": naziv, "opis": osobina["opis"], "tip": osobina["tip"],
                 "min": meta["min"], "max": meta["max"],
                 "iz_baze": bool(osobina.get("iz_baze")),
