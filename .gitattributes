@@ -1,0 +1,2 @@
+# Shell skripte moraju imati LF i na Windows kopiji (inace bash na Linuxu puca na \r)
+*.sh text eol=lf

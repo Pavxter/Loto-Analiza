@@ -16,6 +16,20 @@ python pokreni.py
 
 Otvara se `http://127.0.0.1:8000`. Opcije: `python pokreni.py --port 9000 --bez-otvaranja`.
 
+Na Windows-u isto radi dupli klik na `Pokreni Loto.bat`.
+
+### Linux / Ubuntu
+
+```bash
+sudo apt install python3 python3-venv
+bash pokreni_loto.sh             # prvi put pravi .venv i instalira zavisnosti
+bash pokreni_loto.sh --precica   # jednom: „Loto Analizator" u meniju aplikacija
+```
+
+Baze (`loto_baza.db`, `loto_plus.db`), `.env` i pločice mape ne idu u git — pri prelasku
+na drugi računar kopiraju se ručno u koren projekta (pločice mogu i ponovo da se ispeku).
+Windows `.venv311` se ne kopira.
+
 Za grafikone i mapu je potreban internet (ECharts, Alpine.js i Leaflet se učitavaju
 preko CDN-a).
 
