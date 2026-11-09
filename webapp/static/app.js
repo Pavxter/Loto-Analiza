@@ -118,7 +118,7 @@ function app() {
     // Graditelj: f = koje pravilo je uključeno, p = vrednosti; podrazumevano dolazi sa servera.
     gr: { podaci: null, radi: false, ucitano: false, w: 22, bazen: 15, a: 1, b: 1, c: 1,
           f: { dekada: true, uzastopni: true, zbir: false, parni: false, istorija: true },
-          p: { dekada_max: 3, uzastopni_max: 1, zbir_min: 100, zbir_max: 180, parni_min: 2, parni_max: 5 } },
+          p: { dekada_max: 3, uzastopni_max: 1, istorija_max: 5, zbir_min: 100, zbir_max: 180, parni_min: 2, parni_max: 5 } },
     odig: { redovi: [], sledece: null, poslednje: null, kolo: null, brojevi: '', napomena: '',
             slicnost: null, otvoriUvezene: false, pregled: null, pregledRadi: false,
             // Da li se uz tiket uplaćuje i Loto plus; pamti se kao poslednji izbor.
@@ -1204,7 +1204,7 @@ function app() {
       if (f.uzastopni) out.uzastopni_max = p.uzastopni_max;
       if (f.zbir) { out.zbir_min = p.zbir_min; out.zbir_max = p.zbir_max; }
       if (f.parni) { out.parni_min = p.parni_min; out.parni_max = p.parni_max; }
-      if (f.istorija) out.istorija_max = 5;
+      if (f.istorija) out.istorija_max = p.istorija_max;
       return out;
     },
 
@@ -1227,6 +1227,7 @@ function app() {
                                  zbir: false, parni: false, istorija: 'istorija_max' in d.pravila });
       if ('dekada_max' in d.pravila) this.gr.p.dekada_max = d.pravila.dekada_max;
       if ('uzastopni_max' in d.pravila) this.gr.p.uzastopni_max = d.pravila.uzastopni_max;
+      if ('istorija_max' in d.pravila) this.gr.p.istorija_max = d.pravila.istorija_max;
       this.grSklopi();
     },
 

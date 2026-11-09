@@ -1104,7 +1104,12 @@
                 </div></div>
             </div>
             <div class="field"><label class="check"><input type="checkbox" x-model="gr.f.istorija" @change="grSklopi()">
-              Izbaci kombinacije sa 6+ istih brojeva kao neko izvučeno kolo</label></div>
+              Sličnost sa izvučenim kolima — najviše</label>
+              <select class="inp" x-model.number="gr.p.istorija_max" :disabled="!gr.f.istorija" @change="grSklopi()">
+                <option :value="5">5 od 7 (izbacuje 6+ istih, ~2 % kombinacija)</option>
+                <option :value="4">4 od 7 (izbacuje 5+ istih, ~63 % kombinacija)</option>
+              </select>
+              <span class="muted" style="font-size:12px">Ni jedan prag ne menja šansu za dobitak — izvlačenja su nezavisna.</span></div>
             <div class="row" style="gap:8px; align-items:center">
               <button class="btn ghost sm" @click="grPodrazumevano()">Vrati podrazumevano</button>
               <span class="muted" style="font-size:12px" x-show="grIzmenjeno()">Izmenjeno — bektest (Prognoza) ocenjuje samo podrazumevana podešavanja.</span>
